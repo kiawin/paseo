@@ -7,18 +7,61 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { Check, X, XCircle } from "lucide-react-native";
 import { useDownloadStore, formatSpeed, formatEta, type Download } from "@/stores/download-store";
+import { useUploadStore, type Upload } from "@/stores/upload-store";
 
 const AUTO_DISMISS_DELAY = 3000;
 
-function getDownloadStatusText(download: Download, t: TFunction): string {
-  if (download.status === "downloading") {
-    if (download.progress) {
-      return `${Math.round(download.progress.percent * 100)}% · ${formatSpeed(download.progress.speed)} · ${formatEta(download.progress.eta)}`;
+/**
+ * One toast serves both directions. A transfer is whichever of the two stores currently
+ * has something in flight; downloads win a tie because the user just asked for one.
+ */
+interface Transfer {
+  id: string;
+  fileName: string;
+  inFlight: boolean;
+  complete: boolean;
+  message?: string;
+  progress?: Download["progress"];
+  dismiss: () => void;
+}
+
+function getTransferStatusText(transfer: Transfer, isUpload: boolean, t: TFunction): string {
+  if (transfer.inFlight) {
+    if (transfer.progress) {
+      return `${Math.round(transfer.progress.percent * 100)}% · ${formatSpeed(transfer.progress.speed)} · ${formatEta(transfer.progress.eta)}`;
     }
     return t("common.states.starting");
   }
-  if (download.status === "complete") return t("common.states.downloadComplete");
-  return download.message ?? t("common.states.downloadFailed");
+  if (transfer.complete) {
+    return t(isUpload ? "common.states.uploadComplete" : "common.states.downloadComplete");
+  }
+  return (
+    transfer.message ?? t(isUpload ? "common.states.uploadFailed" : "common.states.downloadFailed")
+  );
+}
+
+function toTransfer(download: Download, dismiss: (id: string) => void): Transfer {
+  return {
+    id: download.id,
+    fileName: download.fileName,
+    inFlight: download.status === "downloading",
+    complete: download.status === "complete",
+    message: download.message,
+    progress: download.progress,
+    dismiss: () => dismiss(download.id),
+  };
+}
+
+function uploadToTransfer(upload: Upload, dismiss: (id: string) => void): Transfer {
+  return {
+    id: upload.id,
+    fileName: upload.fileName,
+    inFlight: upload.status === "uploading",
+    complete: upload.status === "complete",
+    message: upload.message,
+    progress: upload.progress,
+    dismiss: () => dismiss(upload.id),
+  };
 }
 
 export function DownloadToast() {
@@ -28,9 +71,20 @@ export function DownloadToast() {
   const downloads = useDownloadStore((state) => state.downloads);
   const activeDownloadId = useDownloadStore((state) => state.activeDownloadId);
   const dismissDownload = useDownloadStore((state) => state.dismissDownload);
+  const uploads = useUploadStore((state) => state.uploads);
+  const activeUploadId = useUploadStore((state) => state.activeUploadId);
+  const dismissUpload = useUploadStore((state) => state.dismissUpload);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const activeDownload = activeDownloadId ? downloads.get(activeDownloadId) : null;
+  const download = activeDownloadId ? downloads.get(activeDownloadId) : null;
+  const upload = activeUploadId ? uploads.get(activeUploadId) : null;
+  const isUpload = !download && Boolean(upload);
+  let activeDownload: Transfer | null = null;
+  if (download) {
+    activeDownload = toTransfer(download, dismissDownload);
+  } else if (upload) {
+    activeDownload = uploadToTransfer(upload, dismissUpload);
+  }
 
   useEffect(() => {
     if (dismissTimeoutRef.current) {
@@ -38,10 +92,9 @@ export function DownloadToast() {
       dismissTimeoutRef.current = null;
     }
 
-    if (activeDownload && activeDownload.status !== "downloading") {
-      dismissTimeoutRef.current = setTimeout(() => {
-        dismissDownload(activeDownload.id);
-      }, AUTO_DISMISS_DELAY);
+    if (activeDownload && !activeDownload.inFlight) {
+      const dismiss = activeDownload.dismiss;
+      dismissTimeoutRef.current = setTimeout(dismiss, AUTO_DISMISS_DELAY);
     }
 
     return () => {
@@ -49,7 +102,7 @@ export function DownloadToast() {
         clearTimeout(dismissTimeoutRef.current);
       }
     };
-  }, [activeDownload, dismissDownload]);
+  }, [activeDownload]);
 
   const containerStyle = useMemo(
     () => [styles.container, { bottom: theme.spacing[4] + insets.bottom }],
@@ -57,10 +110,8 @@ export function DownloadToast() {
   );
 
   const handleDismiss = useCallback(() => {
-    if (activeDownload) {
-      dismissDownload(activeDownload.id);
-    }
-  }, [activeDownload, dismissDownload]);
+    activeDownload?.dismiss();
+  }, [activeDownload]);
 
   if (!activeDownload) {
     return null;
@@ -69,27 +120,25 @@ export function DownloadToast() {
   return (
     <View style={containerStyle} pointerEvents="box-none">
       <View style={styles.toast}>
-        {activeDownload.status === "downloading" ? (
+        {activeDownload.inFlight ? (
           <LoadingSpinner size="small" color={theme.colors.foreground} />
         ) : null}
-        {activeDownload.status === "complete" ? (
-          <Check size={18} color={theme.colors.primary} />
-        ) : null}
-        {activeDownload.status !== "downloading" && activeDownload.status !== "complete" ? (
+        {activeDownload.complete ? <Check size={18} color={theme.colors.primary} /> : null}
+        {!activeDownload.inFlight && !activeDownload.complete ? (
           <XCircle size={18} color={theme.colors.destructive} />
         ) : null}
         <View style={styles.textContainer}>
           <Text style={styles.fileName} numberOfLines={1}>
             {activeDownload.fileName}
           </Text>
-          <Text style={styles.status}>{getDownloadStatusText(activeDownload, t)}</Text>
-          {activeDownload.status === "downloading" && activeDownload.progress && (
+          <Text style={styles.status}>{getTransferStatusText(activeDownload, isUpload, t)}</Text>
+          {activeDownload.inFlight && activeDownload.progress && (
             <View style={styles.progressBar}>
               <ProgressFill percent={activeDownload.progress.percent} />
             </View>
           )}
         </View>
-        {activeDownload.status !== "downloading" && (
+        {!activeDownload.inFlight && (
           <Pressable onPress={handleDismiss} hitSlop={8} style={styles.dismiss}>
             <X size={16} color={theme.colors.foregroundMuted} />
           </Pressable>

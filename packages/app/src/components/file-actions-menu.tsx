@@ -5,6 +5,7 @@ import {
   Copy,
   CopyPlus,
   Download,
+  Upload,
   FilePlus,
   FileText,
   FolderMinus,
@@ -57,6 +58,7 @@ interface FileActionsContextMenuContentProps {
   onReveal?: () => void;
   revealTargetName?: string;
   onDownload?: () => void;
+  onUploadFiles?: () => void;
   onAddToChat?: () => void;
   onNewFile?: () => void;
   onNewFolder?: () => void;
@@ -72,6 +74,29 @@ interface FileActionsContextMenuContentProps {
  * Shared context-menu content for per-file actions. The file explorer tree and git diff pane
  * own their row triggers while sharing action availability, ordering, and chrome here.
  */
+/**
+ * Uploading targets a folder, so this sits next to download on directories only.
+ * The caller withholds onUploadFiles when the host cannot receive workspace uploads.
+ * Kept out of the actions memo so that memo stays under the complexity budget.
+ */
+function buildUploadAction(
+  fileKind: FileActionsContextMenuContentProps["fileKind"],
+  onUploadFiles: (() => void) | undefined,
+  label: string,
+): FileAction | null {
+  if (fileKind !== "directory" || !onUploadFiles) {
+    return null;
+  }
+  // Same group as download: both move bytes between the workspace and the device.
+  return {
+    key: "upload-files",
+    group: "reference",
+    label,
+    icon: Upload,
+    onSelect: onUploadFiles,
+  };
+}
+
 export function FileActionsContextMenuContent({
   fileKind,
   fileExists = true,
@@ -82,6 +107,7 @@ export function FileActionsContextMenuContent({
   onReveal,
   revealTargetName,
   onDownload,
+  onUploadFiles,
   onAddToChat,
   onNewFile,
   onNewFolder,
@@ -165,6 +191,7 @@ export function FileActionsContextMenuContent({
             onSelect: onReveal,
           }
         : null,
+      buildUploadAction(fileKind, onUploadFiles, t("workspace.fileActions.uploadFiles")),
       // A folder downloads as a zip, so this is gated on existence rather than kind.
       // The caller withholds onDownload when the host cannot stream archives.
       fileExists && onDownload
@@ -240,6 +267,7 @@ export function FileActionsContextMenuContent({
     onCopyRelativePath,
     onDelete,
     onDownload,
+    onUploadFiles,
     onDuplicate,
     onNewFile,
     onNewFolder,

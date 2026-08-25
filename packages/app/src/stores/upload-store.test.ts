@@ -1,0 +1,126 @@
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+vi.mock("@/i18n/i18next", () => ({ i18n: { t: (key: string) => key } }));
+
+const { useUploadStore } = await import("./upload-store");
+
+const file = (fileName: string, body: string) => ({
+  fileName,
+  mimeType: "text/plain",
+  bytes: new TextEncoder().encode(body),
+});
+
+beforeEach(() => {
+  useUploadStore.setState({ uploads: new Map(), activeUploadId: null });
+});
+
+describe("upload store", () => {
+  test("uploads each picked file into the target folder", async () => {
+    const calls: Array<{ path: string; overwrite: string }> = [];
+
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: "assets",
+      files: [file("a.txt", "one"), file("b.txt", "two")],
+      uploadEntry: async ({ path, overwrite }) => {
+        calls.push({ path, overwrite });
+        return { path, size: 3 };
+      },
+    });
+
+    expect(calls).toEqual([
+      { path: "assets/a.txt", overwrite: "rename" },
+      { path: "assets/b.txt", overwrite: "rename" },
+    ]);
+    const statuses = [...useUploadStore.getState().uploads.values()].map((u) => u.status);
+    expect(statuses).toEqual(["complete", "complete"]);
+  });
+
+  test("joins paths correctly at the workspace root", async () => {
+    const paths: string[] = [];
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: ".",
+      files: [file("root.txt", "x")],
+      uploadEntry: async ({ path }) => {
+        paths.push(path);
+        return { path, size: 1 };
+      },
+    });
+    expect(paths).toEqual(["root.txt"]);
+  });
+
+  test("never clobbers: the daemon is asked to rename on a collision", async () => {
+    let seen = "";
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: ".",
+      files: [file("a.txt", "x")],
+      uploadEntry: async ({ path, overwrite }) => {
+        seen = overwrite;
+        return { path, size: 1 };
+      },
+    });
+    expect(seen).toBe("rename");
+  });
+
+  test("one failure does not stop the remaining files", async () => {
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: ".",
+      files: [file("bad.txt", "x"), file("good.txt", "y")],
+      uploadEntry: async ({ path }) => {
+        if (path === "bad.txt") {
+          throw new Error("Upload is too large.");
+        }
+        return { path, size: 1 };
+      },
+    });
+
+    const uploads = [...useUploadStore.getState().uploads.values()];
+    expect(uploads.map((u) => u.status)).toEqual(["error", "complete"]);
+    expect(uploads[0].message).toBe("Upload is too large.");
+  });
+
+  test("refreshes the folder once, only when something landed", async () => {
+    const refreshed: string[] = [];
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: "assets",
+      files: [file("a.txt", "x")],
+      uploadEntry: async ({ path }) => ({ path, size: 1 }),
+      onUploaded: (parentPath) => refreshed.push(parentPath),
+    });
+    expect(refreshed).toEqual(["assets"]);
+
+    refreshed.length = 0;
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: "assets",
+      files: [file("a.txt", "x")],
+      uploadEntry: async () => {
+        throw new Error("nope");
+      },
+      onUploaded: (parentPath) => refreshed.push(parentPath),
+    });
+    expect(refreshed).toEqual([]);
+  });
+
+  test("reports completed progress against the real byte length", async () => {
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: ".",
+      files: [file("a.txt", "hello")],
+      uploadEntry: async ({ path }) => ({ path, size: 5 }),
+    });
+    const upload = [...useUploadStore.getState().uploads.values()][0];
+    expect(upload.progress).toMatchObject({ percent: 1, bytesWritten: 5, totalBytes: 5 });
+  });
+});
