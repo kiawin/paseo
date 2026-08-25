@@ -2212,6 +2212,332 @@ test("readFile resolves from binary file frames when the daemon supports them", 
   expect(new TextDecoder().decode(result.bytes)).toBe("hello");
 });
 
+function concat(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+function connectedDownloadClient() {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  return { mock, client };
+}
+
+function downloadOk(requestId: string, size: number) {
+  return wrapSessionMessage({
+    type: "fs.entry.download.response",
+    payload: {
+      cwd: "/tmp/project",
+      path: "logo.png",
+      kind: "file",
+      fileName: "logo.png",
+      mimeType: "image/png",
+      size,
+      success: true,
+      error: null,
+      requestId,
+    },
+  });
+}
+
+test("downloadEntry streams bytes to the sink instead of buffering them", async () => {
+  const { mock, client } = connectedDownloadClient();
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const chunks: Uint8Array[] = [];
+  const promise = client.downloadEntry({
+    cwd: "/tmp/project",
+    path: "logo.png",
+    requestId: "req-dl",
+    sink: { onChunk: (chunk) => void chunks.push(chunk) },
+  });
+
+  expect(JSON.parse(assertStr(mock.sent[0]))).toEqual({
+    type: "session",
+    message: {
+      type: "fs.entry.download.request",
+      cwd: "/tmp/project",
+      path: "logo.png",
+      requestId: "req-dl",
+    },
+  });
+
+  mock.triggerMessage(downloadOk("req-dl", 5));
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId: "req-dl",
+      metadata: {
+        mime: "image/png",
+        size: 5,
+        encoding: "binary",
+        modifiedAt: "2026-05-02T00:00:00.000Z",
+      },
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "req-dl",
+      payload: new TextEncoder().encode("hel"),
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "req-dl",
+      payload: new TextEncoder().encode("lo"),
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId: "req-dl" }),
+  );
+
+  const result = await promise;
+  expect(result).toEqual({
+    kind: "file",
+    fileName: "logo.png",
+    mimeType: "image/png",
+    size: 5,
+  });
+  expect(new TextDecoder().decode(concat(chunks))).toBe("hello");
+
+  const acks = mock.sent
+    .map((frame) => JSON.parse(assertStr(frame)))
+    .filter((frame) => frame.message?.type === "fs.transfer.ack");
+  expect(acks.at(-1).message).toEqual({
+    type: "fs.transfer.ack",
+    requestId: "req-dl",
+    bytesReceived: 5,
+  });
+});
+
+test("downloadEntry preserves chunk order when the sink writes asynchronously", async () => {
+  const { mock, client } = connectedDownloadClient();
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const order: string[] = [];
+  const promise = client.downloadEntry({
+    cwd: "/tmp/project",
+    path: "logo.png",
+    requestId: "req-order",
+    sink: {
+      onChunk: async (chunk) => {
+        const label = new TextDecoder().decode(chunk);
+        // A later chunk resolves sooner if the calls are not chained.
+        await new Promise((resolve) => setTimeout(resolve, label === "a" ? 20 : 0));
+        order.push(label);
+      },
+    },
+  });
+
+  mock.triggerMessage(downloadOk("req-order", 2));
+  for (const label of ["a", "b"]) {
+    mock.triggerMessage(
+      encodeFileTransferFrame({
+        opcode: FileTransferOpcode.FileChunk,
+        requestId: "req-order",
+        payload: new TextEncoder().encode(label),
+      }),
+    );
+  }
+  mock.triggerMessage(
+    encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId: "req-order" }),
+  );
+
+  await promise;
+  expect(order).toEqual(["a", "b"]);
+});
+
+test("downloadEntry cancels the host transfer when its signal aborts", async () => {
+  const { mock, client } = connectedDownloadClient();
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const controller = new AbortController();
+  const promise = client.downloadEntry({
+    cwd: "/tmp/project",
+    path: "logo.png",
+    requestId: "req-cancel",
+    signal: controller.signal,
+    sink: { onChunk: () => {} },
+  });
+
+  mock.triggerMessage(downloadOk("req-cancel", 1024));
+  controller.abort();
+
+  await expect(promise).rejects.toThrow("Download cancelled.");
+  const cancels = mock.sent
+    .map((frame) => JSON.parse(assertStr(frame)))
+    .filter((frame) => frame.message?.type === "fs.transfer.cancel");
+  expect(cancels).toHaveLength(1);
+  expect(cancels[0].message.requestId).toBe("req-cancel");
+});
+
+test("downloadEntry fails when the host cancels mid-stream", async () => {
+  const { mock, client } = connectedDownloadClient();
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.downloadEntry({
+    cwd: "/tmp/project",
+    path: "logo.png",
+    requestId: "req-host-cancel",
+    sink: { onChunk: () => {} },
+  });
+
+  mock.triggerMessage(downloadOk("req-host-cancel", 1024));
+  mock.triggerMessage(
+    wrapSessionMessage({ type: "fs.transfer.cancel", requestId: "req-host-cancel" }),
+  );
+
+  await expect(promise).rejects.toThrow("The host cancelled this transfer.");
+});
+
+test("downloadEntry surfaces a refusal without waiting for frames", async () => {
+  const { mock, client } = connectedDownloadClient();
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.downloadEntry({
+    cwd: "/tmp/project",
+    path: "missing.png",
+    requestId: "req-missing",
+    sink: { onChunk: () => {} },
+  });
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.entry.download.response",
+      payload: {
+        cwd: "/tmp/project",
+        path: "missing.png",
+        kind: null,
+        fileName: null,
+        mimeType: null,
+        size: null,
+        success: false,
+        error: "Requested path is not a file",
+        requestId: "req-missing",
+      },
+    }),
+  );
+
+  await expect(promise).rejects.toThrow("Requested path is not a file");
+});
+
+test("readFile reassembles a multi-chunk binary payload byte-identically", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  // Every byte value, so a chunk-boundary or sign-extension bug shows up as a mismatch.
+  const fixture = new Uint8Array(1024);
+  for (let i = 0; i < fixture.byteLength; i += 1) {
+    fixture[i] = i % 256;
+  }
+  const chunkSize = 100; // deliberately not a divisor of 1024: the last chunk is short
+  const responsePromise = client.readFile("/tmp/project", "fixture.bin", "req-multi");
+
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId: "req-multi",
+      metadata: {
+        mime: "application/octet-stream",
+        size: fixture.byteLength,
+        encoding: "binary",
+        modifiedAt: "2026-05-02T00:00:00.000Z",
+      },
+    }),
+  );
+  for (let offset = 0; offset < fixture.byteLength; offset += chunkSize) {
+    mock.triggerMessage(
+      encodeFileTransferFrame({
+        opcode: FileTransferOpcode.FileChunk,
+        requestId: "req-multi",
+        payload: fixture.slice(offset, offset + chunkSize),
+      }),
+    );
+  }
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileEnd,
+      requestId: "req-multi",
+    }),
+  );
+
+  const result = await responsePromise;
+  expect(result.size).toBe(fixture.byteLength);
+  expect(Array.from(result.bytes)).toEqual(Array.from(fixture));
+});
+
+test("readFile ignores binary frames for a requestId it never registered", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  expect(() => {
+    mock.triggerMessage(
+      encodeFileTransferFrame({
+        opcode: FileTransferOpcode.FileChunk,
+        requestId: "req-unknown",
+        payload: new TextEncoder().encode("stray"),
+      }),
+    );
+    mock.triggerMessage(
+      encodeFileTransferFrame({
+        opcode: FileTransferOpcode.FileEnd,
+        requestId: "req-unknown",
+      }),
+    );
+  }).not.toThrow();
+});
+
 test("readFile drops an old daemon's over-budget binary chunks and reports the refusal", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({

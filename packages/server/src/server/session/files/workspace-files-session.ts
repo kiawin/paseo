@@ -9,11 +9,14 @@ import type {
   FileDownloadTokenRequest,
   FileEntryCreateRequest,
   FileEntryDeleteRequest,
+  FileEntryDownloadRequest,
   FileEntryDuplicateRequest,
   FileEntryRenameRequest,
   FileExplorerRequest,
   FileUploadRequest,
   FileSubscribeRequest,
+  FileTransferAck,
+  FileTransferCancel,
   FileUnsubscribeRequest,
   FileWriteRequest,
   SessionInboundMessage,
@@ -33,6 +36,7 @@ import {
   writeExplorerFile,
 } from "../../file-explorer/service.js";
 import { workspaceFileObserver, type FileObserver } from "../../file-explorer/observer.js";
+import { TransferFlowControl } from "./transfer-flow-control.js";
 import { getProjectIcon } from "../../../utils/project-icon.js";
 
 /**
@@ -69,6 +73,7 @@ export class WorkspaceFilesSession {
   private readonly fileUploads: FileUploadStore;
   private readonly fileObserver: FileObserver;
   private readonly fileSubscriptions = new Map<string, () => void>();
+  private readonly activeDownloads = new Map<string, TransferFlowControl>();
 
   constructor(options: WorkspaceFilesSessionOptions) {
     this.host = options.host;
@@ -216,6 +221,9 @@ export class WorkspaceFilesSession {
   dispose(): void {
     for (const unsubscribe of this.fileSubscriptions.values()) unsubscribe();
     this.fileSubscriptions.clear();
+    // A parked sender is waiting on an ack that will never arrive once the client is gone.
+    for (const flow of this.activeDownloads.values()) flow.cancel();
+    this.activeDownloads.clear();
   }
 
   async handleFileExplorerRequest(request: FileExplorerRequest, source?: object): Promise<void> {
@@ -347,6 +355,131 @@ export class WorkspaceFilesSession {
         source,
       );
     }
+  }
+
+  /**
+   * Streams one workspace entry to the client over the binary channel.
+   *
+   * This is the WebSocket replacement for `GET /api/files/download`: a relay carries only
+   * `/health` and `/ws`, so an HTTP download cannot work on a relay connection at all.
+   * The client registers a sink for `requestId` before sending the request, so the metadata
+   * response and the frames that follow both land on a receiver that already exists.
+   */
+  async handleEntryDownloadRequest(
+    request: FileEntryDownloadRequest,
+    source?: object,
+  ): Promise<void> {
+    const { cwd, path: requestedPath, requestId } = request;
+    const flow = new TransferFlowControl();
+    this.activeDownloads.set(requestId, flow);
+    let streamStarted = false;
+
+    try {
+      if (!this.host.hasBinaryChannel()) {
+        throw new Error("This connection cannot carry file downloads.");
+      }
+
+      // `kind` comes from the daemon's own stat, never from the client.
+      const info = await getDownloadableFileInfo({ root: cwd, relativePath: requestedPath });
+
+      this.host.emit(
+        {
+          type: "fs.entry.download.response",
+          payload: {
+            cwd,
+            path: info.path,
+            kind: "file",
+            fileName: info.fileName,
+            mimeType: info.mimeType,
+            size: info.size,
+            success: true,
+            error: null,
+            requestId,
+          },
+        },
+        source,
+      );
+
+      await streamExplorerFile({ root: cwd, relativePath: requestedPath }, async (file) => {
+        streamStarted = true;
+        await this.host.emitBinary(
+          encodeFileTransferFrame({
+            opcode: FileTransferOpcode.FileBegin,
+            requestId,
+            metadata: {
+              mime: file.mimeType,
+              size: file.size,
+              encoding: file.encoding,
+              modifiedAt: file.modifiedAt,
+              revision: file.revision,
+            },
+          }),
+          source,
+        );
+
+        for await (const chunk of file.chunks) {
+          await flow.awaitWindow();
+          if (flow.isCancelled) {
+            return;
+          }
+          await this.host.emitBinary(
+            encodeFileTransferFrame({
+              opcode: FileTransferOpcode.FileChunk,
+              requestId,
+              payload: chunk,
+            }),
+            source,
+          );
+          flow.recordSent(chunk.byteLength);
+        }
+
+        if (flow.isCancelled) {
+          return;
+        }
+        await this.host.emitBinary(
+          encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }),
+          source,
+        );
+      });
+    } catch (error) {
+      this.logger.error(
+        { err: error, cwd, path: requestedPath },
+        `Failed to stream download for workspace ${cwd}`,
+      );
+      if (streamStarted) {
+        // The client is already draining frames and is no longer awaiting the response,
+        // so cancel is the only signal it will act on.
+        this.host.emit({ type: "fs.transfer.cancel", requestId }, source);
+      } else {
+        this.host.emit(
+          {
+            type: "fs.entry.download.response",
+            payload: {
+              cwd,
+              path: requestedPath,
+              kind: null,
+              fileName: null,
+              mimeType: null,
+              size: null,
+              success: false,
+              error: getErrorMessage(error),
+              requestId,
+            },
+          },
+          source,
+        );
+      }
+    } finally {
+      this.activeDownloads.delete(requestId);
+    }
+  }
+
+  handleFileTransferAck(message: FileTransferAck): void {
+    this.activeDownloads.get(message.requestId)?.onAck(message.bytesReceived);
+  }
+
+  handleFileTransferCancel(message: FileTransferCancel): void {
+    this.activeDownloads.get(message.requestId)?.cancel();
   }
 
   handleFileUploadRequest(request: FileUploadRequest): void {

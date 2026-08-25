@@ -828,23 +828,52 @@ interface CorrelatedResponseIdentity {
   responseType?: string;
 }
 
-interface PendingBinaryFileRead {
-  cwd: string;
-  path: string;
-  maxBytes?: number;
+type FileBeginMetadata = Extract<
+  FileTransferFrame,
+  { opcode: typeof FileTransferOpcode.FileBegin }
+>["metadata"];
+
+/**
+ * Receiver for one daemon -> client binary transfer, keyed by requestId.
+ *
+ * Chunks are handed over as they arrive rather than accumulated here, so a consumer
+ * that streams to disk never holds the whole payload. `readFile` registers a sink
+ * that buffers, which is why explorer preview behaviour is unchanged.
+ */
+interface BinaryFileSink {
+  onBegin?: (metadata: FileBeginMetadata) => void;
+  onChunk: (chunk: Uint8Array) => void;
+  onEnd: () => void;
 }
 
-interface BinaryFileTransferState extends PendingBinaryFileRead {
-  mime: string;
-  size: number;
-  encoding: Extract<
-    FileTransferFrame,
-    { opcode: typeof FileTransferOpcode.FileBegin }
-  >["metadata"]["encoding"];
-  modifiedAt: string;
-  revision?: string;
-  chunks: Uint8Array[];
+/**
+ * Receives one entry's bytes as they arrive. `onChunk` may be async — calls are
+ * chained, so a consumer writing to disk sees chunks in wire order and never
+ * overlapping.
+ */
+export interface DownloadEntrySink {
+  onBegin?: (metadata: FileBeginMetadata) => void;
+  onChunk: (chunk: Uint8Array) => void | Promise<void>;
 }
+
+export interface DownloadEntryInput {
+  cwd: string;
+  path: string;
+  sink: DownloadEntrySink;
+  signal?: AbortSignal;
+  requestId?: string;
+}
+
+export interface DownloadEntryResult {
+  kind: "file" | "archive";
+  fileName: string;
+  mimeType: string;
+  /** Null for a streamed archive, whose length is not known before it is written. */
+  size: number | null;
+}
+
+/** Matches the 8 MiB sender window in the daemon: four acks fill it. */
+const DOWNLOAD_ACK_INTERVAL_BYTES = 2 * 1024 * 1024;
 
 type RpcWaitResult<T> = { kind: "ok"; value: T } | { kind: "error"; error: DaemonRpcError };
 type GetDaemonConfigResponse = Extract<
@@ -1093,8 +1122,8 @@ export class DaemonClient {
     { cwd: string; path: string; onUpdate: (version: FileVersion) => void }
   >();
   private readonly terminalStreams = new TerminalStreamRouter();
-  private pendingBinaryFileReads = new Map<string, PendingBinaryFileRead>();
-  private activeBinaryFileTransfers = new Map<string, BinaryFileTransferState>();
+  private binaryFileSinks = new Map<string, BinaryFileSink>();
+  private activeDownloadAborts = new Map<string, (error: Error) => void>();
   private completedBinaryFileReads = new Map<string, FileReadResult>();
   private logger: Logger;
   private pendingSendQueue: PendingSend[] = [];
@@ -4347,7 +4376,66 @@ export class DaemonClient {
     maxBytes?: number,
   ): Promise<FileReadResult> {
     const resolvedRequestId = this.createRequestId(requestId);
-    this.pendingBinaryFileReads.set(resolvedRequestId, { cwd, path, maxBytes });
+    let begun: FileBeginMetadata | null = null;
+    let chunks: Uint8Array[] = [];
+    // COMPAT(fileReadByteBudget): added in v0.5.0, remove after 2027-02-21 once daemon floor >= v0.5.0.
+    // Old daemons stream despite maxBytes; discard before client-side accumulation.
+    let overBudget = false;
+    this.binaryFileSinks.set(resolvedRequestId, {
+      onBegin: (metadata) => {
+        begun = metadata;
+        chunks = [];
+        overBudget = maxBytes !== undefined && metadata.size > maxBytes;
+      },
+      onChunk: (chunk) => {
+        if (!begun || overBudget) {
+          return;
+        }
+        chunks.push(chunk);
+      },
+      onEnd: () => {
+        const metadata = begun;
+        if (!metadata) {
+          return;
+        }
+        if (overBudget) {
+          this.handleSessionMessage({
+            type: "file_explorer_response",
+            payload: {
+              cwd,
+              path,
+              mode: "file",
+              directory: null,
+              file: null,
+              error: "File is too large to display",
+              requestId: resolvedRequestId,
+            },
+          });
+          return;
+        }
+        this.completedBinaryFileReads.set(resolvedRequestId, {
+          bytes: concatByteChunks(chunks, metadata.size),
+          mime: metadata.mime,
+          size: metadata.size,
+          path,
+          kind: binaryFileKind(metadata.mime, metadata.encoding),
+          modifiedAt: metadata.modifiedAt,
+          revision: metadata.revision,
+        });
+        this.handleSessionMessage({
+          type: "file_explorer_response",
+          payload: {
+            cwd,
+            path,
+            mode: "file",
+            directory: null,
+            file: null,
+            error: null,
+            requestId: resolvedRequestId,
+          },
+        });
+      },
+    });
     try {
       const payload = await this.requestFileExplorer(
         cwd,
@@ -4370,8 +4458,7 @@ export class DaemonClient {
       }
       return legacyExplorerFileToBytes(payload.file);
     } finally {
-      this.pendingBinaryFileReads.delete(resolvedRequestId);
-      this.activeBinaryFileTransfers.delete(resolvedRequestId);
+      this.binaryFileSinks.delete(resolvedRequestId);
     }
   }
 
@@ -4523,6 +4610,97 @@ export class DaemonClient {
     );
 
     return responsePromise;
+  }
+
+  /**
+   * Streams a workspace entry over the WebSocket binary channel.
+   *
+   * This replaces the `GET /api/files/download` path, which cannot work on a relay
+   * connection at all — the relay carries only `/health` and `/ws`. Bytes reach
+   * `input.sink` as they arrive rather than being buffered here, so folder archives
+   * and large files do not have to fit in memory.
+   *
+   * Gate on `server_info.features.workspaceFileTransfer` before calling.
+   */
+  async downloadEntry(input: DownloadEntryInput): Promise<DownloadEntryResult> {
+    const requestId = this.createRequestId(input.requestId);
+
+    let receivedBytes = 0;
+    let ackedBytes = 0;
+    let writeChain: Promise<void> = Promise.resolve();
+    let settle: (() => void) | null = null;
+    let abort: ((error: Error) => void) | null = null;
+    const completion = new Promise<void>((resolve, reject) => {
+      settle = resolve;
+      abort = reject;
+    });
+
+    const fail = (error: Error) => {
+      abort?.(error);
+    };
+    this.activeDownloadAborts.set(requestId, fail);
+
+    const onAbortSignal = () => {
+      this.sendSessionMessage({ type: "fs.transfer.cancel", requestId });
+      fail(new Error("Download cancelled."));
+    };
+    input.signal?.addEventListener("abort", onAbortSignal, { once: true });
+
+    this.binaryFileSinks.set(requestId, {
+      onBegin: (metadata) => {
+        input.sink.onBegin?.(metadata);
+      },
+      onChunk: (chunk) => {
+        receivedBytes += chunk.byteLength;
+        writeChain = writeChain.then(() => input.sink.onChunk(chunk));
+        if (receivedBytes - ackedBytes >= DOWNLOAD_ACK_INTERVAL_BYTES) {
+          ackedBytes = receivedBytes;
+          this.sendSessionMessage({
+            type: "fs.transfer.ack",
+            requestId,
+            bytesReceived: receivedBytes,
+          });
+        }
+      },
+      onEnd: () => {
+        this.sendSessionMessage({
+          type: "fs.transfer.ack",
+          requestId,
+          bytesReceived: receivedBytes,
+        });
+        writeChain.then(() => settle?.()).catch(fail);
+      },
+    });
+
+    try {
+      if (input.signal?.aborted) {
+        throw new Error("Download cancelled.");
+      }
+
+      const payload = await this.sendCorrelatedRequest({
+        requestId,
+        message: { type: "fs.entry.download.request", cwd: input.cwd, path: input.path, requestId },
+        responseType: "fs.entry.download.response",
+        options: { skipQueue: true },
+      });
+
+      if (!payload.success || !payload.kind || payload.fileName === null) {
+        throw new Error(payload.error ?? "Download failed.");
+      }
+
+      await completion;
+
+      return {
+        kind: payload.kind,
+        fileName: payload.fileName,
+        mimeType: payload.mimeType ?? "application/octet-stream",
+        size: payload.size,
+      };
+    } finally {
+      input.signal?.removeEventListener("abort", onAbortSignal);
+      this.binaryFileSinks.delete(requestId);
+      this.activeDownloadAborts.delete(requestId);
+    }
   }
 
   async requestDownloadToken(
@@ -5753,79 +5931,22 @@ export class DaemonClient {
   }
 
   private handleFileTransferFrame(frame: FileTransferFrame): void {
-    if (frame.opcode === FileTransferOpcode.FileBegin) {
-      const pending = this.pendingBinaryFileReads.get(frame.requestId);
-      if (!pending) {
-        return;
-      }
-      this.activeBinaryFileTransfers.set(frame.requestId, {
-        ...pending,
-        mime: frame.metadata.mime,
-        size: frame.metadata.size,
-        encoding: frame.metadata.encoding,
-        modifiedAt: frame.metadata.modifiedAt,
-        revision: frame.metadata.revision,
-        chunks: [],
-      });
+    const sink = this.binaryFileSinks.get(frame.requestId);
+    if (!sink) {
       return;
     }
 
-    const transfer = this.activeBinaryFileTransfers.get(frame.requestId);
-    if (!transfer) {
+    if (frame.opcode === FileTransferOpcode.FileBegin) {
+      sink.onBegin?.(frame.metadata);
       return;
     }
 
     if (frame.opcode === FileTransferOpcode.FileChunk) {
-      // COMPAT(fileReadByteBudget): added in v0.5.0, remove after 2027-02-21 once daemon floor >= v0.5.0.
-      // Old daemons stream despite maxBytes; discard before client-side accumulation.
-      if (transfer.maxBytes && transfer.size > transfer.maxBytes) {
-        return;
-      }
-      transfer.chunks.push(frame.payload);
+      sink.onChunk(frame.payload);
       return;
     }
 
-    // COMPAT(fileReadByteBudget): added in v0.5.0, remove after 2027-02-21 once daemon floor >= v0.5.0.
-    if (transfer.maxBytes && transfer.size > transfer.maxBytes) {
-      this.activeBinaryFileTransfers.delete(frame.requestId);
-      this.handleSessionMessage({
-        type: "file_explorer_response",
-        payload: {
-          cwd: transfer.cwd,
-          path: transfer.path,
-          mode: "file",
-          directory: null,
-          file: null,
-          error: "File is too large to display",
-          requestId: frame.requestId,
-        },
-      });
-      return;
-    }
-
-    const bytes = concatByteChunks(transfer.chunks, transfer.size);
-    this.activeBinaryFileTransfers.delete(frame.requestId);
-    this.completedBinaryFileReads.set(frame.requestId, {
-      bytes,
-      mime: transfer.mime,
-      size: transfer.size,
-      path: transfer.path,
-      kind: binaryFileKind(transfer.mime, transfer.encoding),
-      modifiedAt: transfer.modifiedAt,
-      revision: transfer.revision,
-    });
-    this.handleSessionMessage({
-      type: "file_explorer_response",
-      payload: {
-        cwd: transfer.cwd,
-        path: transfer.path,
-        mode: "file",
-        directory: null,
-        file: null,
-        error: null,
-        requestId: frame.requestId,
-      },
-    });
+    sink.onEnd();
   }
 
   private updateConnectionState(
@@ -5997,6 +6118,12 @@ export class DaemonClient {
           this.resolveConnect();
         }
       }
+    }
+
+    if (consumerMessage.type === "fs.transfer.cancel") {
+      this.activeDownloadAborts.get(consumerMessage.requestId)?.(
+        new Error("The host cancelled this transfer."),
+      );
     }
 
     if (consumerMessage.type === "terminal_stream_exit") {

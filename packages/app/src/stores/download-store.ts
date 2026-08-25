@@ -43,6 +43,18 @@ interface DownloadState {
       mimeType: string | null;
       error: string | null;
     }>;
+    /**
+     * Streams the entry over the WebSocket binary channel. Present only when the host
+     * advertises `workspaceFileTransfer`; the caller owns that gate. When absent the
+     * store falls back to the HTTP endpoint, which cannot work on a relay connection.
+     */
+    downloadEntry?: (input: {
+      path: string;
+      sink: {
+        onBegin?: (metadata: { size: number; sizeKnown?: boolean }) => void;
+        onChunk: (chunk: Uint8Array) => void | Promise<void>;
+      };
+    }) => Promise<{ fileName: string; mimeType: string; size: number | null }>;
   }) => Promise<void>;
 
   updateProgress: (id: string, progress: DownloadProgress) => void;
@@ -50,6 +62,113 @@ interface DownloadState {
   failDownload: (id: string, message: string) => void;
   dismissDownload: (id: string) => void;
   dismissAllCompleted: () => void;
+}
+
+/**
+ * Drives one download over the WebSocket binary channel.
+ *
+ * Web collects Blob parts and clicks an object URL; native writes each chunk straight to
+ * a file handle so a large download never has to fit in memory. Progress repaints at most
+ * once a second — the toast used to repaint on every callback.
+ */
+async function runBinaryChannelDownload({
+  path,
+  fileName,
+  downloadEntry,
+  onProgress,
+}: {
+  id: string;
+  path: string;
+  fileName: string;
+  downloadEntry: NonNullable<Parameters<DownloadState["startDownload"]>[0]["downloadEntry"]>;
+  onProgress: (progress: DownloadProgress) => void;
+}): Promise<void> {
+  const startedAt = Date.now();
+  let receivedBytes = 0;
+  let totalBytes = 0;
+  let lastRepaintAt = 0;
+
+  const report = (force: boolean) => {
+    const now = Date.now();
+    if (!force && now - lastRepaintAt < 1000) {
+      return;
+    }
+    lastRepaintAt = now;
+    const elapsed = (now - startedAt) / 1000;
+    const speed = elapsed > 0 ? receivedBytes / elapsed : 0;
+    const remaining = totalBytes > 0 ? Math.max(totalBytes - receivedBytes, 0) : 0;
+    onProgress({
+      percent: totalBytes > 0 ? receivedBytes / totalBytes : 0,
+      bytesWritten: receivedBytes,
+      totalBytes,
+      speed,
+      eta: speed > 0 && totalBytes > 0 ? remaining / speed : 0,
+    });
+  };
+
+  if (isWeb) {
+    const parts: Uint8Array[] = [];
+    const result = await downloadEntry({
+      path,
+      sink: {
+        onBegin: (metadata) => {
+          totalBytes = metadata.sizeKnown === false ? 0 : metadata.size;
+        },
+        onChunk: (chunk) => {
+          parts.push(chunk);
+          receivedBytes += chunk.byteLength;
+          report(false);
+        },
+      },
+    });
+    report(true);
+
+    const resolvedFileName = result.fileName || fileName;
+    const blob = new Blob(parts as BlobPart[], {
+      type: result.mimeType || "application/octet-stream",
+    });
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      triggerBrowserDownload(objectUrl, resolvedFileName);
+    } finally {
+      // Revoking synchronously can race the click on some browsers.
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    }
+    return;
+  }
+
+  const targetFile = resolveDownloadTargetFile(fileName);
+  targetFile.create();
+  const handle = targetFile.open();
+  let result: { fileName: string; mimeType: string; size: number | null };
+  try {
+    result = await downloadEntry({
+      path,
+      sink: {
+        onBegin: (metadata) => {
+          totalBytes = metadata.sizeKnown === false ? 0 : metadata.size;
+        },
+        onChunk: (chunk) => {
+          handle.writeBytes(chunk);
+          receivedBytes += chunk.byteLength;
+          report(false);
+        },
+      },
+    });
+  } finally {
+    handle.close();
+  }
+  report(true);
+
+  if (await Sharing.isAvailableAsync()) {
+    const resolvedFileName = result.fileName || fileName;
+    await Sharing.shareAsync(targetFile.uri, {
+      mimeType: result.mimeType || undefined,
+      dialogTitle: resolvedFileName
+        ? i18n.t("downloads.shareFileNamed", { fileName: resolvedFileName })
+        : i18n.t("downloads.shareFile"),
+    });
+  }
 }
 
 function generateDownloadId(): string {
@@ -67,6 +186,7 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
     path,
     daemonProfile,
     requestFileDownloadToken,
+    downloadEntry,
   }) => {
     const id = generateDownloadId();
     const download: Download = {
@@ -84,6 +204,21 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
     }));
 
     try {
+      if (downloadEntry) {
+        await runBinaryChannelDownload({
+          id,
+          path,
+          fileName,
+          downloadEntry,
+          onProgress: (progress) => get().updateProgress(id, progress),
+        });
+        get().completeDownload(id);
+        return;
+      }
+
+      // COMPAT(httpFileDownload): added in v0.5.2, remove after 2027-02-01 once the daemon
+      // floor ships fs.entry.download. This path needs a second origin the relay does not
+      // expose, which is the root cause of the #543 issue cluster.
       const tokenResponse = await requestFileDownloadToken(path);
       if (tokenResponse.error || !tokenResponse.token) {
         throw new Error(tokenResponse.error ?? i18n.t("downloads.requestTokenFailed"));

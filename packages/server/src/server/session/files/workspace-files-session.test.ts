@@ -598,3 +598,192 @@ describe("WorkspaceFilesSession", () => {
     );
   });
 });
+
+describe("entry download over the binary channel", () => {
+  function decodeAll(binary: Uint8Array[]): FileTransferFrame[] {
+    return binary.map((frame) => {
+      const decoded = decodeFileTransferFrame(frame);
+      if (!decoded) {
+        throw new Error("expected a decodable file-transfer frame");
+      }
+      return decoded;
+    });
+  }
+
+  test("answers with metadata, then streams the file as binary frames", async () => {
+    const { subsystem, emitted, binary } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-files-dl-");
+    writeFileSync(join(cwd, "notes.txt"), "hello world");
+
+    await subsystem.handleEntryDownloadRequest({
+      type: "fs.entry.download.request",
+      cwd,
+      path: "notes.txt",
+      requestId: "req-1",
+    });
+
+    expect(emitted).toEqual([
+      {
+        type: "fs.entry.download.response",
+        payload: {
+          cwd,
+          path: "notes.txt",
+          kind: "file",
+          fileName: "notes.txt",
+          mimeType: "text/plain",
+          size: 11,
+          success: true,
+          error: null,
+          requestId: "req-1",
+        },
+      },
+    ]);
+
+    const frames = decodeAll(binary);
+    expect(frames[0].opcode).toBe(FileTransferOpcode.FileBegin);
+    expect(frames.at(-1)?.opcode).toBe(FileTransferOpcode.FileEnd);
+
+    const body = frames
+      .filter((frame) => frame.opcode === FileTransferOpcode.FileChunk)
+      .map((frame) => new TextDecoder().decode(frame.payload))
+      .join("");
+    expect(body).toBe("hello world");
+  });
+
+  test("preserves a non-ASCII filename byte-for-byte", async () => {
+    const { subsystem, emitted } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-files-cjk-");
+    const fileName = "設計ノート.md";
+    writeFileSync(join(cwd, fileName), "x");
+
+    await subsystem.handleEntryDownloadRequest({
+      type: "fs.entry.download.request",
+      cwd,
+      path: fileName,
+      requestId: "req-cjk",
+    });
+
+    const response = emitted[0];
+    expect(response.type).toBe("fs.entry.download.response");
+    if (response.type === "fs.entry.download.response") {
+      expect(response.payload.fileName).toBe(fileName);
+      expect(response.payload.success).toBe(true);
+    }
+  });
+
+  test("refuses a directory until archives exist, without emitting frames", async () => {
+    const { subsystem, emitted, binary } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-files-dir-");
+
+    await subsystem.handleEntryDownloadRequest({
+      type: "fs.entry.download.request",
+      cwd,
+      path: ".",
+      requestId: "req-dir",
+    });
+
+    expect(binary).toHaveLength(0);
+    const response = emitted[0];
+    expect(response.type).toBe("fs.entry.download.response");
+    if (response.type === "fs.entry.download.response") {
+      expect(response.payload.success).toBe(false);
+      expect(response.payload.kind).toBeNull();
+      expect(response.payload.error).toContain("not a file");
+    }
+  });
+
+  test("refuses a path that escapes the workspace root", async () => {
+    const { subsystem, emitted, binary } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-files-escape-");
+
+    await subsystem.handleEntryDownloadRequest({
+      type: "fs.entry.download.request",
+      cwd,
+      path: "../../etc/passwd",
+      requestId: "req-escape",
+    });
+
+    expect(binary).toHaveLength(0);
+    const response = emitted[0];
+    expect(response.type).toBe("fs.entry.download.response");
+    if (response.type === "fs.entry.download.response") {
+      expect(response.payload.success).toBe(false);
+    }
+  });
+
+  test("refuses when the connection has no binary channel", async () => {
+    const { subsystem, emitted, binary } = makeSubsystem({ hasBinaryChannel: false });
+    const cwd = makeDir("workspace-files-nobinary-");
+    writeFileSync(join(cwd, "notes.txt"), "hello");
+
+    await subsystem.handleEntryDownloadRequest({
+      type: "fs.entry.download.request",
+      cwd,
+      path: "notes.txt",
+      requestId: "req-nobinary",
+    });
+
+    expect(binary).toHaveLength(0);
+    const response = emitted[0];
+    expect(response.type).toBe("fs.entry.download.response");
+    if (response.type === "fs.entry.download.response") {
+      expect(response.payload.success).toBe(false);
+    }
+  });
+
+  test("stops sending frames once the client cancels", async () => {
+    let cancelled = false;
+    const { subsystem, binary } = makeSubsystem({
+      hasBinaryChannel: true,
+      emitBinary: (frame) => {
+        const decoded = decodeFileTransferFrame(frame);
+        if (!cancelled && decoded?.opcode === FileTransferOpcode.FileChunk) {
+          cancelled = true;
+          subsystem.handleFileTransferCancel({
+            type: "fs.transfer.cancel",
+            requestId: "req-cancel",
+          });
+        }
+      },
+    });
+    const cwd = makeDir("workspace-files-cancel-");
+    // Comfortably more than one 256 KiB chunk, so a cancel lands mid-stream.
+    writeFileSync(join(cwd, "big.bin"), Buffer.alloc(1024 * 1024, 7));
+
+    await subsystem.handleEntryDownloadRequest({
+      type: "fs.entry.download.request",
+      cwd,
+      path: "big.bin",
+      requestId: "req-cancel",
+    });
+
+    const frames = decodeAll(binary);
+    expect(frames.some((frame) => frame.opcode === FileTransferOpcode.FileEnd)).toBe(false);
+    expect(
+      frames.filter((frame) => frame.opcode === FileTransferOpcode.FileChunk).length,
+    ).toBeLessThan(4);
+  });
+
+  test("dispose cancels an in-flight transfer rather than leaving it parked", async () => {
+    const { subsystem, binary } = makeSubsystem({
+      hasBinaryChannel: true,
+      emitBinary: (frame) => {
+        if (decodeFileTransferFrame(frame)?.opcode === FileTransferOpcode.FileChunk) {
+          subsystem.dispose();
+        }
+      },
+    });
+    const cwd = makeDir("workspace-files-dispose-");
+    writeFileSync(join(cwd, "big.bin"), Buffer.alloc(1024 * 1024, 7));
+
+    await subsystem.handleEntryDownloadRequest({
+      type: "fs.entry.download.request",
+      cwd,
+      path: "big.bin",
+      requestId: "req-dispose",
+    });
+
+    const frames = decodeAll(binary);
+    expect(frames.some((frame) => frame.opcode === FileTransferOpcode.FileEnd)).toBe(false);
+  });
+});
