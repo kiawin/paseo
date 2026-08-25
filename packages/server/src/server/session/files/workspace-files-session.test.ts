@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -799,5 +800,155 @@ describe("entry download over the binary channel", () => {
 
     const frames = decodeAll(binary);
     expect(frames.some((frame) => frame.opcode === FileTransferOpcode.FileEnd)).toBe(false);
+  });
+});
+
+describe("entry upload into the workspace", () => {
+  async function feed(
+    subsystem: WorkspaceFilesSession,
+    requestId: string,
+    payloads: string[],
+  ): Promise<void> {
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId,
+      metadata: {
+        mime: "text/plain",
+        size: 0,
+        encoding: "binary",
+        modifiedAt: "2026-08-25T00:00:00.000Z",
+      },
+      payload: new Uint8Array(),
+    });
+    for (const payload of payloads) {
+      await subsystem.handleFileTransferFrame({
+        opcode: FileTransferOpcode.FileChunk,
+        requestId,
+        payload: new TextEncoder().encode(payload),
+      });
+    }
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileEnd,
+      requestId,
+      payload: new Uint8Array(),
+    });
+  }
+
+  test("writes an uploaded file into the workspace and reports where it landed", async () => {
+    const { subsystem, emitted } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-upload-");
+
+    await subsystem.handleEntryUploadRequest({
+      type: "fs.entry.upload.request",
+      cwd,
+      path: "notes.txt",
+      mimeType: "text/plain",
+      size: 11,
+      modifiedAt: "2026-08-25T00:00:00.000Z",
+      overwrite: "fail",
+      requestId: "up-1",
+    });
+    // No response yet: the path is only known once the bytes land.
+    expect(emitted).toHaveLength(0);
+
+    await feed(subsystem, "up-1", ["hello ", "world"]);
+
+    expect(readFileSync(join(cwd, "notes.txt"), "utf8")).toBe("hello world");
+    const response = emitted.at(-1);
+    expect(response?.type).toBe("fs.entry.upload.response");
+    if (response?.type === "fs.entry.upload.response") {
+      expect(response.payload.success).toBe(true);
+      expect(response.payload.path).toBe("notes.txt");
+      expect(response.payload.size).toBe(11);
+    }
+  });
+
+  test("answers immediately when the target escapes the workspace", async () => {
+    const { subsystem, emitted } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-upload-escape-");
+
+    await subsystem.handleEntryUploadRequest({
+      type: "fs.entry.upload.request",
+      cwd,
+      path: "../escaped.txt",
+      mimeType: "text/plain",
+      size: 1,
+      modifiedAt: "2026-08-25T00:00:00.000Z",
+      overwrite: "replace",
+      requestId: "up-escape",
+    });
+
+    const response = emitted[0];
+    expect(response?.type).toBe("fs.entry.upload.response");
+    if (response?.type === "fs.entry.upload.response") {
+      expect(response.payload.success).toBe(false);
+      expect(response.payload.path).toBeNull();
+      expect(response.payload.error).toMatch(/outside of workspace/i);
+    }
+  });
+
+  test("renames rather than clobbering when asked", async () => {
+    const { subsystem, emitted } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-upload-rename-");
+    writeFileSync(join(cwd, "a.txt"), "original");
+
+    await subsystem.handleEntryUploadRequest({
+      type: "fs.entry.upload.request",
+      cwd,
+      path: "a.txt",
+      mimeType: "text/plain",
+      size: 3,
+      modifiedAt: "2026-08-25T00:00:00.000Z",
+      overwrite: "rename",
+      requestId: "up-rename",
+    });
+    await feed(subsystem, "up-rename", ["new"]);
+
+    expect(readFileSync(join(cwd, "a.txt"), "utf8")).toBe("original");
+    expect(readFileSync(join(cwd, "a (1).txt"), "utf8")).toBe("new");
+    const response = emitted.at(-1);
+    if (response?.type === "fs.entry.upload.response") {
+      expect(response.payload.path).toBe("a (1).txt");
+    }
+  });
+
+  test("cancelling mid-upload leaves nothing behind", async () => {
+    const { subsystem } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-upload-cancel-");
+
+    await subsystem.handleEntryUploadRequest({
+      type: "fs.entry.upload.request",
+      cwd,
+      path: "partial.txt",
+      mimeType: "text/plain",
+      size: 100,
+      modifiedAt: "2026-08-25T00:00:00.000Z",
+      overwrite: "fail",
+      requestId: "up-cancel",
+    });
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "up-cancel",
+      payload: new TextEncoder().encode("half"),
+    });
+    subsystem.handleFileTransferCancel({ type: "fs.transfer.cancel", requestId: "up-cancel" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(existsSync(join(cwd, "partial.txt"))).toBe(false);
+    expect(readdirSync(cwd)).toEqual([]);
+  });
+
+  test("routes frames for an unknown requestId to the attachment store, not the workspace", async () => {
+    const { subsystem } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-upload-router-");
+
+    // No workspace upload registered for this id, so the workspace tree stays untouched.
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "attachment-id",
+      payload: new TextEncoder().encode("attachment bytes"),
+    });
+
+    expect(readdirSync(cwd)).toEqual([]);
   });
 });

@@ -130,6 +130,8 @@ import {
   encodeFileTransferFrame,
   decodeTerminalStreamFrame,
   FileTransferOpcode,
+  TransferFlowControl,
+  TRANSFER_ACK_INTERVAL_BYTES,
   TerminalStreamOpcode,
   type FileTransferFrame,
 } from "@getpaseo/protocol/binary-frames/index";
@@ -872,8 +874,25 @@ export interface DownloadEntryResult {
   size: number | null;
 }
 
-/** Matches the 8 MiB sender window in the daemon: four acks fill it. */
-const DOWNLOAD_ACK_INTERVAL_BYTES = 2 * 1024 * 1024;
+export interface UploadEntryInput {
+  cwd: string;
+  path: string;
+  bytes: Uint8Array;
+  mimeType: string;
+  modifiedAt?: string;
+  /** "fail" refuses a taken name, "replace" overwrites, "rename" picks the next free name. */
+  overwrite?: "fail" | "replace" | "rename";
+  signal?: AbortSignal;
+  requestId?: string;
+  chunkSize?: number;
+}
+
+export interface UploadEntryResult {
+  path: string;
+  size: number;
+  modifiedAt: string;
+  revision?: string;
+}
 
 type RpcWaitResult<T> = { kind: "ok"; value: T } | { kind: "error"; error: DaemonRpcError };
 type GetDaemonConfigResponse = Extract<
@@ -1124,6 +1143,7 @@ export class DaemonClient {
   private readonly terminalStreams = new TerminalStreamRouter();
   private binaryFileSinks = new Map<string, BinaryFileSink>();
   private activeDownloadAborts = new Map<string, (error: Error) => void>();
+  private activeUploadFlows = new Map<string, TransferFlowControl>();
   private completedBinaryFileReads = new Map<string, FileReadResult>();
   private logger: Logger;
   private pendingSendQueue: PendingSend[] = [];
@@ -4653,7 +4673,7 @@ export class DaemonClient {
       onChunk: (chunk) => {
         receivedBytes += chunk.byteLength;
         writeChain = writeChain.then(() => input.sink.onChunk(chunk));
-        if (receivedBytes - ackedBytes >= DOWNLOAD_ACK_INTERVAL_BYTES) {
+        if (receivedBytes - ackedBytes >= TRANSFER_ACK_INTERVAL_BYTES) {
           ackedBytes = receivedBytes;
           this.sendSessionMessage({
             type: "fs.transfer.ack",
@@ -4700,6 +4720,97 @@ export class DaemonClient {
       input.signal?.removeEventListener("abort", onAbortSignal);
       this.binaryFileSinks.delete(requestId);
       this.activeDownloadAborts.delete(requestId);
+    }
+  }
+
+  /**
+   * Uploads bytes into the workspace tree over the binary channel.
+   *
+   * Unlike `uploadFile`, which stages a composer attachment under $PASEO_HOME, this writes
+   * into the user's repository. The daemon acks every 2 MiB; sending pauses at the shared
+   * 8 MiB window so a fast client cannot outrun a slow disk or a relay.
+   *
+   * Gate on `server_info.features.workspaceFileTransfer` before calling.
+   */
+  async uploadEntry(input: UploadEntryInput): Promise<UploadEntryResult> {
+    const requestId = this.createRequestId(input.requestId);
+    const modifiedAt = input.modifiedAt ?? new Date().toISOString();
+    const flow = new TransferFlowControl();
+    this.activeUploadFlows.set(requestId, flow);
+
+    const onAbortSignal = () => {
+      this.sendSessionMessage({ type: "fs.transfer.cancel", requestId });
+      flow.cancel();
+    };
+    input.signal?.addEventListener("abort", onAbortSignal, { once: true });
+
+    try {
+      const responsePromise = this.sendCorrelatedRequest({
+        requestId,
+        message: {
+          type: "fs.entry.upload.request",
+          cwd: input.cwd,
+          path: input.path,
+          mimeType: input.mimeType,
+          size: input.bytes.byteLength,
+          modifiedAt,
+          overwrite: input.overwrite ?? "fail",
+          requestId,
+        },
+        responseType: "fs.entry.upload.response",
+        options: { skipQueue: true },
+      });
+
+      this.sendBinaryFrame(
+        encodeFileTransferFrame({
+          opcode: FileTransferOpcode.FileBegin,
+          requestId,
+          metadata: {
+            mime: input.mimeType,
+            size: input.bytes.byteLength,
+            encoding: "binary",
+            modifiedAt,
+          },
+        }),
+      );
+
+      const chunkSize = input.chunkSize ?? 256 * 1024;
+      for (let offset = 0; offset < input.bytes.byteLength; offset += chunkSize) {
+        await flow.awaitWindow();
+        if (flow.isCancelled) {
+          throw new Error("Upload cancelled.");
+        }
+        const chunk = input.bytes.subarray(
+          offset,
+          Math.min(offset + chunkSize, input.bytes.byteLength),
+        );
+        this.sendBinaryFrame(
+          encodeFileTransferFrame({
+            opcode: FileTransferOpcode.FileChunk,
+            requestId,
+            payload: chunk,
+          }),
+        );
+        flow.recordSent(chunk.byteLength);
+      }
+
+      this.sendBinaryFrame(
+        encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }),
+      );
+
+      const payload = await responsePromise;
+      if (!payload.success || payload.path === null) {
+        throw new Error(payload.error ?? "Upload failed.");
+      }
+      return {
+        path: payload.path,
+        size: payload.size ?? input.bytes.byteLength,
+        modifiedAt: payload.modifiedAt ?? modifiedAt,
+        revision: payload.revision,
+      };
+    } finally {
+      input.signal?.removeEventListener("abort", onAbortSignal);
+      this.activeUploadFlows.delete(requestId);
     }
   }
 
@@ -6120,7 +6231,12 @@ export class DaemonClient {
       }
     }
 
+    if (consumerMessage.type === "fs.transfer.ack") {
+      this.activeUploadFlows.get(consumerMessage.requestId)?.onAck(consumerMessage.bytesReceived);
+    }
+
     if (consumerMessage.type === "fs.transfer.cancel") {
+      this.activeUploadFlows.get(consumerMessage.requestId)?.cancel();
       this.activeDownloadAborts.get(consumerMessage.requestId)?.(
         new Error("The host cancelled this transfer."),
       );

@@ -12,6 +12,9 @@
  */
 export const TRANSFER_WINDOW_BYTES = 8 * 1024 * 1024;
 
+/** Receivers ack at this interval and at end-of-stream: four acks fill the window. */
+export const TRANSFER_ACK_INTERVAL_BYTES = 2 * 1024 * 1024;
+
 export class TransferFlowControl {
   private sentBytes = 0;
   private ackedBytes = 0;

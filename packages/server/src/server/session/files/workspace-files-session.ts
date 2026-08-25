@@ -3,6 +3,8 @@ import { getErrorMessage } from "@getpaseo/protocol/error-utils";
 import {
   encodeFileTransferFrame,
   FileTransferOpcode,
+  TransferFlowControl,
+  TRANSFER_ACK_INTERVAL_BYTES,
   type FileTransferFrame,
 } from "@getpaseo/protocol/binary-frames/index";
 import type {
@@ -10,6 +12,7 @@ import type {
   FileEntryCreateRequest,
   FileEntryDeleteRequest,
   FileEntryDownloadRequest,
+  FileEntryUploadRequest,
   FileEntryDuplicateRequest,
   FileEntryRenameRequest,
   FileExplorerRequest,
@@ -26,6 +29,7 @@ import { FileUploadStore } from "../../file-upload/index.js";
 import type { DownloadTokenStore } from "../../file-download/token-store.js";
 import {
   createExplorerEntry,
+  createUploadSink,
   deleteExplorerEntry,
   duplicateExplorerEntry,
   getDownloadableEntryInfo,
@@ -36,9 +40,9 @@ import {
   streamDirectoryArchive,
   streamExplorerFile,
   writeExplorerFile,
+  type UploadSink,
 } from "../../file-explorer/service.js";
 import { workspaceFileObserver, type FileObserver } from "../../file-explorer/observer.js";
-import { TransferFlowControl } from "./transfer-flow-control.js";
 import { getProjectIcon } from "../../../utils/project-icon.js";
 
 /**
@@ -51,6 +55,15 @@ export interface WorkspaceFilesSessionHost {
   emit(msg: SessionOutboundMessage, source?: object): void;
   emitBinary(frame: Uint8Array, source?: object): Promise<void>;
   hasBinaryChannel(): boolean;
+}
+
+interface WorkspaceUploadState {
+  sink: UploadSink;
+  cwd: string;
+  requestedPath: string;
+  receivedBytes: number;
+  ackedBytes: number;
+  source?: object;
 }
 
 export interface WorkspaceFilesSessionOptions {
@@ -76,6 +89,7 @@ export class WorkspaceFilesSession {
   private readonly fileObserver: FileObserver;
   private readonly fileSubscriptions = new Map<string, () => void>();
   private readonly activeDownloads = new Map<string, TransferFlowControl>();
+  private readonly activeUploads = new Map<string, WorkspaceUploadState>();
 
   constructor(options: WorkspaceFilesSessionOptions) {
     this.host = options.host;
@@ -226,6 +240,9 @@ export class WorkspaceFilesSession {
     // A parked sender is waiting on an ack that will never arrive once the client is gone.
     for (const flow of this.activeDownloads.values()) flow.cancel();
     this.activeDownloads.clear();
+    // A half-written upload must not survive the connection that was feeding it.
+    for (const upload of this.activeUploads.values()) void upload.sink.abort();
+    this.activeUploads.clear();
   }
 
   async handleFileExplorerRequest(request: FileExplorerRequest, source?: object): Promise<void> {
@@ -543,19 +560,139 @@ export class WorkspaceFilesSession {
     );
   }
 
+  /**
+   * Opens a sink for an upload into the workspace tree.
+   *
+   * The response is withheld until the bytes land, because it reports the path the file
+   * actually took — "rename" mode may not be the path that was asked for. A failure to
+   * even open the sink (a path that escapes, or a taken name under "fail") answers
+   * immediately, before the client starts sending.
+   */
+  async handleEntryUploadRequest(request: FileEntryUploadRequest, source?: object): Promise<void> {
+    const { cwd, path: requestedPath, overwrite, requestId } = request;
+    try {
+      const sink = await createUploadSink({ root: cwd, relativePath: requestedPath, overwrite });
+      this.activeUploads.set(requestId, {
+        sink,
+        cwd,
+        requestedPath,
+        receivedBytes: 0,
+        ackedBytes: 0,
+        source,
+      });
+    } catch (error) {
+      this.logger.error(
+        { err: error, cwd, path: requestedPath },
+        `Failed to open upload sink for workspace ${cwd}`,
+      );
+      this.emitUploadFailure(cwd, requestId, getErrorMessage(error), source);
+    }
+  }
+
+  /** `path` stays null on failure: no file was written, so there is no path to report. */
+  private emitUploadFailure(cwd: string, requestId: string, error: string, source?: object): void {
+    this.host.emit(
+      {
+        type: "fs.entry.upload.response",
+        payload: {
+          cwd,
+          path: null,
+          size: null,
+          modifiedAt: null,
+          success: false,
+          error,
+          requestId,
+        },
+      },
+      source,
+    );
+  }
+
+  /** Feeds one inbound frame to whichever upload owns its requestId. */
+  private async receiveWorkspaceUploadFrame(
+    upload: WorkspaceUploadState,
+    frame: FileTransferFrame,
+  ): Promise<void> {
+    const requestId = frame.requestId;
+    try {
+      if (frame.opcode === FileTransferOpcode.FileBegin) {
+        // Everything the daemon needs came in fs.entry.upload.request.
+        return;
+      }
+
+      if (frame.opcode === FileTransferOpcode.FileChunk) {
+        await upload.sink.write(frame.payload);
+        upload.receivedBytes += frame.payload.byteLength;
+        if (upload.receivedBytes - upload.ackedBytes >= TRANSFER_ACK_INTERVAL_BYTES) {
+          upload.ackedBytes = upload.receivedBytes;
+          this.host.emit(
+            { type: "fs.transfer.ack", requestId, bytesReceived: upload.receivedBytes },
+            upload.source,
+          );
+        }
+        return;
+      }
+
+      const result = await upload.sink.commit();
+      this.activeUploads.delete(requestId);
+      this.host.emit(
+        {
+          type: "fs.entry.upload.response",
+          payload: {
+            cwd: upload.cwd,
+            path: result.path,
+            size: result.size,
+            modifiedAt: result.modifiedAt,
+            revision: result.revision,
+            success: true,
+            error: null,
+            requestId,
+          },
+        },
+        upload.source,
+      );
+    } catch (error) {
+      this.activeUploads.delete(requestId);
+      await upload.sink.abort().catch(() => undefined);
+      this.logger.error(
+        { err: error, cwd: upload.cwd, path: upload.requestedPath },
+        `Failed to receive upload for workspace ${upload.cwd}`,
+      );
+      this.emitUploadFailure(upload.cwd, requestId, getErrorMessage(error), upload.source);
+    }
+  }
+
   handleFileTransferAck(message: FileTransferAck): void {
     this.activeDownloads.get(message.requestId)?.onAck(message.bytesReceived);
   }
 
   handleFileTransferCancel(message: FileTransferCancel): void {
     this.activeDownloads.get(message.requestId)?.cancel();
+    const upload = this.activeUploads.get(message.requestId);
+    if (upload) {
+      this.activeUploads.delete(message.requestId);
+      void upload.sink.abort();
+    }
   }
 
   handleFileUploadRequest(request: FileUploadRequest): void {
     this.fileUploads.beginUpload(request);
   }
 
+  /**
+   * Routes an inbound binary frame by requestId.
+   *
+   * Composer attachments and workspace uploads share the frame format, so the requestId
+   * that registered the transfer decides which one owns it. Without this every frame
+   * would land in the attachment store.
+   */
   async handleFileTransferFrame(frame: FileTransferFrame): Promise<void> {
+    const upload = this.activeUploads.get(frame.requestId);
+    if (upload) {
+      await this.receiveWorkspaceUploadFrame(upload, frame);
+      return;
+    }
+
     const response = await this.fileUploads.receiveFrame(frame);
     if (response) {
       this.host.emit(response);

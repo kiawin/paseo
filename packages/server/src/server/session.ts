@@ -2481,6 +2481,8 @@ export class Session {
         return this.workspaceFilesSession.handleFileEntryDeleteRequest(msg);
       case "fs.entry.download.request":
         return this.workspaceFilesSession.handleEntryDownloadRequest(msg, source);
+      case "fs.entry.upload.request":
+        return this.workspaceFilesSession.handleEntryUploadRequest(msg, source);
       case "fs.transfer.ack":
         this.workspaceFilesSession.handleFileTransferAck(msg);
         return undefined;

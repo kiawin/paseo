@@ -1,0 +1,191 @@
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
+import { createUploadSink } from "./service.js";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function makeDir(prefix: string): string {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  tempDirs.push(dir);
+  return dir;
+}
+
+const bytes = (text: string) => new TextEncoder().encode(text);
+
+describe("createUploadSink path safety", () => {
+  test("refuses a relative path that climbs out of the workspace", async () => {
+    const root = makeDir("upload-escape-");
+    await expect(
+      createUploadSink({ root, relativePath: "../escaped.txt", overwrite: "fail" }),
+    ).rejects.toThrow(/outside of workspace/i);
+  });
+
+  test("refuses an absolute path", async () => {
+    const root = makeDir("upload-abs-");
+    await expect(
+      createUploadSink({ root, relativePath: "/etc/passwd", overwrite: "replace" }),
+    ).rejects.toThrow(/outside of workspace/i);
+  });
+
+  test("refuses a symlinked parent directory pointing outside the workspace", async () => {
+    const outside = makeDir("upload-outside-");
+    const root = makeDir("upload-symlink-parent-");
+    symlinkSync(outside, join(root, "escape"));
+
+    await expect(
+      createUploadSink({ root, relativePath: "escape/planted.txt", overwrite: "replace" }),
+    ).rejects.toThrow(/outside of workspace/i);
+    expect(readdirSync(outside)).toEqual([]);
+  });
+
+  test("refuses the workspace root itself as a target", async () => {
+    const root = makeDir("upload-noname-");
+    // "." resolves the parent above the root, so containment refuses it before
+    // the file-name guard is reached.
+    await expect(createUploadSink({ root, relativePath: ".", overwrite: "fail" })).rejects.toThrow(
+      /outside of workspace/i,
+    );
+  });
+});
+
+describe("createUploadSink overwrite modes", () => {
+  test("fail refuses when the name is taken and leaves the original intact", async () => {
+    const root = makeDir("upload-fail-");
+    writeFileSync(join(root, "a.txt"), "original");
+
+    await expect(
+      createUploadSink({ root, relativePath: "a.txt", overwrite: "fail" }),
+    ).rejects.toThrow(/already exists/i);
+    expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("original");
+  });
+
+  test("replace swaps the contents", async () => {
+    const root = makeDir("upload-replace-");
+    writeFileSync(join(root, "a.txt"), "original");
+
+    const sink = await createUploadSink({ root, relativePath: "a.txt", overwrite: "replace" });
+    await sink.write(bytes("replaced"));
+    const result = await sink.commit();
+
+    expect(result.path).toBe("a.txt");
+    expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("replaced");
+  });
+
+  test("rename picks the next free name instead of clobbering", async () => {
+    const root = makeDir("upload-rename-");
+    writeFileSync(join(root, "a.txt"), "original");
+
+    const sink = await createUploadSink({ root, relativePath: "a.txt", overwrite: "rename" });
+    await sink.write(bytes("second"));
+    const result = await sink.commit();
+
+    expect(result.path).toBe("a (1).txt");
+    expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("original");
+    expect(readFileSync(join(root, "a (1).txt"), "utf8")).toBe("second");
+  });
+
+  test("refuses a symlinked target that points outside the workspace", async () => {
+    const outside = makeDir("upload-linktarget-");
+    const secret = join(outside, "secret.txt");
+    writeFileSync(secret, "untouched");
+
+    const root = makeDir("upload-linkswap-");
+    symlinkSync(secret, join(root, "link.txt"));
+
+    await expect(
+      createUploadSink({ root, relativePath: "link.txt", overwrite: "replace" }),
+    ).rejects.toThrow(/outside of workspace/i);
+    expect(readFileSync(secret, "utf8")).toBe("untouched");
+  });
+
+  test("replaces a symlink that stays inside the workspace by swapping the link", async () => {
+    const root = makeDir("upload-innerlink-");
+    writeFileSync(join(root, "real.txt"), "original");
+    symlinkSync(join(root, "real.txt"), join(root, "link.txt"));
+
+    const sink = await createUploadSink({ root, relativePath: "link.txt", overwrite: "replace" });
+    await sink.write(bytes("new content"));
+    await sink.commit();
+
+    // rename() does not follow symlinks, so the link is replaced, not written through.
+    expect(readFileSync(join(root, "real.txt"), "utf8")).toBe("original");
+    expect(readFileSync(join(root, "link.txt"), "utf8")).toBe("new content");
+  });
+});
+
+describe("createUploadSink lifecycle", () => {
+  test("streams multiple chunks in order", async () => {
+    const root = makeDir("upload-chunks-");
+    const sink = await createUploadSink({ root, relativePath: "out.bin", overwrite: "fail" });
+    await sink.write(bytes("one "));
+    await sink.write(bytes("two "));
+    await sink.write(bytes("three"));
+    const result = await sink.commit();
+
+    expect(result.size).toBe(13);
+    expect(readFileSync(join(root, "out.bin"), "utf8")).toBe("one two three");
+  });
+
+  test("preserves a non-ASCII file name byte-for-byte", async () => {
+    const root = makeDir("upload-cjk-");
+    const fileName = "設計ノート 🗂.md";
+    const sink = await createUploadSink({ root, relativePath: fileName, overwrite: "fail" });
+    await sink.write(bytes("x"));
+    const result = await sink.commit();
+
+    expect(result.path).toBe(fileName);
+    expect(readdirSync(root)).toContain(fileName);
+  });
+
+  test("abort leaves no file and no temp file behind", async () => {
+    const root = makeDir("upload-abort-");
+    const sink = await createUploadSink({ root, relativePath: "partial.txt", overwrite: "fail" });
+    await sink.write(bytes("half"));
+    await sink.abort();
+
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  test("nothing is visible at the destination until commit", async () => {
+    const root = makeDir("upload-atomic-");
+    const sink = await createUploadSink({ root, relativePath: "late.txt", overwrite: "fail" });
+    await sink.write(bytes("in flight"));
+
+    expect(readdirSync(root).some((name) => name === "late.txt")).toBe(false);
+
+    await sink.commit();
+    expect(readFileSync(join(root, "late.txt"), "utf8")).toBe("in flight");
+  });
+
+  test("writing into a subdirectory of the workspace is allowed", async () => {
+    const root = makeDir("upload-subdir-");
+    mkdirSync(join(root, "assets"));
+
+    const sink = await createUploadSink({
+      root,
+      relativePath: "assets/logo.png",
+      overwrite: "fail",
+    });
+    await sink.write(bytes("png"));
+    const result = await sink.commit();
+
+    expect(result.path).toBe("assets/logo.png");
+  });
+});
