@@ -28,10 +28,12 @@ import {
   createExplorerEntry,
   deleteExplorerEntry,
   duplicateExplorerEntry,
+  getDownloadableEntryInfo,
   getDownloadableFileInfo,
   listDirectoryEntries,
   readExplorerFile,
   renameExplorerEntry,
+  streamDirectoryArchive,
   streamExplorerFile,
   writeExplorerFile,
 } from "../../file-explorer/service.js";
@@ -380,7 +382,7 @@ export class WorkspaceFilesSession {
       }
 
       // `kind` comes from the daemon's own stat, never from the client.
-      const info = await getDownloadableFileInfo({ root: cwd, relativePath: requestedPath });
+      const info = await getDownloadableEntryInfo({ root: cwd, relativePath: requestedPath });
 
       this.host.emit(
         {
@@ -388,7 +390,7 @@ export class WorkspaceFilesSession {
           payload: {
             cwd,
             path: info.path,
-            kind: "file",
+            kind: info.kind === "directory" ? "archive" : "file",
             fileName: info.fileName,
             mimeType: info.mimeType,
             size: info.size,
@@ -399,6 +401,12 @@ export class WorkspaceFilesSession {
         },
         source,
       );
+
+      if (info.kind === "directory") {
+        streamStarted = true;
+        await this.streamArchiveFrames({ cwd, requestedPath, requestId, flow, info, source });
+        return;
+      }
 
       await streamExplorerFile({ root: cwd, relativePath: requestedPath }, async (file) => {
         streamStarted = true;
@@ -472,6 +480,67 @@ export class WorkspaceFilesSession {
     } finally {
       this.activeDownloads.delete(requestId);
     }
+  }
+
+  /**
+   * Streams a directory archive. The zip is produced as it is sent, so `size` is a
+   * placeholder and `sizeKnown: false` tells the receiver not to treat it as a length.
+   */
+  private async streamArchiveFrames({
+    cwd,
+    requestedPath,
+    requestId,
+    flow,
+    info,
+    source,
+  }: {
+    cwd: string;
+    requestedPath: string;
+    requestId: string;
+    flow: TransferFlowControl;
+    info: { fileName: string; mimeType: string };
+    source?: object;
+  }): Promise<void> {
+    await this.host.emitBinary(
+      encodeFileTransferFrame({
+        opcode: FileTransferOpcode.FileBegin,
+        requestId,
+        metadata: {
+          mime: info.mimeType,
+          size: 0,
+          sizeKnown: false,
+          encoding: "binary",
+          modifiedAt: new Date().toISOString(),
+          fileName: info.fileName,
+        },
+      }),
+      source,
+    );
+
+    for await (const chunk of streamDirectoryArchive({ root: cwd, relativePath: requestedPath })) {
+      await flow.awaitWindow();
+      if (flow.isCancelled) {
+        // Leaving the for-await destroys the zip stream, so the daemon stops reading.
+        return;
+      }
+      await this.host.emitBinary(
+        encodeFileTransferFrame({
+          opcode: FileTransferOpcode.FileChunk,
+          requestId,
+          payload: chunk,
+        }),
+        source,
+      );
+      flow.recordSent(chunk.byteLength);
+    }
+
+    if (flow.isCancelled) {
+      return;
+    }
+    await this.host.emitBinary(
+      encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }),
+      source,
+    );
   }
 
   handleFileTransferAck(message: FileTransferAck): void {

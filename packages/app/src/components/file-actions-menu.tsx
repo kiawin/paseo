@@ -165,7 +165,9 @@ export function FileActionsContextMenuContent({
             onSelect: onReveal,
           }
         : null,
-      availableFile && onDownload
+      // A folder downloads as a zip, so this is gated on existence rather than kind.
+      // The caller withholds onDownload when the host cannot stream archives.
+      fileExists && onDownload
         ? {
             key: "download",
             group: "reference",

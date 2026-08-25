@@ -1,5 +1,6 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -671,25 +672,38 @@ describe("entry download over the binary channel", () => {
     }
   });
 
-  test("refuses a directory until archives exist, without emitting frames", async () => {
+  test("streams a directory as an archive whose size is not known up front", async () => {
     const { subsystem, emitted, binary } = makeSubsystem({ hasBinaryChannel: true });
     const cwd = makeDir("workspace-files-dir-");
+    mkdirSync(join(cwd, "src"));
+    writeFileSync(join(cwd, "src", "a.txt"), "alpha");
 
     await subsystem.handleEntryDownloadRequest({
       type: "fs.entry.download.request",
       cwd,
-      path: ".",
+      path: "src",
       requestId: "req-dir",
     });
 
-    expect(binary).toHaveLength(0);
     const response = emitted[0];
     expect(response.type).toBe("fs.entry.download.response");
     if (response.type === "fs.entry.download.response") {
-      expect(response.payload.success).toBe(false);
-      expect(response.payload.kind).toBeNull();
-      expect(response.payload.error).toContain("not a file");
+      expect(response.payload.kind).toBe("archive");
+      expect(response.payload.fileName).toBe("src.zip");
+      expect(response.payload.mimeType).toBe("application/zip");
+      expect(response.payload.size).toBeNull();
+      expect(response.payload.success).toBe(true);
     }
+
+    const frames = decodeAll(binary);
+    const begin = frames[0];
+    expect(begin.opcode).toBe(FileTransferOpcode.FileBegin);
+    if (begin.opcode === FileTransferOpcode.FileBegin) {
+      expect(begin.metadata.sizeKnown).toBe(false);
+      expect(begin.metadata.fileName).toBe("src.zip");
+    }
+    expect(frames.at(-1)?.opcode).toBe(FileTransferOpcode.FileEnd);
+    expect(frames.some((frame) => frame.opcode === FileTransferOpcode.FileChunk)).toBe(true);
   });
 
   test("refuses a path that escapes the workspace root", async () => {

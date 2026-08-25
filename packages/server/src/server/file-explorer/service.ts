@@ -4,6 +4,8 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { expandUserPath, resolvePathFromBase } from "../path-utils.js";
 import { runGitCommand } from "../../utils/run-git-command.js";
+import { ZipFile } from "yazl";
+import type { Readable } from "stream";
 
 export type ExplorerEntryKind = "file" | "directory";
 export type ExplorerFileKind = "text" | "image" | "binary";
@@ -99,6 +101,10 @@ export const MAX_EDITABLE_FILE_BYTES = 1024 * 1024;
 const READ_FILE_OPEN_FLAGS =
   process.platform === "win32" ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW;
 const ACCESS_OUTSIDE_WORKSPACE_MESSAGE = "Access outside of workspace is not allowed";
+
+/** Safety nets, not product limits: a runaway tree should fail loudly, not stream forever. */
+export const MAX_ARCHIVE_ENTRIES = 20_000;
+export const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024;
 
 function fileRevision(stats: BigIntStats): string {
   return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeNs}`;
@@ -570,6 +576,138 @@ export async function getDownloadableFileInfo({ root, relativePath }: ReadFilePa
     };
   } finally {
     await handle.close();
+  }
+}
+
+export type DownloadableEntryKind = "file" | "directory";
+
+/**
+ * Describes what a download request would produce, without reading the entry.
+ *
+ * Separate from `getDownloadableFileInfo`, which stays file-only because the HTTP
+ * endpoint must keep refusing directories. Only the WebSocket path can serve a
+ * directory, and it serves it as a streamed archive.
+ */
+export async function getDownloadableEntryInfo({ root, relativePath }: ReadFileParams): Promise<{
+  path: string;
+  fileName: string;
+  mimeType: string;
+  size: number | null;
+  kind: DownloadableEntryKind;
+}> {
+  const scoped = await resolveScopedPath({ root, relativePath });
+  const stats = await fs.lstat(scoped.resolvedPath);
+
+  if (stats.isDirectory()) {
+    const base = path.basename(scoped.requestedPath) || path.basename(root) || "archive";
+    return {
+      path: normalizeRelativePath({ root, targetPath: scoped.requestedPath }),
+      fileName: `${base}.zip`,
+      mimeType: "application/zip",
+      // The archive is produced as it streams, so its length is not knowable here.
+      size: null,
+      kind: "directory",
+    };
+  }
+
+  const file = await getDownloadableFileInfo({ root, relativePath });
+  return {
+    path: file.path,
+    fileName: file.fileName,
+    mimeType: file.mimeType,
+    size: file.size,
+    kind: "file",
+  };
+}
+
+interface ArchiveEntry {
+  absolutePath: string;
+  archivePath: string;
+  mtime: Date;
+  size: number;
+}
+
+/**
+ * Collects the entries an archive will contain, in a deterministic order.
+ *
+ * Symlinks are skipped rather than followed: following one is how an archive ends up
+ * containing something outside the workspace, and a zip of a symlink is rarely what
+ * the user wanted anyway.
+ */
+async function collectArchiveEntries(
+  currentDir: string,
+  prefix: string,
+  entries: ArchiveEntry[],
+  totals: { bytes: number },
+): Promise<void> {
+  const dirents = await fs.readdir(currentDir, { withFileTypes: true });
+  dirents.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const dirent of dirents) {
+    if (dirent.isSymbolicLink()) {
+      continue;
+    }
+    const absolutePath = path.join(currentDir, dirent.name);
+    const archivePath = prefix ? `${prefix}/${dirent.name}` : dirent.name;
+
+    if (dirent.isDirectory()) {
+      await collectArchiveEntries(absolutePath, archivePath, entries, totals);
+      continue;
+    }
+    if (!dirent.isFile()) {
+      continue;
+    }
+
+    const stats = await fs.lstat(absolutePath);
+    totals.bytes += stats.size;
+    if (entries.length >= MAX_ARCHIVE_ENTRIES) {
+      throw new Error("This folder has too many files to download as an archive.");
+    }
+    if (totals.bytes > MAX_ARCHIVE_BYTES) {
+      throw new Error("This folder is too large to download as an archive.");
+    }
+    entries.push({ absolutePath, archivePath, mtime: stats.mtime, size: stats.size });
+  }
+}
+
+/**
+ * Streams a directory as a zip.
+ *
+ * VS Code recurses into a FileSystemDirectoryHandle instead of archiving, but no
+ * directory handle exists on iOS, Android, Firefox or Safari — and the phone is the
+ * primary client here, so the archive is the only path that works everywhere.
+ *
+ * Breaking out of the returned iterable destroys the underlying stream, so a cancelled
+ * download stops the daemon reading.
+ */
+export async function* streamDirectoryArchive({
+  root,
+  relativePath,
+}: ReadFileParams): AsyncGenerator<Uint8Array> {
+  const scoped = await resolveScopedPath({ root, relativePath });
+  const stats = await fs.lstat(scoped.resolvedPath);
+  if (!stats.isDirectory()) {
+    throw new Error("Requested path is not a directory");
+  }
+
+  const entries: ArchiveEntry[] = [];
+  await collectArchiveEntries(scoped.resolvedPath, "", entries, { bytes: 0 });
+
+  const zip = new ZipFile();
+  for (const entry of entries) {
+    zip.addFile(entry.absolutePath, entry.archivePath, { mtime: entry.mtime });
+  }
+  zip.end();
+
+  // @types/yazl still describes this as the pre-Node-stream ReadableStream, which has no
+  // destroy(); at runtime it is a Node Readable and destroying it is what stops the reads.
+  const output = zip.outputStream as unknown as Readable;
+  try {
+    for await (const chunk of output) {
+      yield chunk as Uint8Array;
+    }
+  } finally {
+    output.destroy();
   }
 }
 

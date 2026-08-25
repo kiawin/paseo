@@ -253,6 +253,12 @@ function TreeRowItem({
   const showNameHover = useCallback(() => setIsHovered(true), []);
   const hideNameHover = useCallback(() => setIsHovered(false), []);
   const isDirectory = entry.kind === "directory";
+  // Folder download streams a zip over the binary channel, which an older daemon
+  // cannot serve; withhold the action there rather than offering a dead menu item.
+  const supportsArchiveDownload = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.workspaceFileTransfer === true,
+  );
+  const canDownloadEntry = !isDirectory || supportsArchiveDownload;
   const dragSourceRef = useWorkspaceFileDragSource({
     enabled: !isDirectory,
     serverId,
@@ -370,7 +376,7 @@ function TreeRowItem({
         onCopyRelativePath={handleCopyRelativePath}
         onReveal={onRevealEntry ? handleReveal : undefined}
         revealTargetName={revealTargetName}
-        onDownload={handleDownload}
+        onDownload={canDownloadEntry ? handleDownload : undefined}
         onAddToChat={onAddToChat ? handleAddToChat : undefined}
         onOpenToSide={!isDirectory && onOpenFileToSide ? handleOpenToSide : undefined}
         onNewFile={onNewEntry ? handleNewFile : undefined}
@@ -610,9 +616,6 @@ export function FileExplorerPane({
 
   const handleDownloadEntry = useCallback(
     (entry: ExplorerEntry) => {
-      if (entry.kind !== "file") {
-        return;
-      }
       downloadFile({ fileName: entry.name, path: entry.path });
     },
     [downloadFile],
