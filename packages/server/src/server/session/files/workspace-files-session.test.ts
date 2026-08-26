@@ -952,3 +952,95 @@ describe("entry upload into the workspace", () => {
     expect(readdirSync(cwd)).toEqual([]);
   });
 });
+
+describe("upload cancellation racing an in-flight write", () => {
+  async function beginUpload(subsystem: WorkspaceFilesSession, cwd: string, requestId: string) {
+    await subsystem.handleEntryUploadRequest({
+      type: "fs.entry.upload.request",
+      cwd,
+      path: "racy.bin",
+      mimeType: "application/octet-stream",
+      size: 1024,
+      modifiedAt: "2026-08-26T00:00:00.000Z",
+      overwrite: "fail",
+      requestId,
+    });
+  }
+
+  function leftovers(cwd: string): string[] {
+    // The sink writes ".<name>.paseo-<uuid>.tmp" beside the target before renaming.
+    return readdirSync(cwd).filter((name) => name !== ".git");
+  }
+
+  test("a cancel landing mid-write leaves neither the target nor a temp file", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const { subsystem } = makeSubsystem({ hasBinaryChannel: true });
+      const cwd = makeDir("workspace-upload-race-");
+      await beginUpload(subsystem, cwd, "up-race");
+
+      // Do not await: the handler is mid-write when the cancel runs.
+      const inFlight = subsystem.handleFileTransferFrame({
+        opcode: FileTransferOpcode.FileChunk,
+        requestId: "up-race",
+        payload: new Uint8Array(512 * 1024),
+      });
+      subsystem.handleFileTransferCancel({ type: "fs.transfer.cancel", requestId: "up-race" });
+
+      await expect(inFlight).resolves.toBeUndefined();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(existsSync(join(cwd, "racy.bin"))).toBe(false);
+      expect(leftovers(cwd)).toEqual([]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  test("a cancel landing during commit does not leave a half-written file", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const { subsystem, emitted } = makeSubsystem({ hasBinaryChannel: true });
+      const cwd = makeDir("workspace-upload-commit-race-");
+      await beginUpload(subsystem, cwd, "up-commit");
+
+      await subsystem.handleFileTransferFrame({
+        opcode: FileTransferOpcode.FileChunk,
+        requestId: "up-commit",
+        payload: new TextEncoder().encode("partial"),
+      });
+
+      // FileEnd commits; cancel arrives while that is still resolving.
+      const committing = subsystem.handleFileTransferFrame({
+        opcode: FileTransferOpcode.FileEnd,
+        requestId: "up-commit",
+        payload: new Uint8Array(),
+      });
+      subsystem.handleFileTransferCancel({ type: "fs.transfer.cancel", requestId: "up-commit" });
+
+      await expect(committing).resolves.toBeUndefined();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Either the commit won and the file is whole, or the cancel won and nothing is
+      // there. A truncated file, or a temp file left behind, is the failure.
+      const names = leftovers(cwd);
+      if (names.includes("racy.bin")) {
+        expect(readFileSync(join(cwd, "racy.bin"), "utf8")).toBe("partial");
+        expect(names).toEqual(["racy.bin"]);
+      } else {
+        expect(names).toEqual([]);
+      }
+      expect(unhandled).toEqual([]);
+      expect(emitted.some((message) => message.type === "fs.entry.upload.response")).toBe(true);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+});
