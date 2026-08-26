@@ -4,7 +4,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { AgentStateBucketDot } from "@/components/agent-status-dot";
-import { getProviderIcon } from "@/components/provider-icons";
+import { getProviderIcon, type ProviderIconComponent } from "@/components/provider-icons";
 import {
   hasSidebarAgentRows,
   type SidebarAgentRows,
@@ -33,24 +33,30 @@ import { navigateToAgent } from "@/utils/navigate-to-agent";
  */
 
 /**
- * `withUnistyles` per provider, cached at module scope. The wrapper must be a stable component
- * type — building one during render would remount the icon on every row update — and the provider
- * set is small and fixed, so a map is the whole story.
+ * `withUnistyles` per icon, cached at module scope. The wrapper has to be a stable component type:
+ * building one during render would give the icon a new identity on every update and remount it.
+ *
+ * Keyed by the component `getProviderIcon` resolves to, not by the provider id. A provider id is
+ * an arbitrary string, so keying on it would keep a separate wrapper for every unrecognised
+ * provider ever rendered even though they all resolve to one fallback glyph. Keying on the
+ * resolved component collapses those to a single entry, and a WeakMap holds nothing the icon
+ * module has itself released.
  */
 type ThemedProviderIcon = ComponentType<{
   size: number;
   uniProps: (theme: Theme) => { color: string };
 }>;
 
-const themedProviderIcons = new Map<string, ThemedProviderIcon>();
+const themedProviderIcons = new WeakMap<ProviderIconComponent, ThemedProviderIcon>();
 
 function getThemedProviderIcon(provider: string): ThemedProviderIcon {
-  const cached = themedProviderIcons.get(provider);
+  const source = getProviderIcon(provider);
+  const cached = themedProviderIcons.get(source);
   if (cached) return cached;
   // `withUnistyles` supplies `color` from `uniProps`, which the source component still declares
   // as required — hence the cast rather than a wider `ProviderIconProps`.
-  const themed = withUnistyles(getProviderIcon(provider)) as unknown as ThemedProviderIcon;
-  themedProviderIcons.set(provider, themed);
+  const themed = withUnistyles(source) as unknown as ThemedProviderIcon;
+  themedProviderIcons.set(source, themed);
   return themed;
 }
 
