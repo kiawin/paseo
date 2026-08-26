@@ -76,17 +76,17 @@ export interface SidebarAgentListSource {
 export function useSidebarAgentListModel(input: SidebarAgentListSource): SidebarAgentListModel {
   const mode: SidebarAgentRows = useSidebarAgentRows();
   const expandedByDefault = mode === "expanded";
-  const overrides = useSidebarCollapsedSectionsStore((state) => state.agentListOverrides);
+  // Select this workspace's answer, not the map it lives in. The store replaces the whole
+  // overrides map on every toggle, and this hook runs twice per row, so subscribing to the map
+  // would re-render every row in the sidebar each time one workspace expanded.
+  const expanded = useSidebarCollapsedSectionsStore((state) =>
+    isAgentListExpanded(state, input.workspaceKey, expandedByDefault),
+  );
   const toggleAgentListExpanded = useSidebarCollapsedSectionsStore(
     (state) => state.toggleAgentListExpanded,
   );
 
   const visible = hasSidebarAgentRows({ agentCount: input.agents.length, mode });
-  const expanded = isAgentListExpanded(
-    { agentListOverrides: overrides },
-    input.workspaceKey,
-    expandedByDefault,
-  );
 
   const toggle = useCallback(() => {
     toggleAgentListExpanded(input.workspaceKey, expandedByDefault);
