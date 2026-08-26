@@ -5,9 +5,13 @@ import { getServerId } from "../support/helpers/server-id";
 
 /**
  * A workspace row draws an agent sub-list only when it holds more than one active root agent.
- * These cover the geometry that reading the styles cannot settle: the disclosure sits next to the
- * trailing slot, and the kebab overlays that slot on hover with a scrim sized to hide what is
- * behind it.
+ * These cover the geometry that reading the styles cannot settle: the disclosure lives in the
+ * leading slot and swaps with the status indicator on hover, the count sits on the meta line, and
+ * the sub-list hangs on that count's rail.
+ *
+ * The kebab check is kept even though the disclosure no longer shares the trailing slot with it.
+ * It shipped there once, painted over by an overlay that `toBeVisible` was happy with, and this
+ * is what would catch a move back.
  */
 
 const AGENT_TITLES = ["Rebase onto upstream main", "Port sidebar agent rows", "Audit COMPAT tags"];
@@ -49,8 +53,8 @@ test.describe("sidebar agent rows", () => {
 
       // Hover is where the kebab fades in over the trailing slot. The count must stay legible.
       //
-      // `toBeVisible` is not enough here: the kebab is an absolutely positioned overlay, so it
-      // paints over the count without changing its computed visibility. Compare boxes instead.
+      // `toBeVisible` is not enough for this: the kebab is an absolutely positioned overlay, so it
+      // can paint over a control without changing its computed visibility. Compare boxes instead.
       await row.hover();
       await expect(disclosure).toBeVisible();
       await page.screenshot({ path: "test-results/agent-rows-collapsed-hover.png" });

@@ -84,15 +84,16 @@ test.describe("sidebar agent rows evidence", () => {
         clip: SIDEBAR_CLIP,
       });
 
-      // 2. Hovered. The kebab is what used to paint over the count.
+      // 2. Hovered: the status indicator swaps for the expand chevron, the way a project row's
+      // icon does. The count stays put on the meta line, clear of the kebab.
       await busyRow.hover();
       await expect(disclosure).toBeVisible();
       await page.screenshot({
-        path: "test-results/evidence/02-hover-with-kebab.png",
+        path: "test-results/evidence/02-hover-chevron.png",
         clip: SIDEBAR_CLIP,
       });
 
-      // 3. Expanded: provider icon per row, dots on the count's left rail.
+      // 3. Expanded: provider icon per row, dots on the meta count's left rail.
       await disclosure.click();
       const list = page.getByTestId("sidebar-agent-list");
       await expect(list).toBeVisible({ timeout: 10_000 });
