@@ -105,6 +105,52 @@ test.describe("sidebar agent rows", () => {
     }
   });
 
+  test("expands from the leading slot in status grouping too", async ({ page }) => {
+    // Status and label grouping hoist rows out of their project block, so the leading slot carries
+    // a project icon rather than a status indicator. The toggle has to wrap both: wrapping only
+    // the indicator left those rows showing a count they could never open.
+    const workspace = await seedWorkspace({ repoPrefix: "paseo-e2e-agent-rows-status-" });
+    try {
+      for (const title of AGENT_TITLES) {
+        await workspace.client.createAgent({
+          provider: "mock",
+          cwd: workspace.repoPath,
+          workspaceId: workspace.workspaceId,
+          title,
+          modeId: "load-test",
+          model: "e2e-fast-stream",
+        });
+      }
+
+      await gotoAppShell(page);
+      const row = page.getByTestId(rowTestId(workspace.workspaceId));
+      await expect(row).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId("sidebar-display-preferences-menu").click();
+      await page.getByTestId("sidebar-display-grouping").click();
+      await page.getByTestId("sidebar-grouping-status").click();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("sidebar-status-group-done")).toBeVisible({ timeout: 20_000 });
+
+      const toggle = page.getByTestId("sidebar-agent-list-disclosure").first();
+      await expect(toggle).toBeVisible({ timeout: 20_000 });
+
+      // Hover the row and wait for the chevron before clicking. The toggle's child swaps from the
+      // project icon to a narrower chevron on hover, so clicking mid-swap aims at the old box.
+      await row.hover();
+      await expect(toggle.locator("svg")).toBeVisible({ timeout: 8_000 });
+      await toggle.click();
+
+      const list = page.getByTestId("sidebar-agent-list");
+      await expect(list).toBeVisible({ timeout: 10_000 });
+      for (const title of AGENT_TITLES) {
+        await expect(list.getByText(title, { exact: true })).toBeVisible();
+      }
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
   test("draws nothing for a workspace holding one agent", async ({ page }) => {
     const workspace = await seedWorkspace({ repoPrefix: "paseo-e2e-agent-rows-single-" });
     try {
