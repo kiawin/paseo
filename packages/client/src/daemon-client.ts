@@ -4657,6 +4657,10 @@ export class DaemonClient {
       settle = resolve;
       abort = reject;
     });
+    // A cancel can reject this before anything awaits it — if the request itself fails first,
+    // control leaves via that throw and never reaches `await completion`. Keep the rejection
+    // handled so it cannot surface as an unhandled rejection.
+    void completion.catch(() => undefined);
 
     const fail = (error: Error) => {
       abort?.(error);
@@ -4764,6 +4768,9 @@ export class DaemonClient {
         responseType: "fs.entry.upload.response",
         options: { skipQueue: true },
       });
+      // The send loop below throws on cancel, before this is awaited. Keep a handler attached
+      // so a later rejection (error response, disconnect) is not an unhandled rejection.
+      void responsePromise.catch(() => undefined);
 
       this.sendBinaryFrame(
         encodeFileTransferFrame({

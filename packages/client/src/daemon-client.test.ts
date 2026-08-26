@@ -2446,6 +2446,97 @@ test("downloadEntry surfaces a refusal without waiting for frames", async () => 
   await expect(promise).rejects.toThrow("Requested path is not a file");
 });
 
+test("uploadEntry streams bytes and resolves with where the file landed", async () => {
+  const { mock, client } = connectedDownloadClient();
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.uploadEntry({
+    cwd: "/tmp/project",
+    path: "assets/logo.png",
+    bytes: new TextEncoder().encode("png-bytes"),
+    mimeType: "image/png",
+    modifiedAt: "2026-08-26T00:00:00.000Z",
+    overwrite: "rename",
+    requestId: "req-up",
+  });
+
+  expect(JSON.parse(assertStr(mock.sent[0]))).toEqual({
+    type: "session",
+    message: {
+      type: "fs.entry.upload.request",
+      cwd: "/tmp/project",
+      path: "assets/logo.png",
+      mimeType: "image/png",
+      size: 9,
+      modifiedAt: "2026-08-26T00:00:00.000Z",
+      overwrite: "rename",
+      createMissingDirectories: false,
+      requestId: "req-up",
+    },
+  });
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.entry.upload.response",
+      payload: {
+        cwd: "/tmp/project",
+        // "rename" means the daemon may not use the requested name.
+        path: "assets/logo (1).png",
+        size: 9,
+        modifiedAt: "2026-08-26T00:00:00.000Z",
+        success: true,
+        error: null,
+        requestId: "req-up",
+      },
+    }),
+  );
+
+  await expect(promise).resolves.toMatchObject({ path: "assets/logo (1).png", size: 9 });
+});
+
+test("uploadEntry cancels without leaving the response promise unhandled", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+
+  try {
+    const { mock, client } = connectedDownloadClient();
+    const connectPromise = client.connect();
+    mock.triggerOpen();
+    await connectPromise;
+
+    const controller = new AbortController();
+    // A window's worth of chunks, so the loop is still running when the abort lands.
+    const promise = client.uploadEntry({
+      cwd: "/tmp/project",
+      path: "big.bin",
+      bytes: new Uint8Array(9 * 1024 * 1024),
+      mimeType: "application/octet-stream",
+      signal: controller.signal,
+      requestId: "req-up-cancel",
+    });
+
+    controller.abort();
+    await expect(promise).rejects.toThrow("Upload cancelled.");
+
+    const cancels = mock.sent
+      .map((frame) => (typeof frame === "string" ? JSON.parse(frame) : null))
+      .filter((frame) => frame?.message?.type === "fs.transfer.cancel");
+    expect(cancels).toHaveLength(1);
+
+    // Nothing awaits the upload request any more. Dropping the connection rejects every
+    // pending waiter, which is what turns the orphan into an unhandled rejection.
+    await client.close();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
 test("readFile reassembles a multi-chunk binary payload byte-identically", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();
