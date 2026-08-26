@@ -101,6 +101,10 @@ import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header"
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
 import {
+  SidebarAgentListDisclosure,
+  SidebarWorkspaceAgentRows,
+} from "@/components/sidebar/workspace-agent-list";
+import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
   SidebarWorkspaceShortcutBadge,
@@ -663,6 +667,7 @@ function WorkspaceRowRightGroup({
       {isCreating ? (
         <Text style={styles.workspaceCreatingText}>{t("sidebar.workspace.status.creating")}</Text>
       ) : null}
+      <SidebarAgentListDisclosure workspace={workspace} />
       {renderSlot ? (
         <SidebarWorkspaceTrailingActionSlot reserveWidth={reserveSlotWidth}>
           <SidebarWorkspaceTrailingActionBase visible={showTrailing}>
@@ -1191,6 +1196,7 @@ function WorkspaceRowInner({
                 />
               </SidebarWorkspaceRowContent>
             </SidebarWorkspaceContextMenu>
+            <SidebarWorkspaceAgentRows workspace={workspace} />
           </View>
         );
       }}

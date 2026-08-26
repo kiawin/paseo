@@ -53,6 +53,10 @@ import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import { useClearWorkspaceAttention } from "@/hooks/use-clear-workspace-attention";
 import {
+  SidebarAgentListDisclosure,
+  SidebarWorkspaceAgentRows,
+} from "@/components/sidebar/workspace-agent-list";
+import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
   resolveTrailingActionVisibility,
@@ -924,6 +928,7 @@ function StatusWorkspaceRowInnerContent({
                 showShortcutBadge={showShortcutBadge}
                 reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
               >
+                <SidebarAgentListDisclosure workspace={workspace} />
                 {renderSlot ? (
                   <StatusWorkspaceActionSlot
                     workspace={workspace}
@@ -948,6 +953,7 @@ function StatusWorkspaceRowInnerContent({
                 ) : null}
               </SidebarWorkspaceRowContent>
             </SidebarWorkspaceContextMenu>
+            <SidebarWorkspaceAgentRows workspace={workspace} />
           </View>
         );
       }}
