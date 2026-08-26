@@ -2537,6 +2537,121 @@ test("uploadEntry cancels without leaving the response promise unhandled", async
   }
 });
 
+test("uploadEntry drains a payload larger than the flow-control window", async () => {
+  const { mock, client } = connectedDownloadClient();
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const total = 24 * 1024 * 1024; // three windows' worth
+  const promise = client.uploadEntry({
+    cwd: "/tmp/project",
+    path: "huge.bin",
+    bytes: new Uint8Array(total),
+    mimeType: "application/octet-stream",
+    requestId: "req-big",
+  });
+
+  // Stand in for the daemon: keep acking so the sender is released from its window.
+  for (let i = 0; i < 8; i += 1) {
+    mock.triggerMessage(
+      wrapSessionMessage({
+        type: "fs.transfer.ack",
+        requestId: "req-big",
+        bytesReceived: total,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.entry.upload.response",
+      payload: {
+        cwd: "/tmp/project",
+        path: "huge.bin",
+        size: total,
+        modifiedAt: "2026-08-26T00:00:00.000Z",
+        success: true,
+        error: null,
+        requestId: "req-big",
+      },
+    }),
+  );
+
+  await expect(promise).resolves.toMatchObject({ path: "huge.bin", size: total });
+
+  // Every chunk reached the wire, so the window released rather than stalling the upload.
+  const chunkFrames = mock.sent.filter((frame) => typeof frame !== "string");
+  expect(chunkFrames.length).toBeGreaterThan(total / (256 * 1024));
+});
+
+test("uploadEntry stops waiting when the daemon refuses before any ack", async () => {
+  const { mock, client } = connectedDownloadClient();
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  // Larger than the 8 MiB window, so the send loop parks unless something cancels it.
+  const promise = client.uploadEntry({
+    cwd: "/tmp/project",
+    path: "big.bin",
+    bytes: new Uint8Array(9 * 1024 * 1024),
+    mimeType: "application/octet-stream",
+    requestId: "req-refused",
+  });
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.entry.upload.response",
+      payload: {
+        cwd: "/tmp/project",
+        path: null,
+        size: null,
+        modifiedAt: null,
+        success: false,
+        error: "A file with that name already exists.",
+        requestId: "req-refused",
+      },
+    }),
+  );
+
+  await expect(promise).rejects.toThrow("A file with that name already exists.");
+});
+
+test("downloadEntry fails the transfer when the connection drops mid-stream", async () => {
+  const { mock, client } = connectedDownloadClient();
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.downloadEntry({
+    cwd: "/tmp/project",
+    path: "logo.png",
+    requestId: "req-drop",
+    sink: { onChunk: () => {} },
+  });
+
+  mock.triggerMessage(downloadOk("req-drop", 1024));
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId: "req-drop",
+      metadata: {
+        mime: "image/png",
+        size: 1024,
+        encoding: "binary",
+        modifiedAt: "2026-05-02T00:00:00.000Z",
+      },
+    }),
+  );
+
+  // No FileEnd will ever arrive; the socket is gone.
+  mock.triggerClose({ code: 1006, reason: "network lost" });
+
+  await expect(promise).rejects.toThrow();
+});
+
 test("readFile reassembles a multi-chunk binary payload byte-identically", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();

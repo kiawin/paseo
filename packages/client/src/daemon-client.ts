@@ -4767,10 +4767,31 @@ export class DaemonClient {
         },
         responseType: "fs.entry.upload.response",
         options: { skipQueue: true },
+        // The daemon answers only once every byte is committed, so the default RPC deadline
+        // would fail a large upload that is progressing normally. Allow for a slow link —
+        // 256 KiB/s — and never go below the default. A dead connection is settled by
+        // clearWaiters rather than by this timer.
+        timeout: Math.max(
+          DEFAULT_SESSION_RPC_TIMEOUT_MS,
+          Math.ceil(input.bytes.byteLength / (256 * 1024)) * 1000,
+        ),
       });
-      // The send loop below throws on cancel, before this is awaited. Keep a handler attached
-      // so a later rejection (error response, disconnect) is not an unhandled rejection.
-      void responsePromise.catch(() => undefined);
+      // The daemon can refuse before acking a single byte. Nothing would then release the
+      // send loop from its window, so watch the response and cancel the flow, keeping the
+      // real reason to throw instead of a generic cancellation.
+      let earlyFailure: Error | null = null;
+      void responsePromise
+        .then((payload) => {
+          if (!payload.success || payload.path === null) {
+            earlyFailure = new Error(payload.error ?? "Upload failed.");
+            flow.cancel();
+          }
+          return payload;
+        })
+        .catch((error: unknown) => {
+          earlyFailure = error instanceof Error ? error : new Error(String(error));
+          flow.cancel();
+        });
 
       this.sendBinaryFrame(
         encodeFileTransferFrame({
@@ -4789,7 +4810,7 @@ export class DaemonClient {
       for (let offset = 0; offset < input.bytes.byteLength; offset += chunkSize) {
         await flow.awaitWindow();
         if (flow.isCancelled) {
-          throw new Error("Upload cancelled.");
+          throw earlyFailure ?? new Error("Upload cancelled.");
         }
         const chunk = input.bytes.subarray(
           offset,
@@ -6328,6 +6349,17 @@ export class DaemonClient {
       waiter.reject(error);
     }
     this.waiters.clear();
+
+    // A download past its response waits only on binary frames, and an upload waits on acks
+    // that arrive as plain messages. Neither is an RPC waiter, so both would hang here
+    // forever unless the lost connection settles them too.
+    for (const abort of Array.from(this.activeDownloadAborts.values())) {
+      abort(error);
+    }
+    this.activeDownloadAborts.clear();
+    for (const flow of Array.from(this.activeUploadFlows.values())) {
+      flow.cancel();
+    }
   }
 
   private toEvent(msg: SessionOutboundMessage): DaemonEvent | null {
