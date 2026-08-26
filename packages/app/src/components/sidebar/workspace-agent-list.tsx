@@ -1,9 +1,10 @@
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, type ComponentType } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { AgentStateBucketDot } from "@/components/agent-status-dot";
+import { getProviderIcon } from "@/components/provider-icons";
 import {
   hasSidebarAgentRows,
   type SidebarAgentRows,
@@ -26,6 +27,28 @@ import { navigateToAgent } from "@/utils/navigate-to-agent";
  * host, change request, and CI; repeating any of it per agent is what would make the sidebar
  * unreadable.
  */
+
+/**
+ * `withUnistyles` per provider, cached at module scope. The wrapper must be a stable component
+ * type — building one during render would remount the icon on every row update — and the provider
+ * set is small and fixed, so a map is the whole story.
+ */
+type ThemedProviderIcon = ComponentType<{
+  size: number;
+  uniProps: (theme: Theme) => { color: string };
+}>;
+
+const themedProviderIcons = new Map<string, ThemedProviderIcon>();
+
+function getThemedProviderIcon(provider: string): ThemedProviderIcon {
+  const cached = themedProviderIcons.get(provider);
+  if (cached) return cached;
+  // `withUnistyles` supplies `color` from `uniProps`, which the source component still declares
+  // as required — hence the cast rather than a wider `ProviderIconProps`.
+  const themed = withUnistyles(getProviderIcon(provider)) as unknown as ThemedProviderIcon;
+  themedProviderIcons.set(provider, themed);
+  return themed;
+}
 
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedChevronRight = withUnistyles(ChevronRight);
@@ -134,6 +157,10 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
 }) {
   const { t } = useTranslation();
   const label = agent.title || t("agentList.fallbackTitle");
+  // Which agent this is matters most in exactly the case that draws this list: a Claude and a
+  // Codex agent in one workspace are otherwise two identical rows. History rows already pair the
+  // provider icon with the title this way (`components/agent-list.tsx:285`).
+  const ProviderIcon = getThemedProviderIcon(agent.provider);
 
   const handlePress = useCallback(() => {
     navigateToAgent({ serverId, agentId: agent.agentId });
@@ -150,12 +177,17 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
       <View style={styles.rowDot}>
         <AgentStateBucketDot bucket={agent.status} showInactive />
       </View>
+      <View style={styles.rowProviderIcon}>
+        <ProviderIcon size={PROVIDER_ICON_SIZE} uniProps={extraMutedColorMapping} />
+      </View>
       <Text style={styles.rowLabel} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
   );
 });
+
+const PROVIDER_ICON_SIZE = 12;
 
 const rowStyle = ({ pressed }: { pressed: boolean }) => [styles.row, pressed && styles.rowPressed];
 
@@ -177,7 +209,7 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: theme.fontWeight.normal,
   },
   list: {
-    paddingLeft: theme.spacing[6],
+    paddingLeft: theme.spacing[8],
   },
   row: {
     flexDirection: "row",
@@ -194,9 +226,14 @@ const styles = StyleSheet.create((theme) => ({
     width: theme.spacing[2],
     alignItems: "center",
   },
+  rowProviderIcon: {
+    width: PROVIDER_ICON_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   rowLabel: {
     flex: 1,
     color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.xs,
   },
 }));

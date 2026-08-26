@@ -1,3 +1,4 @@
+import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import { isWorkspaceRootAgent } from "@/subagents/policies";
 import { deriveSidebarStateBucket } from "./sidebar-agent-state";
@@ -12,6 +13,8 @@ import { deriveSidebarStateBucket } from "./sidebar-agent-state";
 export interface WorkspaceAgentEntry {
   agentId: string;
   title: string | null;
+  /** Immutable for the life of an agent, so the reuse pass below never has to compare it. */
+  provider: AgentProvider;
   status: WorkspaceDescriptor["status"];
   enteredAt: Date;
 }
@@ -58,6 +61,7 @@ export function buildWorkspaceAgentActivityIndex(
       entry: {
         agentId: agent.id,
         title: agent.title,
+        provider: agent.provider,
         status: deriveSidebarStateBucket({
           status: agent.status,
           pendingPermissionCount: agent.pendingPermissions.length,
