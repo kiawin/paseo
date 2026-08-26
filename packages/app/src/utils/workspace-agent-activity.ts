@@ -123,6 +123,14 @@ export function buildWorkspaceAgentActivityIndex(
  * array itself when nothing moved. Callers compare `agents` with `Object.is`
  * (`areSidebarWorkspaceEntriesEqual`), so the array reference is what decides whether a workspace
  * row re-renders.
+ *
+ * The memory is one rebuild deep, on purpose. An agent missing from `previous` is stamped fresh,
+ * so archiving an agent and restoring it restarts its clock — it left the sidebar and came back,
+ * and preserving the old time would need history this index deliberately does not keep. The test
+ * named for unarchiving pins that, so it reads as a decision rather than an oversight.
+ *
+ * The only other caller builds without a `previous` at all (`session-store.ts:808`), and that one
+ * is a cold restore guarded on there being no session yet — there are no clocks to carry.
  */
 function reuseAgentEntries(
   next: WorkspaceAgentEntry[],

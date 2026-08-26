@@ -528,4 +528,45 @@ describe("workspace agent activity index", () => {
     );
     expect(next.get("workspace-a")?.enteredAt).toEqual(new Date("2026-06-01T10:00:00.000Z"));
   });
+
+  it("restarts the clock for an agent that was archived and restored", () => {
+    const running = (updatedAt: string, archivedAt?: string) =>
+      new Map([
+        [
+          "root",
+          agent({
+            id: "root",
+            workspaceId: "workspace-a",
+            status: "running",
+            updatedAt,
+            archivedAt,
+          }),
+        ],
+        [
+          "second",
+          agent({
+            id: "second",
+            workspaceId: "workspace-a",
+            updatedAt: "2026-06-01T10:00:00.000Z",
+          }),
+        ],
+      ]);
+
+    const first = buildWorkspaceAgentActivityIndex(running("2026-06-01T10:00:00.000Z"));
+    // Archived agents leave the index entirely.
+    const archived = buildWorkspaceAgentActivityIndex(
+      running("2026-06-01T10:05:00.000Z", "2026-06-01T10:05:00.000Z"),
+      first,
+    );
+    expect(archived.get("workspace-a")?.agents.map((entry) => entry.agentId)).toEqual(["second"]);
+
+    const restored = buildWorkspaceAgentActivityIndex(
+      running("2026-06-01T10:30:00.000Z"),
+      archived,
+    );
+    const root = restored.get("workspace-a")?.agents.find((entry) => entry.agentId === "root");
+    // Deliberate: the reuse pass only remembers the previous build, so an agent that left the
+    // sidebar and came back is stamped fresh rather than resuming a clock nothing was tracking.
+    expect(root?.enteredAt).toEqual(new Date("2026-06-01T10:30:00.000Z"));
+  });
 });
