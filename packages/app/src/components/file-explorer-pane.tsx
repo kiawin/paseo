@@ -60,7 +60,11 @@ import { FileActionsContextMenuContent } from "@/components/file-actions-menu";
 import { ContextMenu, ContextMenuTrigger, useContextMenu } from "@/components/ui/context-menu";
 import { useFileDownload } from "@/hooks/use-file-download";
 import { useFilePicker } from "@/hooks/use-file-picker";
+import { FileDropZone } from "@/components/file-drop/file-drop-zone";
+import { useFileDrop } from "@/components/file-drop/use-file-drop";
+import type { DroppedItem } from "@/components/file-drop/types";
 import type { PickedFile } from "@/attachments/picked-file";
+import { getMimeTypeFromPath } from "@/attachments/file-types";
 import { useUploadStore } from "@/stores/upload-store";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
@@ -490,6 +494,9 @@ export function FileExplorerPane({
   });
   const toast = useToast();
   const { pickFiles, pickDirectory } = useFilePicker();
+  const supportsFileTransfer = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.workspaceFileTransfer === true,
+  );
   const startUploads = useUploadStore((state) => state.startUploads);
   const isLocalDaemon = useIsLocalDaemon(serverId);
   const { targets: desktopOpenTargets } = useDesktopOpenTargets({
@@ -714,6 +721,14 @@ export function FileExplorerPane({
     (parentPath: string) => runUploadInto(parentPath, pickDirectory),
     [pickDirectory, runUploadInto],
   );
+
+  // A drop already carries its bytes, so it skips the picker and reuses the same upload path.
+  const handleDropFiles = useCallback(
+    (parentPath: string, files: PickedFile[]) => runUploadInto(parentPath, async () => files),
+    [runUploadInto],
+  );
+
+  const canDropIntoWorkspace = isWeb && supportsFileTransfer;
 
   const handleNewEntry = useCallback(
     (parentPath: string, kind: "file" | "directory") => {
@@ -1128,32 +1143,40 @@ export function FileExplorerPane({
   }
 
   return (
-    <View
-      {...{
-        onContextMenu: (event: { preventDefault?: () => void }) => event.preventDefault?.(),
-      }}
-      style={styles.container}
-    >
-      <FileExplorerPaneContent
-        error={error}
-        isCompact={isCompact}
-        showInitialLoading={showInitialLoading}
-        showBackFromError={showBackFromError}
-        listRows={listRows}
-        onNewEntryAtRoot={fsEntryOpsEnabled ? handleNewEntry : undefined}
-        currentSortLabel={currentSortLabel}
-        isRefreshFetching={isRefreshFetching}
-        treeListRef={treeListRef}
-        scrollbar={scrollbar}
-        renderTreeRow={renderTreeRow}
-        handleSortCycle={handleSortCycle}
-        handleToggleHiddenFiles={handleToggleHiddenFiles}
-        handleRefresh={handleRefresh}
-        handleBackFromError={handleBackFromError}
-        handleRetry={handleRetry}
-        sortTriggerStyle={sortTriggerStyle}
-      />
-    </View>
+    <FileDropZone style={styles.container} disabled={!canDropIntoWorkspace}>
+      <View
+        {...{
+          onContextMenu: (event: { preventDefault?: () => void }) => event.preventDefault?.(),
+        }}
+        style={styles.container}
+      >
+        {canDropIntoWorkspace ? (
+          <ExplorerDropTarget
+            currentPath={explorerState?.currentPath ?? "."}
+            onDropFiles={handleDropFiles}
+          />
+        ) : null}
+        <FileExplorerPaneContent
+          error={error}
+          isCompact={isCompact}
+          showInitialLoading={showInitialLoading}
+          showBackFromError={showBackFromError}
+          listRows={listRows}
+          onNewEntryAtRoot={fsEntryOpsEnabled ? handleNewEntry : undefined}
+          currentSortLabel={currentSortLabel}
+          isRefreshFetching={isRefreshFetching}
+          treeListRef={treeListRef}
+          scrollbar={scrollbar}
+          renderTreeRow={renderTreeRow}
+          handleSortCycle={handleSortCycle}
+          handleToggleHiddenFiles={handleToggleHiddenFiles}
+          handleRefresh={handleRefresh}
+          handleBackFromError={handleBackFromError}
+          handleRetry={handleRetry}
+          sortTriggerStyle={sortTriggerStyle}
+        />
+      </View>
+    </FileDropZone>
   );
 }
 
@@ -1169,6 +1192,46 @@ function isFileExplorerRowTarget(target: unknown): boolean {
     return false;
   }
   return target.closest('[data-testid^="file-explorer-row-"]') !== null;
+}
+
+/**
+ * Uploads anything dropped on the explorer into the folder currently being viewed.
+ *
+ * A separate component because useFileDrop must run inside the FileDropZone that owns
+ * the drop context. Rendering nothing keeps it out of the layout.
+ */
+function ExplorerDropTarget({
+  currentPath,
+  onDropFiles,
+}: {
+  currentPath: string;
+  onDropFiles: (parentPath: string, files: PickedFile[]) => void;
+}) {
+  const handleGenericFiles = useCallback(
+    (items: DroppedItem[]) => {
+      void (async () => {
+        const picked: PickedFile[] = [];
+        for (const item of items) {
+          if (item.kind !== "web-file") {
+            continue;
+          }
+          picked.push({
+            fileName: item.file.name,
+            mimeType: item.file.type || getMimeTypeFromPath(item.file.name),
+            bytes: new Uint8Array(await item.file.arrayBuffer()),
+            relativePath: item.relativePath,
+          });
+        }
+        if (picked.length > 0) {
+          onDropFiles(currentPath, picked);
+        }
+      })();
+    },
+    [currentPath, onDropFiles],
+  );
+
+  useFileDrop({ rawFiles: true, onGenericFiles: handleGenericFiles });
+  return null;
 }
 
 function RootCreationContextTarget({
