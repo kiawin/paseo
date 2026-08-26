@@ -160,12 +160,16 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
 const rowStyle = ({ pressed }: { pressed: boolean }) => [styles.row, pressed && styles.rowPressed];
 
 const styles = StyleSheet.create((theme) => ({
+  // Leading, next to the title, not trailing. The trailing slot is overlaid by the kebab and
+  // faded by a 48px scrim on hover (`ui/trailing-action-scrim.tsx`) — fine for a diff stat nobody
+  // clicks, wrong for a control you hover the row to reach. Leading also matches how project and
+  // status-group rows already say "this expands".
   disclosure: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[0.5],
-    paddingHorizontal: theme.spacing[1],
     height: 20,
+    flexShrink: 0,
   },
   disclosureText: {
     color: theme.colors.foregroundExtraMuted,
