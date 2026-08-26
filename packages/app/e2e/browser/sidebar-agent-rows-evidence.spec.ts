@@ -129,6 +129,29 @@ test.describe("sidebar agent rows evidence", () => {
         path: "test-results/evidence/05-agents-options.png",
         clip: MENU_CLIP,
       });
+      // 6. The same sub-list under Group by Status. Hoisted rows carry a project icon in the
+      // leading slot instead of a status indicator, and that branch shipped without a toggle at
+      // first — so this grouping earns a shot of its own rather than a claim that it works.
+      await page.keyboard.press("Escape");
+      await page.getByTestId("sidebar-display-preferences-menu").click();
+      await page.getByTestId("sidebar-display-grouping").click();
+      await page.getByTestId("sidebar-grouping-status").click();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("sidebar-status-group-done")).toBeVisible({ timeout: 20_000 });
+
+      // Expansion is stored per workspace and survives the grouping switch, so the list is already
+      // open here. Clicking the toggle again would close it.
+      await expect(page.getByTestId("sidebar-agent-list-disclosure").first()).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByTestId("sidebar-agent-list")).toBeVisible({ timeout: 10_000 });
+      await page.mouse.move(900, 620);
+      await expect(page.getByTestId("workspace-hover-card")).toBeHidden({ timeout: 10_000 });
+      await settlePopover(page);
+      await page.screenshot({
+        path: "test-results/evidence/06-status-grouping.png",
+        clip: SIDEBAR_CLIP,
+      });
     } finally {
       await busy.cleanup();
       await quiet.cleanup();
