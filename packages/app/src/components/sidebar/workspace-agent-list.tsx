@@ -13,6 +13,7 @@ import { useSidebarAgentRows } from "@/components/sidebar/display-preferences/mo
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { isAgentListExpanded } from "@/stores/sidebar-collapsed-sections-store/state";
 import type { Theme } from "@/styles/theme";
+import { STATUS_INDICATOR_FILLED_DOT_SIZE } from "@/utils/status-indicator-geometry";
 import type { WorkspaceAgentEntry } from "@/utils/workspace-agent-activity";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 
@@ -125,7 +126,9 @@ export const SidebarAgentListDisclosure = memo(function SidebarAgentListDisclosu
       testID="sidebar-agent-list-disclosure"
     >
       <Chevron size={12} uniProps={extraMutedColorMapping} />
-      <Text style={styles.disclosureText}>{model.agents.length}</Text>
+      <Text style={styles.disclosureText} testID="sidebar-agent-list-count">
+        {model.agents.length}
+      </Text>
     </Pressable>
   );
 });
@@ -174,7 +177,7 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
       style={rowStyle}
       testID={`sidebar-agent-row-${agent.agentId}`}
     >
-      <View style={styles.rowDot}>
+      <View style={styles.rowDot} testID={`sidebar-agent-row-dot-${agent.agentId}`}>
         <AgentStateBucketDot bucket={agent.status} showInactive />
       </View>
       <View style={styles.rowProviderIcon}>
@@ -188,6 +191,17 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
 });
 
 const PROVIDER_ICON_SIZE = 12;
+
+/**
+ * Left inset for the sub-list, set so an agent's status dot shares a left edge with the count
+ * digit on the workspace row above. The list hangs off that number, and sharing its rail is what
+ * makes the rows read as belonging to it rather than as a second column.
+ *
+ * Not a spacing token: the rail is fixed by the geometry of the row above — its padding, its
+ * leading status indicator, and the disclosure chevron — which no token expresses.
+ * `e2e/browser/sidebar-agent-rows.spec.ts` measures both boxes and fails if they drift.
+ */
+const AGENT_LIST_RAIL_INSET = 38;
 
 const rowStyle = ({ pressed }: { pressed: boolean }) => [styles.row, pressed && styles.rowPressed];
 
@@ -209,7 +223,7 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: theme.fontWeight.normal,
   },
   list: {
-    paddingLeft: theme.spacing[8],
+    paddingLeft: AGENT_LIST_RAIL_INSET,
   },
   row: {
     flexDirection: "row",
@@ -222,8 +236,10 @@ const styles = StyleSheet.create((theme) => ({
   rowPressed: {
     backgroundColor: theme.colors.surface1,
   },
+  // Sized to the dot itself, not padded around it: the wrapper's left edge is the rail, so any
+  // centering slack inside it would show up as drift against the count.
   rowDot: {
-    width: theme.spacing[2],
+    width: STATUS_INDICATOR_FILLED_DOT_SIZE,
     alignItems: "center",
   },
   rowProviderIcon: {

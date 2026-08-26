@@ -75,6 +75,23 @@ test.describe("sidebar agent rows", () => {
         await expect(list.getByText(title, { exact: true })).toBeVisible();
       }
 
+      // The sub-list hangs off the count, so its dots share a left rail with that digit. Without
+      // it the rows read as a second, unrelated column.
+      const railBox = await page.getByTestId("sidebar-agent-list-count").boundingBox();
+      const firstDotBox = await list
+        .getByTestId(/^sidebar-agent-row-dot-/)
+        .first()
+        .boundingBox();
+      expect(railBox).not.toBeNull();
+      expect(firstDotBox).not.toBeNull();
+      if (railBox && firstDotBox) {
+        const drift = Math.abs(firstDotBox.x - railBox.x);
+        expect(
+          drift,
+          `agent dots drift ${drift}px from the count rail (dot x=${firstDotBox.x}, count x=${railBox.x})`,
+        ).toBeLessThanOrEqual(1);
+      }
+
       await row.hover();
       await page.screenshot({ path: "test-results/agent-rows-expanded-hover.png" });
     } finally {
