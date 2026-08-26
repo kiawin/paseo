@@ -1122,6 +1122,11 @@ export class Session {
     }
   }
 
+  /** A socket going away must not strand the transfers it started. */
+  cancelWorkspaceTransfersForSource(source: object): void {
+    this.workspaceFilesSession.cancelTransfersForSource(source);
+  }
+
   clearAgentTimelineSubscription(source: object): void {
     this.clientCapabilitiesBySource.delete(source);
     if (this.viewedTimelineAgentIdsBySource.delete(source)) {

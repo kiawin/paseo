@@ -1138,3 +1138,72 @@ describe("upload frames that arrive before the sink is open", () => {
     expect(readFileSync(join(cwd, "ordered.txt"), "utf8")).toBe("aabbcc");
   });
 });
+
+describe("transfers whose socket goes away", () => {
+  test("an upload started by a departing socket is aborted and leaves nothing", async () => {
+    const { subsystem } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-detach-upload-");
+    const socket = { id: "socket-a" };
+
+    await subsystem.handleEntryUploadRequest(
+      {
+        type: "fs.entry.upload.request",
+        cwd,
+        path: "orphan.txt",
+        mimeType: "text/plain",
+        size: 100,
+        modifiedAt: "2026-08-26T00:00:00.000Z",
+        overwrite: "fail",
+        requestId: "detach-1",
+      },
+      socket,
+    );
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "detach-1",
+      payload: new TextEncoder().encode("half"),
+    });
+
+    subsystem.cancelTransfersForSource(socket);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // No committed file and no temp file left holding the bytes.
+    expect(readdirSync(cwd)).toEqual([]);
+  });
+
+  test("leaves alone a transfer that another socket started", async () => {
+    const { subsystem } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-detach-other-");
+    const staying = { id: "socket-staying" };
+    const leaving = { id: "socket-leaving" };
+
+    await subsystem.handleEntryUploadRequest(
+      {
+        type: "fs.entry.upload.request",
+        cwd,
+        path: "kept.txt",
+        mimeType: "text/plain",
+        size: 5,
+        modifiedAt: "2026-08-26T00:00:00.000Z",
+        overwrite: "fail",
+        requestId: "detach-2",
+      },
+      staying,
+    );
+
+    subsystem.cancelTransfersForSource(leaving);
+
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "detach-2",
+      payload: new TextEncoder().encode("hello"),
+    });
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileEnd,
+      requestId: "detach-2",
+      payload: new Uint8Array(),
+    });
+
+    expect(readFileSync(join(cwd, "kept.txt"), "utf8")).toBe("hello");
+  });
+});

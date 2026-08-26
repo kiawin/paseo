@@ -640,7 +640,11 @@ async function collectArchiveEntries(
   prefix: string,
   entries: ArchiveEntry[],
   totals: { bytes: number },
+  isCancelled: () => boolean,
 ): Promise<void> {
+  if (isCancelled()) {
+    return;
+  }
   const dirents = await fs.readdir(currentDir, { withFileTypes: true });
   dirents.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -651,8 +655,11 @@ async function collectArchiveEntries(
     const absolutePath = path.join(currentDir, dirent.name);
     const archivePath = prefix ? `${prefix}/${dirent.name}` : dirent.name;
 
+    if (isCancelled()) {
+      return;
+    }
     if (dirent.isDirectory()) {
-      await collectArchiveEntries(absolutePath, archivePath, entries, totals);
+      await collectArchiveEntries(absolutePath, archivePath, entries, totals, isCancelled);
       continue;
     }
     if (!dirent.isFile()) {
@@ -684,7 +691,15 @@ async function collectArchiveEntries(
 export async function* streamDirectoryArchive({
   root,
   relativePath,
-}: ReadFileParams): AsyncGenerator<Uint8Array> {
+  isCancelled = () => false,
+}: ReadFileParams & {
+  /**
+   * Checked during the directory walk, which happens before any byte is produced. Without
+   * it a cancel could not take effect until the first zip chunk yielded, so cancelling a
+   * download of a large tree kept the daemon reading.
+   */
+  isCancelled?: () => boolean;
+}): AsyncGenerator<Uint8Array> {
   const scoped = await resolveScopedPath({ root, relativePath });
   const stats = await fs.lstat(scoped.resolvedPath);
   if (!stats.isDirectory()) {
@@ -692,7 +707,10 @@ export async function* streamDirectoryArchive({
   }
 
   const entries: ArchiveEntry[] = [];
-  await collectArchiveEntries(scoped.resolvedPath, "", entries, { bytes: 0 });
+  await collectArchiveEntries(scoped.resolvedPath, "", entries, { bytes: 0 }, isCancelled);
+  if (isCancelled()) {
+    return;
+  }
 
   const zip = new ZipFile();
   for (const entry of entries) {

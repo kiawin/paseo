@@ -117,4 +117,45 @@ describe("getDownloadableEntryInfo", () => {
     const info = await getDownloadableEntryInfo({ root, relativePath: "notes.txt" });
     expect(info).toMatchObject({ kind: "file", fileName: "notes.txt", size: 5 });
   });
+
+  test("stops walking the tree when cancelled before the first chunk", async () => {
+    const root = makeDir("archive-cancel-walk-");
+    mkdirSync(join(root, "big"));
+    for (let i = 0; i < 30; i += 1) {
+      mkdirSync(join(root, "big", `dir${i}`));
+      writeFileSync(join(root, "big", `dir${i}`, "f.bin"), Buffer.alloc(1024, i % 256));
+    }
+
+    let statted = 0;
+    const iterator = streamDirectoryArchive({
+      root,
+      relativePath: "big",
+      // Cancel on the very first check, before any directory is read.
+      isCancelled: () => {
+        statted += 1;
+        return true;
+      },
+    });
+
+    // The walk bails, so the generator finishes without producing an archive.
+    await expect(iterator.next()).resolves.toMatchObject({ done: true });
+    // One check, not one per directory: it stopped at the top rather than walking through.
+    expect(statted).toBeLessThanOrEqual(2);
+  });
+
+  test("produces the full archive when never cancelled", async () => {
+    const root = makeDir("archive-nocancel-");
+    mkdirSync(join(root, "site"));
+    writeFileSync(join(root, "site", "a.txt"), "alpha");
+
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of streamDirectoryArchive({
+      root,
+      relativePath: "site",
+      isCancelled: () => false,
+    })) {
+      chunks.push(chunk);
+    }
+    expect(chunks.length).toBeGreaterThan(0);
+  });
 });

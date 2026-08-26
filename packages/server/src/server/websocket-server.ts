@@ -1900,6 +1900,7 @@ export class VoiceAssistantWebSocketServer {
     }
     connection.sockets.delete(ws);
     connection.session.clearAgentTimelineSubscription(ws);
+    connection.session.cancelWorkspaceTransfersForSource(ws);
     this.socketIdentities.delete(ws);
 
     if (connection.sockets.size === 0) {

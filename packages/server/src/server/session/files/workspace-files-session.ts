@@ -96,7 +96,10 @@ export class WorkspaceFilesSession {
   private readonly fileUploads: FileUploadStore;
   private readonly fileObserver: FileObserver;
   private readonly fileSubscriptions = new Map<string, () => void>();
-  private readonly activeDownloads = new Map<string, TransferFlowControl>();
+  private readonly activeDownloads = new Map<
+    string,
+    { flow: TransferFlowControl; source?: object }
+  >();
   private readonly activeUploads = new Map<string, WorkspaceUploadState>();
 
   constructor(options: WorkspaceFilesSessionOptions) {
@@ -246,7 +249,7 @@ export class WorkspaceFilesSession {
     for (const unsubscribe of this.fileSubscriptions.values()) unsubscribe();
     this.fileSubscriptions.clear();
     // A parked sender is waiting on an ack that will never arrive once the client is gone.
-    for (const flow of this.activeDownloads.values()) flow.cancel();
+    for (const { flow } of this.activeDownloads.values()) flow.cancel();
     this.activeDownloads.clear();
     // A half-written upload must not survive the connection that was feeding it.
     for (const upload of this.activeUploads.values()) {
@@ -402,7 +405,7 @@ export class WorkspaceFilesSession {
   ): Promise<void> {
     const { cwd, path: requestedPath, requestId } = request;
     const flow = new TransferFlowControl();
-    this.activeDownloads.set(requestId, flow);
+    this.activeDownloads.set(requestId, { flow, source });
     let streamStarted = false;
 
     try {
@@ -546,7 +549,11 @@ export class WorkspaceFilesSession {
       source,
     );
 
-    for await (const chunk of streamDirectoryArchive({ root: cwd, relativePath: requestedPath })) {
+    for await (const chunk of streamDirectoryArchive({
+      root: cwd,
+      relativePath: requestedPath,
+      isCancelled: () => flow.isCancelled,
+    })) {
       await flow.awaitWindow();
       if (flow.isCancelled) {
         // Leaving the for-await destroys the zip stream, so the daemon stops reading.
@@ -691,12 +698,36 @@ export class WorkspaceFilesSession {
     }
   }
 
+  /**
+   * Cancels whatever a departing socket started.
+   *
+   * These registries belong to the logical session, which outlives any one socket. With a
+   * second socket still attached the session stays alive, so an upload sink and its temp
+   * file would sit open indefinitely and a download parked at its window would wait on an
+   * ack that can no longer come.
+   */
+  cancelTransfersForSource(source: object): void {
+    for (const [requestId, entry] of Array.from(this.activeDownloads.entries())) {
+      if (entry.source === source) {
+        entry.flow.cancel();
+        this.activeDownloads.delete(requestId);
+      }
+    }
+    for (const [requestId, upload] of Array.from(this.activeUploads.entries())) {
+      if (upload.source === source) {
+        upload.cancelled = true;
+        this.activeUploads.delete(requestId);
+        void upload.ready.then((sink) => sink.abort()).catch(() => undefined);
+      }
+    }
+  }
+
   handleFileTransferAck(message: FileTransferAck): void {
-    this.activeDownloads.get(message.requestId)?.onAck(message.bytesReceived);
+    this.activeDownloads.get(message.requestId)?.flow.onAck(message.bytesReceived);
   }
 
   handleFileTransferCancel(message: FileTransferCancel): void {
-    this.activeDownloads.get(message.requestId)?.cancel();
+    this.activeDownloads.get(message.requestId)?.flow.cancel();
     const upload = this.activeUploads.get(message.requestId);
     if (upload) {
       upload.cancelled = true;
