@@ -1,11 +1,8 @@
 import { create } from "zustand";
-import { File as FSFile, Paths } from "expo-file-system";
-import * as LegacyFileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import type { DownloadPlatform } from "./download-platform-types";
 import type { HostProfile } from "@/types/host-connection";
 import { buildDaemonWebSocketUrl } from "@/utils/daemon-endpoints";
 import { openExternalUrl } from "@/utils/open-external-url";
-import { isWeb } from "@/constants/platform";
 import { i18n } from "@/i18n/i18next";
 
 interface DownloadProgress {
@@ -56,6 +53,8 @@ interface DownloadState {
       };
       signal?: AbortSignal;
     }) => Promise<{ fileName: string; mimeType: string; size: number | null }>;
+    /** Filesystem and sharing, injected so this store carries no Expo imports. */
+    platform: DownloadPlatform;
   }) => Promise<void>;
 
   /** Aborts an in-flight download, which sends fs.transfer.cancel and stops the daemon. */
@@ -78,6 +77,7 @@ async function runBinaryChannelDownload({
   path,
   fileName,
   downloadEntry,
+  platform,
   signal,
   onProgress,
 }: {
@@ -85,6 +85,7 @@ async function runBinaryChannelDownload({
   path: string;
   fileName: string;
   downloadEntry: NonNullable<Parameters<DownloadState["startDownload"]>[0]["downloadEntry"]>;
+  platform: DownloadPlatform;
   signal?: AbortSignal;
   onProgress: (progress: DownloadProgress) => void;
 }): Promise<void> {
@@ -111,7 +112,7 @@ async function runBinaryChannelDownload({
     });
   };
 
-  if (isWeb) {
+  if (platform.isWeb) {
     const parts: Uint8Array[] = [];
     const result = await downloadEntry({
       path,
@@ -147,9 +148,7 @@ async function runBinaryChannelDownload({
   // requested as "site" but arrives as "site.zip", and the share sheet hands over this
   // URI as-is, so a file created under the wrong name reaches the OS without its
   // extension. Creation therefore waits until the daemon has said what this is.
-  let targetFile: FSFile | null = null;
-  type CacheHandle = ReturnType<FSFile["open"]>;
-  let handle: CacheHandle | null = null;
+  let cacheFile: ReturnType<DownloadPlatform["createCacheFile"]> | null = null;
   let result: { fileName: string; mimeType: string; size: number | null };
   try {
     result = await downloadEntry({
@@ -158,15 +157,13 @@ async function runBinaryChannelDownload({
       sink: {
         onBegin: (metadata) => {
           totalBytes = metadata.sizeKnown === false ? 0 : metadata.size;
-          targetFile = resolveDownloadTargetFile(metadata.fileName || fileName);
-          targetFile.create();
-          handle = targetFile.open();
+          cacheFile = platform.createCacheFile(metadata.fileName || fileName);
         },
         onChunk: (chunk) => {
-          if (!handle) {
+          if (!cacheFile) {
             return;
           }
-          handle.writeBytes(chunk);
+          cacheFile.write(chunk);
           receivedBytes += chunk.byteLength;
           report(false);
         },
@@ -175,23 +172,24 @@ async function runBinaryChannelDownload({
   } catch (error) {
     // Nothing usable was produced, so do not leave a partial file in the cache to be
     // suffixed around by the next attempt.
-    (handle as CacheHandle | null)?.close();
-    handle = null;
+    const partial = cacheFile as ReturnType<DownloadPlatform["createCacheFile"]> | null;
+    partial?.close();
+    cacheFile = null;
     try {
-      (targetFile as FSFile | null)?.delete();
+      partial?.remove();
     } catch {
       // Best effort: a cache file we cannot remove must not mask the transfer error.
     }
     throw error;
   } finally {
-    (handle as CacheHandle | null)?.close();
+    (cacheFile as ReturnType<DownloadPlatform["createCacheFile"]> | null)?.close();
   }
   report(true);
 
-  const savedFile = targetFile as FSFile | null;
-  if (savedFile && (await Sharing.isAvailableAsync())) {
+  const savedFile = cacheFile as ReturnType<DownloadPlatform["createCacheFile"]> | null;
+  if (savedFile && (await platform.isSharingAvailable())) {
     const resolvedFileName = result.fileName || fileName;
-    await Sharing.shareAsync(savedFile.uri, {
+    await platform.share(savedFile.uri, {
       mimeType: result.mimeType || undefined,
       dialogTitle: resolvedFileName
         ? i18n.t("downloads.shareFileNamed", { fileName: resolvedFileName })
@@ -223,6 +221,7 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
     daemonProfile,
     requestFileDownloadToken,
     downloadEntry,
+    platform,
   }) => {
     const id = generateDownloadId();
     const download: Download = {
@@ -249,6 +248,7 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
             path,
             fileName,
             downloadEntry,
+            platform,
             signal: controller.signal,
             onProgress: (progress) => get().updateProgress(id, progress),
           });
@@ -276,56 +276,43 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
       const downloadUrl = buildDownloadUrl(
         downloadTarget.baseUrl,
         tokenResponse.token,
-        isWeb ? downloadTarget.authCredentials : null,
+        platform.isWeb ? downloadTarget.authCredentials : null,
       );
 
-      if (isWeb) {
+      if (platform.isWeb) {
         triggerBrowserDownload(downloadUrl, resolvedFileName);
         get().completeDownload(id);
         return;
       }
 
       const downloadStartTime = Date.now();
-      const targetFile = resolveDownloadTargetFile(resolvedFileName);
-      const downloadResumable = LegacyFileSystem.createDownloadResumable(
-        downloadUrl,
-        targetFile.uri,
-        downloadTarget.authHeader
-          ? { headers: { Authorization: downloadTarget.authHeader } }
-          : undefined,
-        (data) => {
-          const now = Date.now();
-          const { totalBytesWritten, totalBytesExpectedToWrite } = data;
-
-          if (totalBytesExpectedToWrite <= 0) {
+      const result = await platform.downloadOverHttp({
+        url: downloadUrl,
+        fileName: resolvedFileName,
+        authHeader: downloadTarget.authHeader,
+        onProgress: (written, expected) => {
+          if (expected <= 0) {
             return;
           }
-
-          const percent = totalBytesWritten / totalBytesExpectedToWrite;
-          const elapsed = (now - downloadStartTime) / 1000;
-          const speed = elapsed > 0 ? totalBytesWritten / elapsed : 0;
-          const remaining = totalBytesExpectedToWrite - totalBytesWritten;
-          const eta = speed > 0 ? remaining / speed : 0;
-
+          const elapsed = (Date.now() - downloadStartTime) / 1000;
+          const speed = elapsed > 0 ? written / elapsed : 0;
           get().updateProgress(id, {
-            percent,
-            bytesWritten: totalBytesWritten,
-            totalBytes: totalBytesExpectedToWrite,
+            percent: written / expected,
+            bytesWritten: written,
+            totalBytes: expected,
             speed,
-            eta,
+            eta: speed > 0 ? (expected - written) / speed : 0,
           });
         },
-      );
-
-      const result = await downloadResumable.downloadAsync();
+      });
       if (!result) {
         throw new Error(i18n.t("downloads.cancelled"));
       }
 
       get().completeDownload(id);
 
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(result.uri, {
+      if (await platform.isSharingAvailable()) {
+        await platform.share(result.uri, {
           mimeType: tokenResponse.mimeType ?? undefined,
           dialogTitle: resolvedFileName
             ? i18n.t("downloads.shareFileNamed", { fileName: resolvedFileName })
@@ -334,7 +321,7 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : i18n.t("downloads.failed");
-      if (isWeb) {
+      if (platform.isWeb) {
         console.warn("[DownloadStore] Download failed:", message);
         get().failDownload(id, message);
         return;
@@ -496,42 +483,4 @@ function triggerBrowserDownload(url: string, fileName: string) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-}
-
-function resolveDownloadTargetFile(fileName: string): FSFile {
-  const directory = Paths.cache ?? Paths.document;
-  if (!directory) {
-    throw new Error("No download directory available.");
-  }
-
-  const safeName = sanitizeDownloadFileName(fileName);
-  const split = splitFileName(safeName);
-  let targetFile = new FSFile(directory, safeName);
-  let suffix = 1;
-
-  while (targetFile.exists) {
-    targetFile = new FSFile(directory, `${split.base} (${suffix})${split.ext}`);
-    suffix += 1;
-  }
-
-  return targetFile;
-}
-
-function sanitizeDownloadFileName(fileName: string): string {
-  const trimmed = fileName.trim();
-  if (!trimmed) {
-    return "download";
-  }
-  return trimmed.replace(/[\\/:*?"<>|]+/g, "_");
-}
-
-function splitFileName(fileName: string): { base: string; ext: string } {
-  const lastDot = fileName.lastIndexOf(".");
-  if (lastDot <= 0) {
-    return { base: fileName, ext: "" };
-  }
-  return {
-    base: fileName.slice(0, lastDot),
-    ext: fileName.slice(lastDot),
-  };
 }

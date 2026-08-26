@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useHosts } from "@/runtime/host-runtime";
 import { useHostFeature } from "@/runtime/host-features";
 import { useDownloadStore } from "@/stores/download-store";
+import { downloadPlatform } from "@/stores/download-platform";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 
 interface UseFileDownloadParams {
@@ -52,6 +53,7 @@ export function useFileDownload({
         daemonProfile,
         requestFileDownloadToken: (targetPath) => requestFileDownloadToken(targetPath),
         downloadEntry: supportsBinaryTransfer ? downloadEntry : undefined,
+        platform: downloadPlatform,
       });
     },
     [

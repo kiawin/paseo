@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 
-vi.mock("@/i18n/i18next", () => ({ i18n: { t: (key: string) => key } }));
-
-const { useUploadStore } = await import("./upload-store");
+// No module mocks: i18n loads cleanly here, and the daemon calls arrive through an
+// injected uploadEntry port.
+import { useUploadStore } from "./upload-store";
 
 const file = (fileName: string, body: string) => ({
   fileName,
