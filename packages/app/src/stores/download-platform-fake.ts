@@ -10,6 +10,7 @@ export interface FakeDownloadPlatform extends DownloadPlatform {
   readonly removed: string[];
   readonly shared: { uri: string; mimeType?: string }[];
   readonly httpRequests: HttpDownloadRequest[];
+  readonly browserDeliveries: { url: string; fileName: string }[];
   bytesFor(fileName: string): Uint8Array;
   setSharingAvailable(available: boolean): void;
   failHttpWith(result: null): void;
@@ -20,6 +21,7 @@ export function createFakeDownloadPlatform(config: { isWeb?: boolean } = {}): Fa
   const removed: string[] = [];
   const shared: { uri: string; mimeType?: string }[] = [];
   const httpRequests: HttpDownloadRequest[] = [];
+  const browserDeliveries: { url: string; fileName: string }[] = [];
   const contents = new Map<string, number[]>();
   let sharingAvailable = true;
   let httpResult: { uri: string } | null = { uri: "file:///cache/http-download" };
@@ -30,6 +32,7 @@ export function createFakeDownloadPlatform(config: { isWeb?: boolean } = {}): Fa
     removed,
     shared,
     httpRequests,
+    browserDeliveries,
     bytesFor: (fileName) => Uint8Array.from(contents.get(fileName) ?? []),
     setSharingAvailable: (available) => {
       sharingAvailable = available;
@@ -52,6 +55,9 @@ export function createFakeDownloadPlatform(config: { isWeb?: boolean } = {}): Fa
       };
     },
 
+    deliverToBrowser: (url, fileName) => {
+      browserDeliveries.push({ url, fileName });
+    },
     isSharingAvailable: async () => sharingAvailable,
     share: async (uri, shareOptions) => {
       shared.push({ uri, mimeType: shareOptions.mimeType });

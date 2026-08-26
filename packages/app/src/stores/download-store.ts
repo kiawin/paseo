@@ -2,7 +2,6 @@ import { create } from "zustand";
 import type { DownloadPlatform } from "./download-platform-types";
 import type { HostProfile } from "@/types/host-connection";
 import { buildDaemonWebSocketUrl } from "@/utils/daemon-endpoints";
-import { openExternalUrl } from "@/utils/open-external-url";
 import { i18n } from "@/i18n/i18next";
 
 interface DownloadProgress {
@@ -136,7 +135,7 @@ async function runBinaryChannelDownload({
     });
     const objectUrl = URL.createObjectURL(blob);
     try {
-      triggerBrowserDownload(objectUrl, resolvedFileName);
+      platform.deliverToBrowser(objectUrl, resolvedFileName);
     } finally {
       // Revoking synchronously can race the click on some browsers.
       setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
@@ -280,7 +279,7 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
       );
 
       if (platform.isWeb) {
-        triggerBrowserDownload(downloadUrl, resolvedFileName);
+        platform.deliverToBrowser(downloadUrl, resolvedFileName);
         get().completeDownload(id);
         return;
       }
@@ -466,21 +465,4 @@ function buildDownloadUrl(
     url.password = authCredentials.password;
   }
   return url.toString();
-}
-
-function triggerBrowserDownload(url: string, fileName: string) {
-  if (typeof document === "undefined") {
-    if (typeof window !== "undefined") {
-      void openExternalUrl(url);
-    }
-    return;
-  }
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.rel = "noopener";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
 }

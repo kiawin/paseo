@@ -143,3 +143,94 @@ test("uploads a file into a workspace folder", async ({ page }) => {
 
   await page.screenshot({ path: path.join(ARTIFACTS, "07-file-uploaded.png") });
 });
+
+test("uploading a name that already exists keeps both files", async ({ page }) => {
+  await mkdir(path.join(workspace.repoPath, "assets"), { recursive: true });
+  await writeFile(path.join(workspace.repoPath, "assets", "logo.txt"), "original");
+
+  await gotoWorkspace(page, workspace.workspaceId);
+  await openFileExplorer(page);
+
+  const tree = page.getByTestId("file-explorer-tree-scroll");
+  await tree.getByText("assets", { exact: true }).first().click({ button: "right" });
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.getByText("Upload files…", { exact: true }).click(),
+  ]);
+  await chooser.setFiles({
+    name: "logo.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("uploaded"),
+  });
+
+  // "rename" on collision: the original must survive untouched.
+  await expect
+    .poll(
+      async () =>
+        readFile(path.join(workspace.repoPath, "assets", "logo (1).txt"), "utf8").catch(() => null),
+      { timeout: 20_000 },
+    )
+    .toBe("uploaded");
+  expect(await readFile(path.join(workspace.repoPath, "assets", "logo.txt"), "utf8")).toBe(
+    "original",
+  );
+
+  await tree.getByText("assets", { exact: true }).first().click();
+  await expect(tree.getByText("logo (1).txt", { exact: true }).first()).toBeVisible();
+  await page.screenshot({ path: path.join(ARTIFACTS, "08-upload-collision-renamed.png") });
+});
+
+test("uploads a non-ASCII filename into the workspace unchanged", async ({ page }) => {
+  const fileName = "設計ノート 🗂.md";
+  await mkdir(path.join(workspace.repoPath, "docs"), { recursive: true });
+  await writeFile(path.join(workspace.repoPath, "docs", ".keep"), "");
+
+  await gotoWorkspace(page, workspace.workspaceId);
+  await openFileExplorer(page);
+
+  const tree = page.getByTestId("file-explorer-tree-scroll");
+  await tree.getByText("docs", { exact: true }).first().click({ button: "right" });
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.getByText("Upload files…", { exact: true }).click(),
+  ]);
+  await chooser.setFiles({
+    name: fileName,
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# 設計\n"),
+  });
+
+  await expect
+    .poll(
+      async () =>
+        readFile(path.join(workspace.repoPath, "docs", fileName), "utf8").catch(() => null),
+      { timeout: 20_000 },
+    )
+    .toBe("# 設計\n");
+
+  await page.screenshot({ path: path.join(ARTIFACTS, "09-cjk-upload.png") });
+});
+
+test("offers a cancel control while a transfer is in flight", async ({ page }) => {
+  // Large enough that the toast is still showing when we look for the control.
+  await writeFile(path.join(workspace.repoPath, "large.bin"), Buffer.alloc(48 * 1024 * 1024, 7));
+
+  await gotoWorkspace(page, workspace.workspaceId);
+  await openFileExplorer(page);
+
+  const tree = page.getByTestId("file-explorer-tree-scroll");
+  await tree.getByText("large.bin", { exact: true }).first().click({ button: "right" });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByText("Download", { exact: true }).click();
+
+  // The cancel control only renders while inFlight, so finding it proves the in-progress state.
+  const cancel = page.getByTestId("transfer-toast-cancel");
+  await expect(cancel).toBeVisible({ timeout: 10_000 });
+  await page.screenshot({ path: path.join(ARTIFACTS, "10-transfer-in-progress.png") });
+
+  await downloadPromise;
+  await expect(cancel).toBeHidden({ timeout: 20_000 });
+});

@@ -55,6 +55,10 @@ export const downloadPlatform: DownloadPlatform = {
 
   isSharingAvailable: () => Sharing.isAvailableAsync(),
 
+  deliverToBrowser() {
+    throw new Error("Browser downloads are not available on native.");
+  },
+
   share: (uri, options) => Sharing.shareAsync(uri, options),
 
   async downloadOverHttp({ url, fileName, authHeader, onProgress }: HttpDownloadRequest) {

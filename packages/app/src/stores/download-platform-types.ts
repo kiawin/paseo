@@ -34,4 +34,6 @@ export interface DownloadPlatform {
   share(uri: string, options: { mimeType?: string; dialogTitle?: string }): Promise<void>;
   /** COMPAT(httpFileDownload): the pre-binary-channel path, native side. */
   downloadOverHttp(request: HttpDownloadRequest): Promise<{ uri: string } | null>;
+  /** Hands a URL to the browser as a download. Web only. */
+  deliverToBrowser(url: string, fileName: string): void;
 }

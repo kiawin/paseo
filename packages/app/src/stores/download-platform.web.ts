@@ -1,3 +1,4 @@
+import { openExternalUrl } from "@/utils/open-external-url";
 import type { DownloadPlatform } from "./download-platform-types";
 
 /**
@@ -12,6 +13,22 @@ function unavailable(operation: string): never {
 export const downloadPlatform: DownloadPlatform = {
   isWeb: true,
   createCacheFile: () => unavailable("Writing a download cache file"),
+
+  deliverToBrowser(url: string, fileName: string) {
+    if (typeof document === "undefined") {
+      if (typeof window !== "undefined") {
+        void openExternalUrl(url);
+      }
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  },
   isSharingAvailable: async () => false,
   share: async () => unavailable("Sharing a downloaded file"),
   downloadOverHttp: async () => unavailable("Streaming an HTTP download to disk"),
