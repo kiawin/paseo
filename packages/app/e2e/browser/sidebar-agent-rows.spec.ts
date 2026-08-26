@@ -81,6 +81,13 @@ test.describe("sidebar agent rows", () => {
         await expect(list.getByText(title, { exact: true })).toBeVisible();
       }
 
+      // The row announces what distinguishes it, not just its title: two agents a provider has
+      // not named yet would otherwise be spoken identically.
+      const rows = list.getByRole("button");
+      const spoken = await rows.first().getAttribute("aria-label");
+      expect(spoken).toContain("mock");
+      expect(spoken).toMatch(/Working|Done|Needs input|Ready to review|Failed/);
+
       // The sub-list hangs off the count, so its dots share a left rail with that digit. Without
       // it the rows read as a second, unrelated column.
       const railBox = await page.getByTestId("sidebar-workspace-agent-count").boundingBox();

@@ -10,6 +10,7 @@ import {
   type SidebarAgentRows,
 } from "@/components/sidebar/display-preferences/agent-rows";
 import { useSidebarAgentRows } from "@/components/sidebar/display-preferences/model";
+import { STATUS_BUCKET_LABELS } from "@/hooks/sidebar-status-view-model";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { usePanelStore } from "@/stores/panel-store";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
@@ -188,6 +189,11 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
 }) {
   const { t } = useTranslation();
   const label = agent.title || t("agentList.fallbackTitle");
+  // Two agents a provider has not named yet share one fallback title, so the visible text alone
+  // announces them identically. The row already draws what tells them apart — the provider mark
+  // and the status dot — and this is that, spoken. `STATUS_BUCKET_LABELS` is what the project
+  // row's leading visual already announces (`project-leading-visual.tsx:180`).
+  const accessibilityLabel = `${label}, ${agent.provider}, ${STATUS_BUCKET_LABELS[agent.status]}`;
   // Which agent this is matters most in exactly the case that draws this list: a Claude and a
   // Codex agent in one workspace are otherwise two identical rows. History rows already pair the
   // provider icon with the title this way (`components/agent-list.tsx:285`).
@@ -208,7 +214,7 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel}
       onPress={handlePress}
       style={rowStyle}
       testID={`sidebar-agent-row-${agent.agentId}`}
