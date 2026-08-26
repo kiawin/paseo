@@ -142,9 +142,25 @@ describe("upload store", () => {
     });
 
     expect(calls).toEqual([
-      { path: "dest/site/a.txt", overwrite: "replace", mkdir: true },
-      { path: "dest/site/nested/b.txt", overwrite: "replace", mkdir: true },
+      { path: "dest/site/a.txt", overwrite: "fail", mkdir: true },
+      { path: "dest/site/nested/b.txt", overwrite: "fail", mkdir: true },
     ]);
+  });
+
+  test("never asks the daemon to replace, in either shape", async () => {
+    const modes: string[] = [];
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: ".",
+      files: [file("flat.txt", "x"), { ...file("deep.txt", "y"), relativePath: "site/deep.txt" }],
+      uploadEntry: async ({ path, overwrite }) => {
+        modes.push(overwrite);
+        return { path, size: 1 };
+      },
+    });
+    expect(modes).not.toContain("replace");
+    expect(modes).toEqual(["rename", "fail"]);
   });
 
   test("a flat pick still renames rather than creating directories", async () => {

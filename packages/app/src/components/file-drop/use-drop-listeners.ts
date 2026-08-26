@@ -76,7 +76,11 @@ export async function expandDropEntry(
     if (!file) {
       return [];
     }
-    return [{ kind: "web-file", file, relativePath: `${prefix}${file.name}` }];
+    // Only a file *inside* a dropped folder carries a tree path. A plain dropped file has
+    // no prefix, and tagging it with one would make the upload look like a tree.
+    return prefix
+      ? [{ kind: "web-file", file, relativePath: `${prefix}${file.name}` }]
+      : [{ kind: "web-file", file }];
   }
 
   if (!entry.isDirectory) {

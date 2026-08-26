@@ -30,11 +30,13 @@ function dirEntry(name: string, children: FileSystemEntry[]) {
 }
 
 describe("expandDropEntry", () => {
-  test("tags a dropped file with its own name", async () => {
+  test("leaves a plain dropped file without a tree path", async () => {
     const items = await expandDropEntry(fileEntry("a.txt", "alpha"), "");
     expect(items).toHaveLength(1);
-    expect(items[0].relativePath).toBe("a.txt");
     expect(items[0].kind).toBe("web-file");
+    // A tree path here would make the upload look like a folder and take the
+    // folder overwrite policy, which is how a dropped file could clobber one in the repo.
+    expect(items[0].relativePath).toBeUndefined();
   });
 
   test("recurses into a folder and preserves the tree shape", async () => {

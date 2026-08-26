@@ -104,9 +104,10 @@ export const useUploadStore = create<UploadState>()((set, get) => ({
           path: joinExplorerPath(parentPath, file.relativePath ?? file.fileName),
           bytes: file.bytes,
           mimeType: file.mimeType,
-          // A flat pick never clobbers silently: an existing name gets a suffix. A tree
-          // keeps its own shape instead, so its files land where the folder says.
-          overwrite: isTreeUpload ? "replace" : "rename",
+          // Never overwrite without being asked. A flat pick takes a suffix on collision;
+          // a tree must keep its own shape, so a collision fails the file rather than
+          // silently replacing something already in the repository.
+          overwrite: isTreeUpload ? "fail" : "rename",
           createMissingDirectories: isTreeUpload,
         });
 
