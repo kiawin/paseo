@@ -379,8 +379,9 @@ export class WorkspaceFilesSession {
   /**
    * Streams one workspace entry to the client over the binary channel.
    *
-   * This is the WebSocket replacement for `GET /api/files/download`: a relay carries only
-   * `/health` and `/ws`, so an HTTP download cannot work on a relay connection at all.
+   * This is the WebSocket replacement for `GET /api/files/download`: a relay answers only
+   * its own `/ws`, `/health`, `/ready` and `/metrics` and 404s everything else, so an HTTP
+   * download cannot reach the daemon on a relay connection at all.
    * The client registers a sink for `requestId` before sending the request, so the metadata
    * response and the frames that follow both land on a receiver that already exists.
    */

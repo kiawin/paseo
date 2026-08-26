@@ -4638,7 +4638,8 @@ export class DaemonClient {
    * Streams a workspace entry over the WebSocket binary channel.
    *
    * This replaces the `GET /api/files/download` path, which cannot work on a relay
-   * connection at all — the relay carries only `/health` and `/ws`. Bytes reach
+   * connection at all — a relay answers only its own operational routes and 404s the rest.
+   * Bytes reach
    * `input.sink` as they arrive rather than being buffered here, so folder archives
    * and large files do not have to fit in memory.
    *

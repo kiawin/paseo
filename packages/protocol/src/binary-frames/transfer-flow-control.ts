@@ -2,10 +2,11 @@
  * Unacked-byte ceiling for one daemon -> client binary transfer.
  *
  * On a direct socket the sender feels TCP backpressure, so a naive send loop is safe.
- * A relay does not give us that: the Cloudflare Durable Object forwards with `ws.send()`
- * and exposes no drain signal, so streaming a large file to a slow phone would grow relay
- * memory without bound. The sender therefore stops once `windowBytes` is outstanding and
- * resumes on the next `fs.transfer.ack`.
+ * Through a relay the daemon writes to the relay, not to the client, so the client's read
+ * rate is not what the daemon's socket reflects. Bounding unacked bytes end to end keeps a
+ * slow client from accumulating megabytes somewhere in the middle, whichever relay is in
+ * use. The sender stops once `windowBytes` is outstanding and resumes on the next
+ * `fs.transfer.ack`.
  *
  * The window is well under the relay's 32 MiB frame ceiling, so a stalled transfer parks
  * rather than trips it.

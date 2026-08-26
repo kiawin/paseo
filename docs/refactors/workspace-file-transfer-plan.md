@@ -81,7 +81,7 @@ which keeps the HTTP path as a tagged fallback while old daemons are still in th
 The ack is the part VS Code does not have, and we need it. Their remote is a direct socket, so TCP
 backpressure reaches the sender — the download path is deliberately fire-and-forget
 (`diskFileSystemProviderServer.ts:122` fires chunk events; `diskFileSystemProviderClient.ts:111` ignores
-the write return). We have a Cloudflare Durable Object in the middle that forwards with `ws.send()` and
+the write return). We have a relay in the middle that the daemon writes to instead of the client, and
 no drain signal, so a slow phone grows DO memory instead.
 
 Rule, both directions: the sender stops once **8 MiB** is unacked, and resumes on the next
