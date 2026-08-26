@@ -58,7 +58,15 @@ export interface WorkspaceFilesSessionHost {
 }
 
 interface WorkspaceUploadState {
-  sink: UploadSink;
+  /**
+   * Resolves once the sink is open. The upload registers synchronously with its request so
+   * frames arriving during setup wait here instead of falling through to the attachment
+   * store, which discarded them silently.
+   */
+  ready: Promise<UploadSink>;
+  /** Serialises frames: the daemon dispatches each inbound message independently. */
+  queue: Promise<void>;
+  cancelled: boolean;
   cwd: string;
   requestedPath: string;
   receivedBytes: number;
@@ -241,7 +249,10 @@ export class WorkspaceFilesSession {
     for (const flow of this.activeDownloads.values()) flow.cancel();
     this.activeDownloads.clear();
     // A half-written upload must not survive the connection that was feeding it.
-    for (const upload of this.activeUploads.values()) void upload.sink.abort();
+    for (const upload of this.activeUploads.values()) {
+      upload.cancelled = true;
+      void upload.ready.then((sink) => sink.abort()).catch(() => undefined);
+    }
     this.activeUploads.clear();
   }
 
@@ -571,22 +582,30 @@ export class WorkspaceFilesSession {
    */
   async handleEntryUploadRequest(request: FileEntryUploadRequest, source?: object): Promise<void> {
     const { cwd, path: requestedPath, overwrite, requestId } = request;
+    // Register before awaiting: the client sends its frames straight after the request, and
+    // a frame that lands mid-setup must find this upload rather than the attachment store.
+    const ready = createUploadSink({
+      root: cwd,
+      relativePath: requestedPath,
+      overwrite,
+      createMissingDirectories: request.createMissingDirectories ?? false,
+    });
+    void ready.catch(() => undefined);
+    this.activeUploads.set(requestId, {
+      ready,
+      queue: Promise.resolve(),
+      cancelled: false,
+      cwd,
+      requestedPath,
+      receivedBytes: 0,
+      ackedBytes: 0,
+      source,
+    });
+
     try {
-      const sink = await createUploadSink({
-        root: cwd,
-        relativePath: requestedPath,
-        overwrite,
-        createMissingDirectories: request.createMissingDirectories ?? false,
-      });
-      this.activeUploads.set(requestId, {
-        sink,
-        cwd,
-        requestedPath,
-        receivedBytes: 0,
-        ackedBytes: 0,
-        source,
-      });
+      await ready;
     } catch (error) {
+      this.activeUploads.delete(requestId);
       this.logger.error(
         { err: error, cwd, path: requestedPath },
         `Failed to open upload sink for workspace ${cwd}`,
@@ -621,13 +640,17 @@ export class WorkspaceFilesSession {
   ): Promise<void> {
     const requestId = frame.requestId;
     try {
+      if (upload.cancelled) return;
+      const sink = await upload.ready;
+      if (upload.cancelled) return;
+
       if (frame.opcode === FileTransferOpcode.FileBegin) {
         // Everything the daemon needs came in fs.entry.upload.request.
         return;
       }
 
       if (frame.opcode === FileTransferOpcode.FileChunk) {
-        await upload.sink.write(frame.payload);
+        await sink.write(frame.payload);
         upload.receivedBytes += frame.payload.byteLength;
         if (upload.receivedBytes - upload.ackedBytes >= TRANSFER_ACK_INTERVAL_BYTES) {
           upload.ackedBytes = upload.receivedBytes;
@@ -639,7 +662,7 @@ export class WorkspaceFilesSession {
         return;
       }
 
-      const result = await upload.sink.commit();
+      const result = await sink.commit();
       this.activeUploads.delete(requestId);
       this.host.emit(
         {
@@ -659,7 +682,7 @@ export class WorkspaceFilesSession {
       );
     } catch (error) {
       this.activeUploads.delete(requestId);
-      await upload.sink.abort().catch(() => undefined);
+      await upload.ready.then((openSink) => openSink.abort()).catch(() => undefined);
       this.logger.error(
         { err: error, cwd: upload.cwd, path: upload.requestedPath },
         `Failed to receive upload for workspace ${upload.cwd}`,
@@ -676,8 +699,9 @@ export class WorkspaceFilesSession {
     this.activeDownloads.get(message.requestId)?.cancel();
     const upload = this.activeUploads.get(message.requestId);
     if (upload) {
+      upload.cancelled = true;
       this.activeUploads.delete(message.requestId);
-      void upload.sink.abort();
+      void upload.ready.then((sink) => sink.abort()).catch(() => undefined);
     }
   }
 
@@ -695,7 +719,9 @@ export class WorkspaceFilesSession {
   async handleFileTransferFrame(frame: FileTransferFrame): Promise<void> {
     const upload = this.activeUploads.get(frame.requestId);
     if (upload) {
-      await this.receiveWorkspaceUploadFrame(upload, frame);
+      // Chain so frames apply in arrival order despite independent dispatch.
+      upload.queue = upload.queue.then(() => this.receiveWorkspaceUploadFrame(upload, frame));
+      await upload.queue;
       return;
     }
 

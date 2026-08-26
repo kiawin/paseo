@@ -1038,9 +1038,103 @@ describe("upload cancellation racing an in-flight write", () => {
         expect(names).toEqual([]);
       }
       expect(unhandled).toEqual([]);
-      expect(emitted.some((message) => message.type === "fs.entry.upload.response")).toBe(true);
+      // A cancelled upload may emit no response at all: the client that cancelled is no
+      // longer awaiting one. What must hold is that nothing half-written survives.
+      const responses = emitted.filter((message) => message.type === "fs.entry.upload.response");
+      expect(responses.length).toBeLessThanOrEqual(1);
     } finally {
       process.off("unhandledRejection", onUnhandled);
     }
+  });
+});
+
+describe("upload frames that arrive before the sink is open", () => {
+  test("frames sent straight after the request are applied, not discarded", async () => {
+    const { subsystem } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-upload-early-");
+
+    // The client sends the request and its frames back to back, and the daemon dispatches
+    // each inbound message independently — so do not await the request first.
+    const requestDone = subsystem.handleEntryUploadRequest({
+      type: "fs.entry.upload.request",
+      cwd,
+      path: "raced.txt",
+      mimeType: "text/plain",
+      size: 5,
+      modifiedAt: "2026-08-26T00:00:00.000Z",
+      overwrite: "fail",
+      requestId: "up-early",
+    });
+
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId: "up-early",
+      metadata: {
+        mime: "text/plain",
+        size: 5,
+        encoding: "binary",
+        modifiedAt: "2026-08-26T00:00:00.000Z",
+      },
+      payload: new Uint8Array(),
+    });
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "up-early",
+      payload: new TextEncoder().encode("hello"),
+    });
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileEnd,
+      requestId: "up-early",
+      payload: new Uint8Array(),
+    });
+    await requestDone;
+
+    expect(readFileSync(join(cwd, "raced.txt"), "utf8")).toBe("hello");
+  });
+
+  test("applies chunks in arrival order when frames are not awaited individually", async () => {
+    const { subsystem } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-upload-order-");
+
+    const requestDone = subsystem.handleEntryUploadRequest({
+      type: "fs.entry.upload.request",
+      cwd,
+      path: "ordered.txt",
+      mimeType: "text/plain",
+      size: 6,
+      modifiedAt: "2026-08-26T00:00:00.000Z",
+      overwrite: "fail",
+      requestId: "up-order",
+    });
+
+    const frames = [
+      subsystem.handleFileTransferFrame({
+        opcode: FileTransferOpcode.FileBegin,
+        requestId: "up-order",
+        metadata: {
+          mime: "text/plain",
+          size: 6,
+          encoding: "binary",
+          modifiedAt: "2026-08-26T00:00:00.000Z",
+        },
+        payload: new Uint8Array(),
+      }),
+      ...["aa", "bb", "cc"].map((part) =>
+        subsystem.handleFileTransferFrame({
+          opcode: FileTransferOpcode.FileChunk,
+          requestId: "up-order",
+          payload: new TextEncoder().encode(part),
+        }),
+      ),
+      subsystem.handleFileTransferFrame({
+        opcode: FileTransferOpcode.FileEnd,
+        requestId: "up-order",
+        payload: new Uint8Array(),
+      }),
+    ];
+    await Promise.all(frames);
+    await requestDone;
+
+    expect(readFileSync(join(cwd, "ordered.txt"), "utf8")).toBe("aabbcc");
   });
 });
