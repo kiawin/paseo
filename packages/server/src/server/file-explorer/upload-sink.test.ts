@@ -262,3 +262,44 @@ describe("createUploadSink folder trees", () => {
     expect(readFileSync(join(root, "site", "assets", "new.txt"), "utf8")).toBe("new");
   });
 });
+
+describe("createUploadSink commit atomicity", () => {
+  test("a file appearing mid-upload is not destroyed under fail", async () => {
+    const root = makeDir("upload-toctou-fail-");
+    const sink = await createUploadSink({ root, relativePath: "a.txt", overwrite: "fail" });
+    await sink.write(bytes("uploaded"));
+
+    // An agent writes the same path while the transfer is still in flight; the pre-flight
+    // existence check has already passed.
+    writeFileSync(join(root, "a.txt"), "written by someone else");
+
+    await expect(sink.commit()).rejects.toThrow();
+    expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("written by someone else");
+    // No temp file survives the refusal.
+    expect(readdirSync(root)).toEqual(["a.txt"]);
+  });
+
+  test("a file appearing mid-upload is not destroyed under rename", async () => {
+    const root = makeDir("upload-toctou-rename-");
+    const sink = await createUploadSink({ root, relativePath: "a.txt", overwrite: "rename" });
+    await sink.write(bytes("uploaded"));
+
+    writeFileSync(join(root, "a.txt"), "written by someone else");
+
+    await expect(sink.commit()).rejects.toThrow();
+    expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("written by someone else");
+    expect(readdirSync(root)).toEqual(["a.txt"]);
+  });
+
+  test("replace still overwrites, which is what it promises", async () => {
+    const root = makeDir("upload-toctou-replace-");
+    const sink = await createUploadSink({ root, relativePath: "a.txt", overwrite: "replace" });
+    await sink.write(bytes("uploaded"));
+
+    writeFileSync(join(root, "a.txt"), "written by someone else");
+
+    await expect(sink.commit()).resolves.toMatchObject({ path: "a.txt" });
+    expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("uploaded");
+    expect(readdirSync(root)).toEqual(["a.txt"]);
+  });
+});

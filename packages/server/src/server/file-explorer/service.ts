@@ -899,7 +899,17 @@ export async function createUploadSink({
       await handle.close();
       handle = null;
       try {
-        await fs.rename(temporaryPath, targetPath);
+        if (overwrite === "replace") {
+          await fs.rename(temporaryPath, targetPath);
+        } else {
+          // "fail" and "rename" both promise not to destroy an existing file, but the
+          // target was only checked before the transfer — an agent can create that path
+          // while the bytes are still arriving, and rename() would replace it anyway.
+          // link() refuses when the destination exists, so the check and the commit are
+          // one step.
+          await fs.link(temporaryPath, targetPath);
+          await fs.unlink(temporaryPath).catch(() => undefined);
+        }
       } catch (error) {
         await fs.unlink(temporaryPath).catch(() => undefined);
         throw error;
