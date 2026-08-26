@@ -216,7 +216,7 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
         return;
       }
 
-      // COMPAT(httpFileDownload): added in v0.5.2, remove after 2027-02-01 once the daemon
+      // COMPAT(httpFileDownload): added in v0.6.2, remove after 2027-02-01 once the daemon
       // floor ships fs.entry.download. This path needs a second origin the relay does not
       // expose, which is the root cause of the #543 issue cluster.
       const tokenResponse = await requestFileDownloadToken(path);
