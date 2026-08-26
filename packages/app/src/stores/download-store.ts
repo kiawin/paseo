@@ -51,7 +51,7 @@ interface DownloadState {
     downloadEntry?: (input: {
       path: string;
       sink: {
-        onBegin?: (metadata: { size: number; sizeKnown?: boolean }) => void;
+        onBegin?: (metadata: { size: number; sizeKnown?: boolean; fileName?: string }) => void;
         onChunk: (chunk: Uint8Array) => void | Promise<void>;
       };
     }) => Promise<{ fileName: string; mimeType: string; size: number | null }>;
@@ -137,9 +137,13 @@ async function runBinaryChannelDownload({
     return;
   }
 
-  const targetFile = resolveDownloadTargetFile(fileName);
-  targetFile.create();
-  const handle = targetFile.open();
+  // The cache file is named from FileBegin, not from the caller: a folder download is
+  // requested as "site" but arrives as "site.zip", and the share sheet hands over this
+  // URI as-is, so a file created under the wrong name reaches the OS without its
+  // extension. Creation therefore waits until the daemon has said what this is.
+  let targetFile: FSFile | null = null;
+  type CacheHandle = ReturnType<FSFile["open"]>;
+  let handle: CacheHandle | null = null;
   let result: { fileName: string; mimeType: string; size: number | null };
   try {
     result = await downloadEntry({
@@ -147,22 +151,40 @@ async function runBinaryChannelDownload({
       sink: {
         onBegin: (metadata) => {
           totalBytes = metadata.sizeKnown === false ? 0 : metadata.size;
+          targetFile = resolveDownloadTargetFile(metadata.fileName || fileName);
+          targetFile.create();
+          handle = targetFile.open();
         },
         onChunk: (chunk) => {
+          if (!handle) {
+            return;
+          }
           handle.writeBytes(chunk);
           receivedBytes += chunk.byteLength;
           report(false);
         },
       },
     });
+  } catch (error) {
+    // Nothing usable was produced, so do not leave a partial file in the cache to be
+    // suffixed around by the next attempt.
+    (handle as CacheHandle | null)?.close();
+    handle = null;
+    try {
+      (targetFile as FSFile | null)?.delete();
+    } catch {
+      // Best effort: a cache file we cannot remove must not mask the transfer error.
+    }
+    throw error;
   } finally {
-    handle.close();
+    (handle as CacheHandle | null)?.close();
   }
   report(true);
 
-  if (await Sharing.isAvailableAsync()) {
+  const savedFile = targetFile as FSFile | null;
+  if (savedFile && (await Sharing.isAvailableAsync())) {
     const resolvedFileName = result.fileName || fileName;
-    await Sharing.shareAsync(targetFile.uri, {
+    await Sharing.shareAsync(savedFile.uri, {
       mimeType: result.mimeType || undefined,
       dialogTitle: resolvedFileName
         ? i18n.t("downloads.shareFileNamed", { fileName: resolvedFileName })

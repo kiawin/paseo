@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const writtenChunks: Uint8Array[] = [];
+const createdNames: string[] = [];
+const deletedNames: string[] = [];
 const shareCalls: string[] = [];
 let handleClosed = false;
 
@@ -12,9 +14,14 @@ vi.mock("expo-file-system", () => {
     exists = false;
     constructor(_directory: unknown, name: string) {
       this.uri = `file:///cache/${name}`;
+      createdNames.push(name);
     }
     create() {
       this.exists = true;
+    }
+    delete() {
+      deletedNames.push(this.uri);
+      this.exists = false;
     }
     open() {
       return {
@@ -47,6 +54,8 @@ const { useDownloadStore } = await import("./download-store");
 
 function resetStore() {
   writtenChunks.length = 0;
+  createdNames.length = 0;
+  deletedNames.length = 0;
   shareCalls.length = 0;
   handleClosed = false;
   useDownloadStore.setState({ downloads: new Map(), activeDownloadId: null });
@@ -149,5 +158,47 @@ describe("download store binary-channel path", () => {
       percent: 0,
       eta: 0,
     });
+  });
+
+  test("names the cache file from FileBegin so an archive keeps its extension", async () => {
+    await useDownloadStore.getState().startDownload({
+      serverId: "srv",
+      scopeId: "scope",
+      // A folder download is requested by folder name...
+      fileName: "site",
+      path: "site",
+      daemonProfile: undefined,
+      requestFileDownloadToken: vi.fn(),
+      downloadEntry: async ({ sink }) => {
+        // ...but the daemon says what it actually is.
+        sink.onBegin?.({ size: 0, sizeKnown: false, fileName: "site.zip" });
+        await sink.onChunk(new Uint8Array([1, 2, 3]));
+        return { fileName: "site.zip", mimeType: "application/zip", size: null };
+      },
+    });
+
+    expect(createdNames).toContain("site.zip");
+    expect(createdNames).not.toContain("site");
+    expect(shareCalls).toEqual(["file:///cache/site.zip"]);
+  });
+
+  test("removes the partial cache file when a transfer fails", async () => {
+    await useDownloadStore.getState().startDownload({
+      serverId: "srv",
+      scopeId: "scope",
+      fileName: "big.bin",
+      path: "big.bin",
+      daemonProfile: undefined,
+      requestFileDownloadToken: vi.fn(),
+      downloadEntry: async ({ sink }) => {
+        sink.onBegin?.({ size: 100 });
+        await sink.onChunk(new Uint8Array([1, 2, 3]));
+        throw new Error("The host cancelled this transfer.");
+      },
+    });
+
+    expect(deletedNames).toEqual(["file:///cache/big.bin"]);
+    const download = [...useDownloadStore.getState().downloads.values()][0];
+    expect(download.status).toBe("error");
   });
 });
