@@ -24,6 +24,22 @@ const MULTI_AGENT_TITLES = [
 /** The sidebar plus a little of the pane behind it, so the row's right edge is in frame. */
 const SIDEBAR_CLIP = { x: 0, y: 124, width: 340, height: 292 };
 
+/**
+ * Wide enough for the sidebar plus the preference menu and its submenu, which open to the right
+ * of the trigger as separate popovers. Framing them together is the point: the shot has to show
+ * where the control lives, not just what it says.
+ */
+const MENU_CLIP = { x: 0, y: 96, width: 720, height: 480 };
+
+/**
+ * Popovers fade in, and `toBeVisible` is satisfied before the animation lands — a shot taken then
+ * catches the menu half-transparent over whatever is behind it. Capture-only, so waiting a beat
+ * beats plumbing an animation signal through the menu engine.
+ */
+async function settlePopover(page: import("@playwright/test").Page): Promise<void> {
+  await page.waitForTimeout(400);
+}
+
 test.describe("sidebar agent rows evidence", () => {
   test.skip(!process.env.PASEO_SIDEBAR_EVIDENCE, "Set PASEO_SIDEBAR_EVIDENCE=1 to capture.");
   test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 3 });
@@ -90,6 +106,27 @@ test.describe("sidebar agent rows evidence", () => {
       await page.screenshot({
         path: "test-results/evidence/03-expanded.png",
         clip: SIDEBAR_CLIP,
+      });
+      // 4. Where the preference lives. Not the Settings screen: sidebar display preferences all
+      // sit in this menu, so the new one joins Checks rather than starting a second home.
+      await page.getByTestId("sidebar-display-preferences-menu").click();
+      const menu = page.getByTestId("sidebar-display-preferences-content");
+      await expect(menu).toBeVisible({ timeout: 10_000 });
+      await page.getByTestId("sidebar-display-show").click();
+      const agentsEntry = page.getByTestId("sidebar-display-agents");
+      await expect(agentsEntry).toBeVisible({ timeout: 10_000 });
+      await settlePopover(page);
+      await page.screenshot({ path: "test-results/evidence/04-display-menu.png", clip: MENU_CLIP });
+
+      // 5. The three answers, with the shipped default selected.
+      await agentsEntry.click();
+      await expect(page.getByTestId("sidebar-agent-rows-collapsed")).toBeVisible({
+        timeout: 10_000,
+      });
+      await settlePopover(page);
+      await page.screenshot({
+        path: "test-results/evidence/05-agents-options.png",
+        clip: MENU_CLIP,
       });
     } finally {
       await busy.cleanup();
