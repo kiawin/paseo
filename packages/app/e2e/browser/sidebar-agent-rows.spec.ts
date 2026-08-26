@@ -151,6 +151,44 @@ test.describe("sidebar agent rows", () => {
     }
   });
 
+  test("leaves the rest of the row navigating", async ({ page }) => {
+    // The toggle carries a generous hitSlop so touch can reach it. That slop must not reach the
+    // title: everything outside the leading slot still opens the workspace.
+    const workspace = await seedWorkspace({ repoPrefix: "paseo-e2e-agent-rows-nav-" });
+    try {
+      for (const title of AGENT_TITLES) {
+        await workspace.client.createAgent({
+          provider: "mock",
+          cwd: workspace.repoPath,
+          workspaceId: workspace.workspaceId,
+          title,
+          modeId: "load-test",
+          model: "e2e-fast-stream",
+        });
+      }
+
+      await gotoAppShell(page);
+      const row = page.getByTestId(rowTestId(workspace.workspaceId));
+      await expect(row).toBeVisible({ timeout: 30_000 });
+      const toggle = page.getByTestId("sidebar-agent-list-disclosure");
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+
+      // Press just right of the toggle's slop, where the title starts.
+      const toggleBox = await toggle.boundingBox();
+      const rowBox = await row.boundingBox();
+      expect(toggleBox).not.toBeNull();
+      expect(rowBox).not.toBeNull();
+      if (toggleBox && rowBox) {
+        await page.mouse.click(toggleBox.x + toggleBox.width + 16, rowBox.y + rowBox.height / 2);
+      }
+
+      await expect(page).toHaveURL(/\/workspace\//, { timeout: 30_000 });
+      await expect(page.getByTestId("sidebar-agent-list")).toHaveCount(0);
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
   test("draws nothing for a workspace holding one agent", async ({ page }) => {
     const workspace = await seedWorkspace({ repoPrefix: "paseo-e2e-agent-rows-single-" });
     try {

@@ -218,8 +218,16 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
 
 const PROVIDER_ICON_SIZE = 12;
 
-/** The visible target is a 6px dot; touch needs a finger-sized one around it. */
-const TOGGLE_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
+/**
+ * The visible target is a 14x20 slot, well under the 44pt/48dp minimum, and on touch it is the
+ * only way to open the sub-list — a project row can be tapped anywhere because its press is free,
+ * while this row's press navigates.
+ *
+ * Asymmetric because the space is. Above and below is row padding and left is the sidebar's own
+ * gutter, so growing there costs nothing; right is the workspace title, so it stays put. Lands at
+ * roughly 34x44.
+ */
+const TOGGLE_HIT_SLOP = { top: 12, bottom: 12, left: 12, right: 8 };
 
 /**
  * Left inset for the sub-list, set so an agent's status dot shares a left edge with the agent
