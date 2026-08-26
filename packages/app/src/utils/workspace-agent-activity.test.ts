@@ -480,7 +480,7 @@ describe("workspace agent activity index", () => {
     expect(next.get("workspace-a")?.enteredAt).toEqual(new Date("2026-06-01T10:10:00.000Z"));
   });
 
-  it("rebuilds an entry when only the agent title changes", () => {
+  it("holds the status clock when only the agent title changes", () => {
     const previous = buildWorkspaceAgentActivityIndex(
       new Map([
         [
@@ -504,7 +504,7 @@ describe("workspace agent activity index", () => {
             id: "root",
             workspaceId: "workspace-a",
             status: "running",
-            updatedAt: "2026-06-01T10:00:00.000Z",
+            updatedAt: "2026-06-01T10:30:00.000Z",
             title: "Rebase onto upstream main",
           }),
         ],
@@ -514,5 +514,11 @@ describe("workspace agent activity index", () => {
 
     expect(next).not.toBe(previous);
     expect(next.get("workspace-a")?.agents[0]?.title).toBe("Rebase onto upstream main");
+    // Providers name a session from its first turn. That rename must not restart the clock, or the
+    // row's "Last activity" stamp jumps forward for a status the agent never re-entered.
+    expect(next.get("workspace-a")?.agents[0]?.enteredAt).toEqual(
+      new Date("2026-06-01T10:00:00.000Z"),
+    );
+    expect(next.get("workspace-a")?.enteredAt).toEqual(new Date("2026-06-01T10:00:00.000Z"));
   });
 });

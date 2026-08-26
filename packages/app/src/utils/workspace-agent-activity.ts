@@ -6,8 +6,8 @@ import { deriveSidebarStateBucket } from "./sidebar-agent-state";
  * One active root agent, as a sidebar row sees it.
  *
  * `enteredAt` is when the agent entered this status, not when it last changed. The reuse pass
- * below keeps the previous object while `agentId`, `status`, and `title` all hold, so a running
- * agent that emits a frame every second does not restart its own clock.
+ * below carries it forward for as long as `status` holds, so neither a running agent emitting a
+ * frame every second nor a provider renaming the session restarts the clock.
  */
 export interface WorkspaceAgentEntry {
   agentId: string;
@@ -134,12 +134,15 @@ function reuseAgentEntries(
     const entry = next[index];
     if (!entry) continue;
     const previousEntry = previousById.get(entry.agentId);
-    if (
-      previousEntry &&
-      previousEntry.status === entry.status &&
-      previousEntry.title === entry.title
-    ) {
-      next[index] = previousEntry;
+    if (previousEntry && previousEntry.status === entry.status) {
+      // The status is what `enteredAt` is timing, so it alone decides whether the clock keeps
+      // running. A title changes while an agent works — providers name a session from its first
+      // turn — and letting that restart the clock would push the winner's `statusEnteredAt`, and
+      // with it the row's "Last activity" stamp, forward on a rename.
+      next[index] =
+        previousEntry.title === entry.title
+          ? previousEntry
+          : { ...entry, enteredAt: previousEntry.enteredAt };
     }
     if (next[index] !== previous[index]) {
       identical = false;
