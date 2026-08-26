@@ -510,25 +510,3 @@ function splitFileName(fileName: string): { base: string; ext: string } {
     ext: fileName.slice(lastDot),
   };
 }
-
-export function formatSpeed(bytesPerSecond: number): string {
-  if (bytesPerSecond < 1024) {
-    return `${Math.round(bytesPerSecond)} B/s`;
-  }
-  if (bytesPerSecond < 1024 * 1024) {
-    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
-  }
-  return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
-}
-
-export function formatEta(seconds: number): string {
-  if (seconds < 1) {
-    return "< 1s";
-  }
-  if (seconds < 60) {
-    return `${Math.round(seconds)}s`;
-  }
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60);
-  return `${mins}m ${secs}s`;
-}
