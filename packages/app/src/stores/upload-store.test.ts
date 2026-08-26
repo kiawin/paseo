@@ -177,4 +177,35 @@ describe("upload store", () => {
     });
     expect(calls).toEqual([{ overwrite: "rename", mkdir: false }]);
   });
+
+  test("cancelling one upload abandons the rest of the batch", async () => {
+    const attempted: string[] = [];
+
+    const started = useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: ".",
+      files: [file("first.txt", "a"), file("second.txt", "b"), file("third.txt", "c")],
+      uploadEntry: async ({ path, signal }) => {
+        attempted.push(path);
+        if (path === "first.txt") {
+          await new Promise<void>((resolve) => {
+            signal?.addEventListener("abort", () => resolve());
+          });
+          throw new Error("Upload cancelled.");
+        }
+        return { path, size: 1 };
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const inFlight = [...useUploadStore.getState().uploads.values()][0];
+    useUploadStore.getState().cancelUpload(inFlight.id);
+    await started;
+
+    // Cancelling the first file must not let the next one start.
+    expect(attempted).toEqual(["first.txt"]);
+    const statuses = [...useUploadStore.getState().uploads.values()].map((u) => u.status);
+    expect(statuses).toEqual(["error"]);
+  });
 });

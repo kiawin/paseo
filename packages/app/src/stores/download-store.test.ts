@@ -201,4 +201,43 @@ describe("download store binary-channel path", () => {
     const download = [...useDownloadStore.getState().downloads.values()][0];
     expect(download.status).toBe("error");
   });
+
+  test("cancelling an in-flight download aborts the signal the client is given", async () => {
+    let seenSignal: AbortSignal | undefined;
+    let aborted = false;
+
+    const started = useDownloadStore.getState().startDownload({
+      serverId: "srv",
+      scopeId: "scope",
+      fileName: "big.bin",
+      path: "big.bin",
+      daemonProfile: undefined,
+      requestFileDownloadToken: vi.fn(),
+      downloadEntry: async ({ sink, signal }) => {
+        seenSignal = signal;
+        sink.onBegin?.({ size: 1000 });
+        await sink.onChunk(new Uint8Array(10));
+        // Stay in flight until the store aborts us, as a real transfer would.
+        await new Promise<void>((resolve) => {
+          signal?.addEventListener("abort", () => {
+            aborted = true;
+            resolve();
+          });
+        });
+        throw new Error("Download cancelled.");
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const inFlight = [...useDownloadStore.getState().downloads.values()][0];
+    expect(inFlight.status).toBe("downloading");
+    expect(seenSignal).toBeDefined();
+
+    useDownloadStore.getState().cancelDownload(inFlight.id);
+    await started;
+
+    expect(aborted).toBe(true);
+    const download = [...useDownloadStore.getState().downloads.values()][0];
+    expect(download.status).toBe("error");
+  });
 });

@@ -54,9 +54,12 @@ interface DownloadState {
         onBegin?: (metadata: { size: number; sizeKnown?: boolean; fileName?: string }) => void;
         onChunk: (chunk: Uint8Array) => void | Promise<void>;
       };
+      signal?: AbortSignal;
     }) => Promise<{ fileName: string; mimeType: string; size: number | null }>;
   }) => Promise<void>;
 
+  /** Aborts an in-flight download, which sends fs.transfer.cancel and stops the daemon. */
+  cancelDownload: (id: string) => void;
   updateProgress: (id: string, progress: DownloadProgress) => void;
   completeDownload: (id: string) => void;
   failDownload: (id: string, message: string) => void;
@@ -75,12 +78,14 @@ async function runBinaryChannelDownload({
   path,
   fileName,
   downloadEntry,
+  signal,
   onProgress,
 }: {
   id: string;
   path: string;
   fileName: string;
   downloadEntry: NonNullable<Parameters<DownloadState["startDownload"]>[0]["downloadEntry"]>;
+  signal?: AbortSignal;
   onProgress: (progress: DownloadProgress) => void;
 }): Promise<void> {
   const startedAt = Date.now();
@@ -110,6 +115,7 @@ async function runBinaryChannelDownload({
     const parts: Uint8Array[] = [];
     const result = await downloadEntry({
       path,
+      signal,
       sink: {
         onBegin: (metadata) => {
           totalBytes = metadata.sizeKnown === false ? 0 : metadata.size;
@@ -148,6 +154,7 @@ async function runBinaryChannelDownload({
   try {
     result = await downloadEntry({
       path,
+      signal,
       sink: {
         onBegin: (metadata) => {
           totalBytes = metadata.sizeKnown === false ? 0 : metadata.size;
@@ -193,6 +200,13 @@ async function runBinaryChannelDownload({
   }
 }
 
+/**
+ * Abort handles for in-flight downloads, keyed by download id. Kept outside the store
+ * state: they are not rendered, and putting non-serialisable handles in state invites
+ * them being treated as data.
+ */
+const downloadAbortControllers = new Map<string, AbortController>();
+
 function generateDownloadId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -227,13 +241,20 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
 
     try {
       if (downloadEntry) {
-        await runBinaryChannelDownload({
-          id,
-          path,
-          fileName,
-          downloadEntry,
-          onProgress: (progress) => get().updateProgress(id, progress),
-        });
+        const controller = new AbortController();
+        downloadAbortControllers.set(id, controller);
+        try {
+          await runBinaryChannelDownload({
+            id,
+            path,
+            fileName,
+            downloadEntry,
+            signal: controller.signal,
+            onProgress: (progress) => get().updateProgress(id, progress),
+          });
+        } finally {
+          downloadAbortControllers.delete(id);
+        }
         get().completeDownload(id);
         return;
       }
@@ -320,6 +341,10 @@ export const useDownloadStore = create<DownloadState>()((set, get) => ({
       }
       get().failDownload(id, message);
     }
+  },
+
+  cancelDownload: (id) => {
+    downloadAbortControllers.get(id)?.abort();
   },
 
   updateProgress: (id, progress) => {

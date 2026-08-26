@@ -49,15 +49,25 @@ interface UploadState {
       mimeType: string;
       overwrite: "fail" | "replace" | "rename";
       createMissingDirectories?: boolean;
+      signal?: AbortSignal;
     }) => Promise<{ path: string; size: number }>;
     onUploaded?: (parentPath: string) => void;
   }) => Promise<void>;
 
+  /** Aborts the in-flight upload and abandons the rest of the batch it belongs to. */
+  cancelUpload: (id: string) => void;
   updateProgress: (id: string, progress: UploadProgress) => void;
   completeUpload: (id: string) => void;
   failUpload: (id: string, message: string) => void;
   dismissUpload: (id: string) => void;
 }
+
+/** Abort handles for in-flight uploads, keyed by upload id. */
+const uploadAbortControllers = new Map<string, AbortController>();
+/** Which batch an upload belongs to, so cancelling one abandons the rest. */
+const uploadBatchByUploadId = new Map<string, string>();
+/** Batches the user cancelled, so their remaining files are never started. */
+const cancelledUploadBatches = new Set<string>();
 
 function generateUploadId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -74,9 +84,16 @@ export const useUploadStore = create<UploadState>()((set, get) => ({
 
   startUploads: async ({ serverId, scopeId, parentPath, files, uploadEntry, onUploaded }) => {
     let uploadedAny = false;
+    const batchId = generateUploadId();
 
     for (const file of files) {
+      if (cancelledUploadBatches.has(batchId)) {
+        break;
+      }
       const id = generateUploadId();
+      const controller = new AbortController();
+      uploadAbortControllers.set(id, controller);
+      uploadBatchByUploadId.set(id, batchId);
       set((state) => ({
         uploads: new Map(state.uploads).set(id, {
           id,
@@ -109,6 +126,7 @@ export const useUploadStore = create<UploadState>()((set, get) => ({
           // silently replacing something already in the repository.
           overwrite: isTreeUpload ? "fail" : "rename",
           createMissingDirectories: isTreeUpload,
+          signal: controller.signal,
         });
 
         const elapsed = (Date.now() - startedAt) / 1000;
@@ -123,12 +141,27 @@ export const useUploadStore = create<UploadState>()((set, get) => ({
         uploadedAny = true;
       } catch (error) {
         get().failUpload(id, error instanceof Error ? error.message : i18n.t("uploads.failed"));
+      } finally {
+        uploadAbortControllers.delete(id);
+        uploadBatchByUploadId.delete(id);
       }
     }
+
+    cancelledUploadBatches.delete(batchId);
 
     if (uploadedAny) {
       onUploaded?.(parentPath);
     }
+  },
+
+  cancelUpload: (id) => {
+    // Abandon the rest of the selection too: cancelling one file of a folder upload and
+    // watching the next one start is not what the button appears to promise.
+    const batchId = uploadBatchByUploadId.get(id);
+    if (batchId) {
+      cancelledUploadBatches.add(batchId);
+    }
+    uploadAbortControllers.get(id)?.abort();
   },
 
   updateProgress: (id, progress) => {

@@ -11,27 +11,39 @@ import { useUploadStore, type Upload } from "@/stores/upload-store";
 
 const AUTO_DISMISS_DELAY = 3000;
 
-function toTransfer(download: Download, dismiss: (id: string) => void): Transfer {
+function toTransfer(
+  download: Download,
+  dismiss: (id: string) => void,
+  cancel: (id: string) => void,
+): Transfer {
+  const inFlight = download.status === "downloading";
   return {
     id: download.id,
     fileName: download.fileName,
-    inFlight: download.status === "downloading",
+    inFlight,
     complete: download.status === "complete",
     message: download.message,
     progress: download.progress,
     dismiss: () => dismiss(download.id),
+    cancel: inFlight ? () => cancel(download.id) : undefined,
   };
 }
 
-function uploadToTransfer(upload: Upload, dismiss: (id: string) => void): Transfer {
+function uploadToTransfer(
+  upload: Upload,
+  dismiss: (id: string) => void,
+  cancel: (id: string) => void,
+): Transfer {
+  const inFlight = upload.status === "uploading";
   return {
     id: upload.id,
     fileName: upload.fileName,
-    inFlight: upload.status === "uploading",
+    inFlight,
     complete: upload.status === "complete",
     message: upload.message,
     progress: upload.progress,
     dismiss: () => dismiss(upload.id),
+    cancel: inFlight ? () => cancel(upload.id) : undefined,
   };
 }
 
@@ -42,9 +54,11 @@ export function DownloadToast() {
   const downloads = useDownloadStore((state) => state.downloads);
   const activeDownloadId = useDownloadStore((state) => state.activeDownloadId);
   const dismissDownload = useDownloadStore((state) => state.dismissDownload);
+  const cancelDownload = useDownloadStore((state) => state.cancelDownload);
   const uploads = useUploadStore((state) => state.uploads);
   const activeUploadId = useUploadStore((state) => state.activeUploadId);
   const dismissUpload = useUploadStore((state) => state.dismissUpload);
+  const cancelUpload = useUploadStore((state) => state.cancelUpload);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const download = activeDownloadId ? downloads.get(activeDownloadId) : null;
@@ -52,9 +66,9 @@ export function DownloadToast() {
   const isUpload = !download && Boolean(upload);
   let activeDownload: Transfer | null = null;
   if (download) {
-    activeDownload = toTransfer(download, dismissDownload);
+    activeDownload = toTransfer(download, dismissDownload, cancelDownload);
   } else if (upload) {
-    activeDownload = uploadToTransfer(upload, dismissUpload);
+    activeDownload = uploadToTransfer(upload, dismissUpload, cancelUpload);
   }
 
   useEffect(() => {
@@ -84,6 +98,10 @@ export function DownloadToast() {
     activeDownload?.dismiss();
   }, [activeDownload]);
 
+  const handleCancel = useCallback(() => {
+    activeDownload?.cancel?.();
+  }, [activeDownload]);
+
   if (!activeDownload) {
     return null;
   }
@@ -109,6 +127,18 @@ export function DownloadToast() {
             </View>
           )}
         </View>
+        {activeDownload.inFlight && activeDownload.cancel ? (
+          <Pressable
+            onPress={handleCancel}
+            hitSlop={8}
+            style={styles.dismiss}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.actions.cancel")}
+            testID="transfer-toast-cancel"
+          >
+            <X size={16} color={theme.colors.foregroundMuted} />
+          </Pressable>
+        ) : null}
         {!activeDownload.inFlight && (
           <Pressable onPress={handleDismiss} hitSlop={8} style={styles.dismiss}>
             <X size={16} color={theme.colors.foregroundMuted} />

@@ -20,6 +20,8 @@ export interface Transfer {
   message?: string;
   progress?: TransferProgress;
   dismiss: () => void;
+  /** Present only while in flight: aborts the transfer and tells the daemon to stop. */
+  cancel?: () => void;
 }
 
 export function getTransferStatusText(transfer: Transfer, isUpload: boolean, t: TFunction): string {
