@@ -10,6 +10,8 @@ import {
   type SidebarAgentRows,
 } from "@/components/sidebar/display-preferences/agent-rows";
 import { useSidebarAgentRows } from "@/components/sidebar/display-preferences/model";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { usePanelStore } from "@/stores/panel-store";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { isAgentListExpanded } from "@/stores/sidebar-collapsed-sections-store/state";
 import type { Theme } from "@/styles/theme";
@@ -191,9 +193,17 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
   // provider icon with the title this way (`components/agent-list.tsx:285`).
   const ProviderIcon = getThemedProviderIcon(agent.provider);
 
+  // A compact sidebar is an overlay covering the pane it navigates. A workspace row closes it on
+  // press (`left-sidebar.tsx` hands its rows `closeSidebar`); an agent row has to do the same, or
+  // the agent changes behind the sidebar and the tap looks like it did nothing.
+  const isCompact = useIsCompactFormFactor();
+  const showMobileAgent = usePanelStore((state) => state.showMobileAgent);
   const handlePress = useCallback(() => {
     navigateToAgent({ serverId, agentId: agent.agentId });
-  }, [serverId, agent.agentId]);
+    if (isCompact) {
+      showMobileAgent();
+    }
+  }, [serverId, agent.agentId, isCompact, showMobileAgent]);
 
   return (
     <Pressable
@@ -235,10 +245,11 @@ const TOGGLE_HIT_SLOP = { top: 12, bottom: 12, left: 12, right: 8 };
  * hang under the workspace's text rather than starting a second column of their own.
  *
  * Not a spacing token: the rail is fixed by the geometry of the row above — its padding and its
- * leading status indicator — which no token expresses.
+ * leading status indicator — which no token expresses. It was tuned against the hovered layout
+ * while the slot still narrowed on hover, so it read two pixels short until the slot was pinned.
  * `e2e/browser/sidebar-agent-rows.spec.ts` measures both boxes and fails if they drift.
  */
-const AGENT_LIST_RAIL_INSET = 22;
+const AGENT_LIST_RAIL_INSET = 24;
 
 const rowStyle = ({ pressed }: { pressed: boolean }) => [styles.row, pressed && styles.rowPressed];
 
@@ -247,9 +258,13 @@ const styles = StyleSheet.create((theme) => ({
   // faded by a 48px scrim on hover (`ui/trailing-action-scrim.tsx`) — fine for a diff stat nobody
   // clicks, wrong for a control you hover the row to reach. Leading also matches how project and
   // status-group rows already say "this expands".
+  // Width is pinned to the resting slot (`workspaceStatusDot` is `iconSize.md`). Sizing to the
+  // content instead let the 14px chevron shrink the slot on hover, sliding the title and meta
+  // line two pixels left and back as the pointer crossed the row.
   toggle: {
     alignItems: "center",
     justifyContent: "center",
+    width: theme.iconSize.md,
     height: 20,
     flexShrink: 0,
   },

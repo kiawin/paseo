@@ -189,6 +189,45 @@ test.describe("sidebar agent rows", () => {
     }
   });
 
+  test("holds the title rail when the leading slot swaps to a chevron", async ({ page }) => {
+    // The toggle shows a 16px status slot at rest and a 14px chevron on hover. If it sizes to its
+    // content, the title and meta line slide sideways as the pointer crosses the row.
+    const workspace = await seedWorkspace({ repoPrefix: "paseo-e2e-agent-rows-rail-" });
+    try {
+      for (const title of AGENT_TITLES) {
+        await workspace.client.createAgent({
+          provider: "mock",
+          cwd: workspace.repoPath,
+          workspaceId: workspace.workspaceId,
+          title,
+          modeId: "load-test",
+          model: "e2e-fast-stream",
+        });
+      }
+
+      await gotoAppShell(page);
+      const row = page.getByTestId(rowTestId(workspace.workspaceId));
+      await expect(row).toBeVisible({ timeout: 30_000 });
+      const count = page.getByTestId("sidebar-workspace-agent-count");
+      await expect(count).toBeVisible({ timeout: 30_000 });
+
+      const atRest = await count.boundingBox();
+      await row.hover();
+      const toggle = page.getByTestId("sidebar-agent-list-disclosure");
+      await expect(toggle.locator("svg")).toBeVisible({ timeout: 8_000 });
+      const hovered = await count.boundingBox();
+
+      expect(atRest).not.toBeNull();
+      expect(hovered).not.toBeNull();
+      if (atRest && hovered) {
+        const shift = Math.abs(hovered.x - atRest.x);
+        expect(shift, `row content shifted ${shift}px on hover`).toBeLessThanOrEqual(0.5);
+      }
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
   test("draws nothing for a workspace holding one agent", async ({ page }) => {
     const workspace = await seedWorkspace({ repoPrefix: "paseo-e2e-agent-rows-single-" });
     try {
