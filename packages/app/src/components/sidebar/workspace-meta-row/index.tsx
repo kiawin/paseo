@@ -2,7 +2,7 @@ import { Fragment, useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
+import { Bot, ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
 import {
   workspaceLabelKey,
   type WorkspaceLabelDefinition,
@@ -18,6 +18,7 @@ import type { Theme } from "@/styles/theme";
 import { PullRequestStateIcon } from "@/git/pull-request-state-icon";
 import { CheckIndicator } from "./check-indicator";
 import type { CheckSummary, CheckSummaryState } from "./check-summary";
+import { useSidebarAgentRows } from "@/components/sidebar/display-preferences/model";
 import { selectMetaRowItems, type MetaRowItem } from "./meta-items";
 import { workspaceServiceLabelKey, type WorkspaceServiceSummary } from "./service-summary";
 
@@ -36,6 +37,7 @@ const META_ICON_SIZE = HOST_BADGE_ICON_SIZE;
 
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedFolder = withUnistyles(Folder);
+const ThemedBot = withUnistyles(Bot);
 const ThemedGitBranch = withUnistyles(GitBranch);
 const ThemedGlobe = withUnistyles(Globe);
 
@@ -67,6 +69,7 @@ export function WorkspaceMetaRow({
   prHint,
   serviceSummary,
   labels = EMPTY_LABELS,
+  agentCount,
 }: {
   currentBranch: string | null;
   projectName: string | null;
@@ -74,8 +77,10 @@ export function WorkspaceMetaRow({
   prHint: PrHint | null;
   serviceSummary: WorkspaceServiceSummary | null;
   labels?: readonly WorkspaceLabelDefinition[];
+  agentCount: number;
 }) {
   const { rowItems, checksDisplay } = useSidebarMetaPreferences();
+  const agentRows = useSidebarAgentRows();
   const items = selectMetaRowItems({
     currentBranch,
     projectName,
@@ -85,6 +90,8 @@ export function WorkspaceMetaRow({
     labels,
     visible: rowItems,
     checksDisplay,
+    agentCount,
+    agentRows,
   });
 
   if (items.length === 0) return null;
@@ -111,6 +118,9 @@ function MetaItemNode({
   /** First on the line, so this item's ink sets the rail the title above it already uses. */
   leading: boolean;
 }): ReactNode {
+  if (item.kind === "agents") {
+    return <AgentsItem count={item.count} />;
+  }
   if (item.kind === "branch") {
     return <IdentityItem kind="branch" name={item.name} />;
   }
@@ -130,6 +140,23 @@ function MetaItemNode({
     return <LabelsItem labels={item.labels} leading={leading} />;
   }
   return <ServiceItem summary={item.summary} />;
+}
+
+/**
+ * How many agents are working in this workspace. Information, not a control — the disclosure that
+ * opens the sub-list lives in the row's leading slot, next to the status it belongs beside.
+ */
+function AgentsItem({ count }: { count: number }) {
+  return (
+    <View style={styles.identityItem} testID="sidebar-workspace-agent-count">
+      <View style={styles.identityIcon}>
+        <ThemedBot size={META_ICON_SIZE} uniProps={mutedMapping} />
+      </View>
+      <Text style={styles.identityText} numberOfLines={1}>
+        {count}
+      </Text>
+    </View>
+  );
 }
 
 function IdentityItem({ kind, name }: { kind: "branch" | "project"; name: string }) {

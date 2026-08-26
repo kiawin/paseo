@@ -247,6 +247,7 @@ function BadgePreview({
         hostBadge={hostBadge}
         prHint={null}
         serviceSummary={null}
+        agentCount={0}
       />
     </View>
   );

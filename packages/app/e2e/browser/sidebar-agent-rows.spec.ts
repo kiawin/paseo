@@ -38,7 +38,9 @@ test.describe("sidebar agent rows", () => {
 
       const disclosure = page.getByTestId("sidebar-agent-list-disclosure");
       await expect(disclosure).toBeVisible({ timeout: 30_000 });
-      await expect(disclosure).toHaveText(String(AGENT_TITLES.length));
+      await expect(page.getByTestId("sidebar-workspace-agent-count")).toContainText(
+        String(AGENT_TITLES.length),
+      );
 
       // Collapsed by default: the count is there, the rows are not.
       await expect(page.getByTestId("sidebar-agent-list")).toHaveCount(0);
@@ -77,7 +79,7 @@ test.describe("sidebar agent rows", () => {
 
       // The sub-list hangs off the count, so its dots share a left rail with that digit. Without
       // it the rows read as a second, unrelated column.
-      const railBox = await page.getByTestId("sidebar-agent-list-count").boundingBox();
+      const railBox = await page.getByTestId("sidebar-workspace-agent-count").boundingBox();
       const firstDotBox = await list
         .getByTestId(/^sidebar-agent-row-dot-/)
         .first()

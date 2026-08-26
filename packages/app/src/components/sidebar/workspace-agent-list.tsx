@@ -1,5 +1,5 @@
-import { memo, useCallback, useMemo, type ComponentType } from "react";
-import { Pressable, Text, View } from "react-native";
+import { memo, useCallback, useMemo, type ComponentType, type ReactNode } from "react";
+import { Pressable, Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
@@ -104,31 +104,57 @@ export function useSidebarAgentListModel(input: SidebarAgentListSource): Sidebar
  * Its own pressable rather than part of the row press: the row navigates to the workspace, and a
  * disclosure that navigated as a side effect of being opened would be a trap.
  */
-export const SidebarAgentListDisclosure = memo(function SidebarAgentListDisclosure({
+/**
+ * The row's leading slot: its status indicator at rest, an expand chevron while the row is
+ * hovered. Same shape as `ProjectLeadingVisual` — a project row swaps its icon for a chevron the
+ * same way, so a workspace row that expands says so in the same place.
+ *
+ * Unlike a project row it has to be its own press target. A project header's press already
+ * toggles collapse, so its chevron can be decoration; a workspace row's press navigates, so a
+ * chevron that inherited it would look like a disclosure and open the workspace instead.
+ *
+ * `hitSlop` is what makes it usable on touch, where there is no hover to reveal the chevron and
+ * the visible target is a 6px dot. The count on the meta line is the hint that there is anything
+ * to open.
+ */
+export const SidebarAgentListToggle = memo(function SidebarAgentListToggle({
   workspace,
+  isHovered,
+  children,
 }: {
   workspace: SidebarAgentListSource;
+  isHovered: boolean;
+  children: ReactNode;
 }) {
   const { t } = useTranslation();
   const model = useSidebarAgentListModel(workspace);
   const accessibilityState = useMemo(() => ({ expanded: model.expanded }), [model.expanded]);
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      // The row beneath navigates. Without this, expanding also opens the workspace.
+      event.stopPropagation();
+      model.toggle();
+    },
+    [model],
+  );
+
+  // A workspace with nothing to expand keeps its plain leading slot: no press target, no chevron.
   if (!model.visible) {
-    return null;
+    return children;
   }
+
   const Chevron = model.expanded ? ThemedChevronDown : ThemedChevronRight;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={accessibilityState}
       accessibilityLabel={t("sidebar.agentList.toggle", { count: model.agents.length })}
-      onPress={model.toggle}
-      style={styles.disclosure}
+      onPress={handlePress}
+      hitSlop={TOGGLE_HIT_SLOP}
+      style={styles.toggle}
       testID="sidebar-agent-list-disclosure"
     >
-      <Chevron size={12} uniProps={extraMutedColorMapping} />
-      <Text style={styles.disclosureText} testID="sidebar-agent-list-count">
-        {model.agents.length}
-      </Text>
+      {isHovered ? <Chevron size={14} uniProps={extraMutedColorMapping} /> : children}
     </Pressable>
   );
 });
@@ -192,16 +218,19 @@ const SidebarAgentRow = memo(function SidebarAgentRow({
 
 const PROVIDER_ICON_SIZE = 12;
 
+/** The visible target is a 6px dot; touch needs a finger-sized one around it. */
+const TOGGLE_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
+
 /**
- * Left inset for the sub-list, set so an agent's status dot shares a left edge with the count
- * digit on the workspace row above. The list hangs off that number, and sharing its rail is what
- * makes the rows read as belonging to it rather than as a second column.
+ * Left inset for the sub-list, set so an agent's status dot shares a left edge with the agent
+ * count on the meta line above it — which is itself on the workspace title's rail. The rows then
+ * hang under the workspace's text rather than starting a second column of their own.
  *
- * Not a spacing token: the rail is fixed by the geometry of the row above — its padding, its
- * leading status indicator, and the disclosure chevron — which no token expresses.
+ * Not a spacing token: the rail is fixed by the geometry of the row above — its padding and its
+ * leading status indicator — which no token expresses.
  * `e2e/browser/sidebar-agent-rows.spec.ts` measures both boxes and fails if they drift.
  */
-const AGENT_LIST_RAIL_INSET = 38;
+const AGENT_LIST_RAIL_INSET = 22;
 
 const rowStyle = ({ pressed }: { pressed: boolean }) => [styles.row, pressed && styles.rowPressed];
 
@@ -210,17 +239,11 @@ const styles = StyleSheet.create((theme) => ({
   // faded by a 48px scrim on hover (`ui/trailing-action-scrim.tsx`) — fine for a diff stat nobody
   // clicks, wrong for a control you hover the row to reach. Leading also matches how project and
   // status-group rows already say "this expands".
-  disclosure: {
-    flexDirection: "row",
+  toggle: {
     alignItems: "center",
-    gap: theme.spacing[0.5],
+    justifyContent: "center",
     height: 20,
     flexShrink: 0,
-  },
-  disclosureText: {
-    color: theme.colors.foregroundExtraMuted,
-    fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.normal,
   },
   list: {
     paddingLeft: AGENT_LIST_RAIL_INSET,
