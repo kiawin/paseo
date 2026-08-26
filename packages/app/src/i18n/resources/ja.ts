@@ -428,6 +428,7 @@ export const ja: TranslationResources = {
       revealIn: "{{target}}で表示",
       download: "ダウンロード",
       uploadFiles: "ファイルをアップロード…",
+      uploadFolder: "フォルダーをアップロード…",
       addToChat: "チャットに追加",
       moreActions: "その他のアクション",
       newFile: "新規ファイル",

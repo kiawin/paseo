@@ -428,6 +428,7 @@ export const fr: TranslationResources = {
       revealIn: "Afficher dans {{target}}",
       download: "Télécharger",
       uploadFiles: "Téléverser des fichiers…",
+      uploadFolder: "Téléverser un dossier…",
       addToChat: "Ajouter au chat",
       moreActions: "Plus de propositions",
       newFile: "Nouveau fichier",

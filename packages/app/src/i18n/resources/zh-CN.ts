@@ -424,6 +424,7 @@ export const zhCN: TranslationResources = {
       revealIn: "在 {{target}} 中显示",
       download: "下载",
       uploadFiles: "上传文件…",
+      uploadFolder: "上传文件夹…",
       addToChat: "添加到聊天",
       moreActions: "更多操作",
       newFile: "新建文件",

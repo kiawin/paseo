@@ -59,6 +59,7 @@ interface FileActionsContextMenuContentProps {
   revealTargetName?: string;
   onDownload?: () => void;
   onUploadFiles?: () => void;
+  onUploadFolder?: () => void;
   onAddToChat?: () => void;
   onNewFile?: () => void;
   onNewFolder?: () => void;
@@ -81,20 +82,15 @@ interface FileActionsContextMenuContentProps {
  */
 function buildUploadAction(
   fileKind: FileActionsContextMenuContentProps["fileKind"],
-  onUploadFiles: (() => void) | undefined,
+  onSelect: (() => void) | undefined,
   label: string,
+  key = "upload-files",
 ): FileAction | null {
-  if (fileKind !== "directory" || !onUploadFiles) {
+  if (fileKind !== "directory" || !onSelect) {
     return null;
   }
   // Same group as download: both move bytes between the workspace and the device.
-  return {
-    key: "upload-files",
-    group: "reference",
-    label,
-    icon: Upload,
-    onSelect: onUploadFiles,
-  };
+  return { key, group: "reference", label, icon: Upload, onSelect };
 }
 
 export function FileActionsContextMenuContent({
@@ -108,6 +104,7 @@ export function FileActionsContextMenuContent({
   revealTargetName,
   onDownload,
   onUploadFiles,
+  onUploadFolder,
   onAddToChat,
   onNewFile,
   onNewFolder,
@@ -192,6 +189,12 @@ export function FileActionsContextMenuContent({
           }
         : null,
       buildUploadAction(fileKind, onUploadFiles, t("workspace.fileActions.uploadFiles")),
+      buildUploadAction(
+        fileKind,
+        onUploadFolder,
+        t("workspace.fileActions.uploadFolder"),
+        "upload-folder",
+      ),
       // A folder downloads as a zip, so this is gated on existence rather than kind.
       // The caller withholds onDownload when the host cannot stream archives.
       fileExists && onDownload
@@ -268,6 +271,7 @@ export function FileActionsContextMenuContent({
     onDelete,
     onDownload,
     onUploadFiles,
+    onUploadFolder,
     onDuplicate,
     onNewFile,
     onNewFolder,

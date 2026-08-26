@@ -427,6 +427,7 @@ export const ru: TranslationResources = {
       revealIn: "Показать в {{target}}",
       download: "Скачать",
       uploadFiles: "Загрузить файлы…",
+      uploadFolder: "Загрузить папку…",
       addToChat: "Добавить в чат",
       moreActions: "Дополнительные действия",
       newFile: "Новый файл",

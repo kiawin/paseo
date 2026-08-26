@@ -425,6 +425,7 @@ export const ko: TranslationResources = {
       revealIn: "{{target}}에서 보기",
       download: "다운로드",
       uploadFiles: "파일 업로드…",
+      uploadFolder: "폴더 업로드…",
       addToChat: "채팅에 추가",
       moreActions: "추가 작업",
       newFile: "새 파일",

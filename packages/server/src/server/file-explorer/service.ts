@@ -739,6 +739,7 @@ export interface UploadSink {
 async function resolveUploadParent(
   root: string,
   relativePath: string,
+  createMissingDirectories: boolean,
 ): Promise<{ parentDir: string; fileName: string }> {
   const scoped = await resolveScopedPath({ root, relativePath });
   const fileName = path.basename(scoped.requestedPath);
@@ -747,12 +748,55 @@ async function resolveUploadParent(
   }
 
   const realRoot = await fs.realpath(expandUserPath(root));
-  const realParent = await fs.realpath(path.dirname(scoped.requestedPath));
+  const parentDir = path.dirname(scoped.requestedPath);
+  if (createMissingDirectories) {
+    await createScopedDirectories(realRoot, parentDir);
+  }
+
+  const realParent = await fs.realpath(parentDir);
   const relative = path.relative(realRoot, realParent);
   if (relative !== "" && (relative.startsWith("..") || path.isAbsolute(relative))) {
     throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
   }
   return { parentDir: realParent, fileName };
+}
+
+/**
+ * Creates the missing directories of an uploaded folder tree, one segment at a time.
+ *
+ * A plain mkdir recursive would happily follow a symlinked segment out of the workspace,
+ * so the deepest directory that already exists is resolved and checked first, and only
+ * then are the remaining segments created. Freshly created directories cannot be
+ * symlinks, so each step stays inside the root by construction.
+ */
+async function createScopedDirectories(realRoot: string, targetDir: string): Promise<void> {
+  const relative = path.relative(realRoot, targetDir);
+  if (relative === "") {
+    return;
+  }
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+  }
+
+  const segments = relative.split(path.sep).filter((segment) => segment.length > 0);
+  let current = realRoot;
+  for (const segment of segments) {
+    const next = path.join(current, segment);
+    const stats = await fs.lstat(next).catch(() => null);
+
+    if (!stats) {
+      await fs.mkdir(next);
+      current = next;
+      continue;
+    }
+    if (stats.isSymbolicLink()) {
+      throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+    }
+    if (!stats.isDirectory()) {
+      throw new Error("Upload target path passes through a file");
+    }
+    current = next;
+  }
 }
 
 async function resolveUploadTarget(
@@ -803,12 +847,19 @@ export async function createUploadSink({
   root,
   relativePath,
   overwrite,
+  createMissingDirectories = false,
 }: {
   root: string;
   relativePath: string;
   overwrite: UploadOverwriteMode;
+  /** Set when uploading a folder tree, whose intermediate directories may not exist. */
+  createMissingDirectories?: boolean;
 }): Promise<UploadSink> {
-  const { parentDir, fileName } = await resolveUploadParent(root, relativePath);
+  const { parentDir, fileName } = await resolveUploadParent(
+    root,
+    relativePath,
+    createMissingDirectories,
+  );
   const targetPath = await resolveUploadTarget(parentDir, fileName, overwrite);
   const temporaryPath = path.join(
     parentDir,

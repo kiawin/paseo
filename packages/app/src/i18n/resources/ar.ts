@@ -424,6 +424,7 @@ export const ar: TranslationResources = {
       revealIn: "إظهار في {{target}}",
       download: "تحميل",
       uploadFiles: "رفع الملفات…",
+      uploadFolder: "رفع مجلد…",
       addToChat: "إضافة إلى الدردشة",
       moreActions: "المزيد من الإجراءات",
       newFile: "ملف جديد",

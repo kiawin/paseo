@@ -2663,6 +2663,9 @@ export const FileEntryUploadRequestSchema = z.object({
   size: z.number().int().nonnegative(),
   modifiedAt: z.string(),
   overwrite: z.enum(["fail", "replace", "rename"]),
+  // Set when uploading a folder tree, whose intermediate directories may not exist yet.
+  // Optional so an older client that only uploads flat files keeps parsing.
+  createMissingDirectories: z.boolean().optional(),
   requestId: z.string(),
 });
 

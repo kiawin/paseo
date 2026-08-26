@@ -571,7 +571,12 @@ export class WorkspaceFilesSession {
   async handleEntryUploadRequest(request: FileEntryUploadRequest, source?: object): Promise<void> {
     const { cwd, path: requestedPath, overwrite, requestId } = request;
     try {
-      const sink = await createUploadSink({ root: cwd, relativePath: requestedPath, overwrite });
+      const sink = await createUploadSink({
+        root: cwd,
+        relativePath: requestedPath,
+        overwrite,
+        createMissingDirectories: request.createMissingDirectories ?? false,
+      });
       this.activeUploads.set(requestId, {
         sink,
         cwd,

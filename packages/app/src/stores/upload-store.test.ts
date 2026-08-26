@@ -123,4 +123,42 @@ describe("upload store", () => {
     const upload = [...useUploadStore.getState().uploads.values()][0];
     expect(upload.progress).toMatchObject({ percent: 1, bytesWritten: 5, totalBytes: 5 });
   });
+
+  test("a folder pick keeps its tree shape and creates missing directories", async () => {
+    const calls: Array<{ path: string; overwrite: string; mkdir?: boolean }> = [];
+
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: "dest",
+      files: [
+        { ...file("a.txt", "one"), relativePath: "site/a.txt" },
+        { ...file("b.txt", "two"), relativePath: "site/nested/b.txt" },
+      ],
+      uploadEntry: async ({ path, overwrite, createMissingDirectories }) => {
+        calls.push({ path, overwrite, mkdir: createMissingDirectories });
+        return { path, size: 3 };
+      },
+    });
+
+    expect(calls).toEqual([
+      { path: "dest/site/a.txt", overwrite: "replace", mkdir: true },
+      { path: "dest/site/nested/b.txt", overwrite: "replace", mkdir: true },
+    ]);
+  });
+
+  test("a flat pick still renames rather than creating directories", async () => {
+    const calls: Array<{ overwrite: string; mkdir?: boolean }> = [];
+    await useUploadStore.getState().startUploads({
+      serverId: "srv",
+      scopeId: "scope",
+      parentPath: ".",
+      files: [file("a.txt", "x")],
+      uploadEntry: async ({ path, overwrite, createMissingDirectories }) => {
+        calls.push({ overwrite, mkdir: createMissingDirectories });
+        return { path, size: 1 };
+      },
+    });
+    expect(calls).toEqual([{ overwrite: "rename", mkdir: false }]);
+  });
 });

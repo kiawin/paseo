@@ -24,6 +24,8 @@ export interface UploadEntryFile {
   fileName: string;
   mimeType: string;
   bytes: Uint8Array;
+  /** Path inside the picked folder, so a tree upload recreates its structure. */
+  relativePath?: string;
 }
 
 interface UploadState {
@@ -46,6 +48,7 @@ interface UploadState {
       bytes: Uint8Array;
       mimeType: string;
       overwrite: "fail" | "replace" | "rename";
+      createMissingDirectories?: boolean;
     }) => Promise<{ path: string; size: number }>;
     onUploaded?: (parentPath: string) => void;
   }) => Promise<void>;
@@ -79,7 +82,7 @@ export const useUploadStore = create<UploadState>()((set, get) => ({
           id,
           serverId,
           scopeId,
-          fileName: file.fileName,
+          fileName: file.relativePath ?? file.fileName,
           status: "uploading",
           startedAt: Date.now(),
         }),
@@ -96,12 +99,15 @@ export const useUploadStore = create<UploadState>()((set, get) => ({
           eta: 0,
         });
 
+        const isTreeUpload = Boolean(file.relativePath);
         await uploadEntry({
-          path: joinExplorerPath(parentPath, file.fileName),
+          path: joinExplorerPath(parentPath, file.relativePath ?? file.fileName),
           bytes: file.bytes,
           mimeType: file.mimeType,
-          // Never clobber silently: an existing name gets a suffix instead.
-          overwrite: "rename",
+          // A flat pick never clobbers silently: an existing name gets a suffix. A tree
+          // keeps its own shape instead, so its files land where the folder says.
+          overwrite: isTreeUpload ? "replace" : "rename",
+          createMissingDirectories: isTreeUpload,
         });
 
         const elapsed = (Date.now() - startedAt) / 1000;

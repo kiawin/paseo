@@ -189,3 +189,76 @@ describe("createUploadSink lifecycle", () => {
     expect(result.path).toBe("assets/logo.png");
   });
 });
+
+describe("createUploadSink folder trees", () => {
+  test("creates missing intermediate directories when asked", async () => {
+    const root = makeDir("upload-mkdir-");
+    const sink = await createUploadSink({
+      root,
+      relativePath: "site/assets/img/logo.png",
+      overwrite: "fail",
+      createMissingDirectories: true,
+    });
+    await sink.write(bytes("png"));
+    const result = await sink.commit();
+
+    expect(result.path).toBe("site/assets/img/logo.png");
+    expect(readFileSync(join(root, "site", "assets", "img", "logo.png"), "utf8")).toBe("png");
+  });
+
+  test("refuses to create directories by default", async () => {
+    const root = makeDir("upload-nomkdir-");
+    await expect(
+      createUploadSink({ root, relativePath: "missing/logo.png", overwrite: "fail" }),
+    ).rejects.toThrow();
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  test("refuses to traverse a symlinked segment while creating directories", async () => {
+    const outside = makeDir("upload-tree-outside-");
+    const root = makeDir("upload-tree-symlink-");
+    symlinkSync(outside, join(root, "escape"));
+
+    await expect(
+      createUploadSink({
+        root,
+        relativePath: "escape/deep/planted.txt",
+        overwrite: "replace",
+        createMissingDirectories: true,
+      }),
+    ).rejects.toThrow(/outside of workspace/i);
+    expect(readdirSync(outside)).toEqual([]);
+  });
+
+  test("refuses a path that passes through an existing file", async () => {
+    const root = makeDir("upload-throughfile-");
+    writeFileSync(join(root, "notafolder"), "x");
+
+    await expect(
+      createUploadSink({
+        root,
+        relativePath: "notafolder/child.txt",
+        overwrite: "fail",
+        createMissingDirectories: true,
+      }),
+    ).rejects.toThrow(/passes through a file/i);
+  });
+
+  test("reuses directories that already exist", async () => {
+    const root = makeDir("upload-reuse-");
+    mkdirSync(join(root, "site", "assets"), { recursive: true });
+    writeFileSync(join(root, "site", "assets", "keep.txt"), "keep");
+
+    const sink = await createUploadSink({
+      root,
+      relativePath: "site/assets/new.txt",
+      overwrite: "fail",
+      createMissingDirectories: true,
+    });
+    await sink.write(bytes("new"));
+    await sink.commit();
+
+    expect(readFileSync(join(root, "site", "assets", "keep.txt"), "utf8")).toBe("keep");
+    expect(readFileSync(join(root, "site", "assets", "new.txt"), "utf8")).toBe("new");
+  });
+});

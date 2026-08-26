@@ -428,6 +428,7 @@ export const ptBR: TranslationResources = {
       revealIn: "Mostrar no {{target}}",
       download: "Baixar",
       uploadFiles: "Enviar arquivos…",
+      uploadFolder: "Enviar pasta…",
       addToChat: "Adicionar ao chat",
       moreActions: "Mais ações",
       newFile: "Novo arquivo",

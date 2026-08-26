@@ -60,6 +60,7 @@ import { FileActionsContextMenuContent } from "@/components/file-actions-menu";
 import { ContextMenu, ContextMenuTrigger, useContextMenu } from "@/components/ui/context-menu";
 import { useFileDownload } from "@/hooks/use-file-download";
 import { useFilePicker } from "@/hooks/use-file-picker";
+import type { PickedFile } from "@/attachments/picked-file";
 import { useUploadStore } from "@/stores/upload-store";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
@@ -119,6 +120,7 @@ interface TreeRowItemProps {
   revealTargetName?: string;
   onDownloadEntry: (entry: ExplorerEntry) => void;
   onUploadFilesInto?: (parentPath: string) => void;
+  onUploadFolderInto?: (parentPath: string) => void;
   onAddToChat?: (path: string) => void;
   onOpenFileToSide?: (path: string) => void;
   onNewEntry?: (parentPath: string, kind: "file" | "directory") => void;
@@ -228,9 +230,33 @@ function EntryNameInputRow({
   );
 }
 
+/**
+ * Which upload actions a row offers. Folder upload needs a directory picker, which only
+ * the web/Electron builds have — the mobile pickers hand back files, never trees.
+ * Kept out of TreeRowItem so that component stays under the complexity budget.
+ */
+function resolveUploadActions(
+  canUploadInto: boolean,
+  handlers: {
+    onUploadFilesInto?: (parentPath: string) => void;
+    onUploadFolderInto?: (parentPath: string) => void;
+    handleUploadFiles: () => void;
+    handleUploadFolder: () => void;
+  },
+): { uploadFiles?: () => void; uploadFolder?: () => void } {
+  if (!canUploadInto) {
+    return {};
+  }
+  return {
+    uploadFiles: handlers.onUploadFilesInto ? handlers.handleUploadFiles : undefined,
+    uploadFolder: isWeb && handlers.onUploadFolderInto ? handlers.handleUploadFolder : undefined,
+  };
+}
+
 function TreeRowItem({
   serverId,
   onUploadFilesInto,
+  onUploadFolderInto,
   workspaceId,
   entry,
   depth,
@@ -312,6 +338,17 @@ function TreeRowItem({
     onUploadFilesInto?.(entry.path);
   }, [onUploadFilesInto, entry.path]);
 
+  const handleUploadFolder = useCallback(() => {
+    onUploadFolderInto?.(entry.path);
+  }, [onUploadFolderInto, entry.path]);
+
+  const uploadActions = resolveUploadActions(isDirectory && supportsArchiveDownload, {
+    onUploadFilesInto,
+    onUploadFolderInto,
+    handleUploadFiles,
+    handleUploadFolder,
+  });
+
   const handleAddToChat = useCallback(() => {
     onAddToChat?.(entry.path);
   }, [onAddToChat, entry.path]);
@@ -385,11 +422,8 @@ function TreeRowItem({
         onReveal={onRevealEntry ? handleReveal : undefined}
         revealTargetName={revealTargetName}
         onDownload={canDownloadEntry ? handleDownload : undefined}
-        onUploadFiles={
-          isDirectory && supportsArchiveDownload && onUploadFilesInto
-            ? handleUploadFiles
-            : undefined
-        }
+        onUploadFiles={uploadActions.uploadFiles}
+        onUploadFolder={uploadActions.uploadFolder}
         onAddToChat={onAddToChat ? handleAddToChat : undefined}
         onOpenToSide={!isDirectory && onOpenFileToSide ? handleOpenToSide : undefined}
         onNewFile={onNewEntry ? handleNewFile : undefined}
@@ -455,7 +489,7 @@ export function FileExplorerPane({
     workspaceRoot: normalizedWorkspaceRoot,
   });
   const toast = useToast();
-  const { pickFiles } = useFilePicker();
+  const { pickFiles, pickDirectory } = useFilePicker();
   const startUploads = useUploadStore((state) => state.startUploads);
   const isLocalDaemon = useIsLocalDaemon(serverId);
   const { targets: desktopOpenTargets } = useDesktopOpenTargets({
@@ -638,11 +672,11 @@ export function FileExplorerPane({
     [downloadFile],
   );
 
-  const handleUploadFilesInto = useCallback(
-    (parentPath: string) => {
+  const runUploadInto = useCallback(
+    (parentPath: string, pick: () => Promise<PickedFile[] | null>) => {
       void (async () => {
         try {
-          const picked = await pickFiles();
+          const picked = await pick();
           if (!picked || picked.length === 0) {
             return;
           }
@@ -661,7 +695,6 @@ export function FileExplorerPane({
     },
     [
       normalizedWorkspaceRoot,
-      pickFiles,
       refreshDirectory,
       serverId,
       startUploads,
@@ -670,6 +703,16 @@ export function FileExplorerPane({
       uploadEntry,
       workspaceStateKey,
     ],
+  );
+
+  const handleUploadFilesInto = useCallback(
+    (parentPath: string) => runUploadInto(parentPath, pickFiles),
+    [pickFiles, runUploadInto],
+  );
+
+  const handleUploadFolderInto = useCallback(
+    (parentPath: string) => runUploadInto(parentPath, pickDirectory),
+    [pickDirectory, runUploadInto],
   );
 
   const handleNewEntry = useCallback(
@@ -1017,6 +1060,7 @@ export function FileExplorerPane({
           revealTargetName={fileManagerTarget?.label}
           onDownloadEntry={handleDownloadEntry}
           onUploadFilesInto={handleUploadFilesInto}
+          onUploadFolderInto={handleUploadFolderInto}
           onAddToChat={onAddToChat}
           onOpenFileToSide={onOpenFileToSide}
           onNewEntry={fsEntryOpsEnabled ? handleNewEntry : undefined}
@@ -1037,6 +1081,7 @@ export function FileExplorerPane({
       handleDeleteEntry,
       handleDownloadEntry,
       handleUploadFilesInto,
+      handleUploadFolderInto,
       handleDraftCommit,
       handleDuplicateEntry,
       handleEditCancel,
@@ -1484,6 +1529,7 @@ function TreeRowDispatcher({
   revealTargetName,
   onDownloadEntry,
   onUploadFilesInto,
+  onUploadFolderInto,
   onAddToChat,
   onOpenFileToSide,
   onNewEntry,
@@ -1507,6 +1553,7 @@ function TreeRowDispatcher({
   revealTargetName?: string;
   onDownloadEntry: (entry: ExplorerEntry) => void;
   onUploadFilesInto?: (parentPath: string) => void;
+  onUploadFolderInto?: (parentPath: string) => void;
   onAddToChat?: (path: string) => void;
   onOpenFileToSide?: (path: string) => void;
   onNewEntry?: (parentPath: string, kind: "file" | "directory") => void;
@@ -1539,6 +1586,7 @@ function TreeRowDispatcher({
       revealTargetName={revealTargetName}
       onDownloadEntry={onDownloadEntry}
       onUploadFilesInto={onUploadFilesInto}
+      onUploadFolderInto={onUploadFolderInto}
       onAddToChat={onAddToChat}
       onOpenFileToSide={onOpenFileToSide}
       onNewEntry={onNewEntry}

@@ -428,6 +428,7 @@ export const es: TranslationResources = {
       revealIn: "Mostrar en {{target}}",
       download: "Descargar",
       uploadFiles: "Subir archivos…",
+      uploadFolder: "Subir carpeta…",
       addToChat: "Añadir al chat",
       moreActions: "Más acciones",
       newFile: "Nuevo archivo",

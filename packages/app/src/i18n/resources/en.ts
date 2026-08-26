@@ -422,6 +422,7 @@ export const en = {
       revealIn: "Reveal in {{target}}",
       download: "Download",
       uploadFiles: "Upload files…",
+      uploadFolder: "Upload folder…",
       addToChat: "Add to chat",
       moreActions: "More actions",
       newFile: "New file",

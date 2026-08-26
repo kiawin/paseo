@@ -882,6 +882,8 @@ export interface UploadEntryInput {
   modifiedAt?: string;
   /** "fail" refuses a taken name, "replace" overwrites, "rename" picks the next free name. */
   overwrite?: "fail" | "replace" | "rename";
+  /** Set when uploading a folder tree, whose intermediate directories may not exist. */
+  createMissingDirectories?: boolean;
   signal?: AbortSignal;
   requestId?: string;
   chunkSize?: number;
@@ -4755,6 +4757,7 @@ export class DaemonClient {
           size: input.bytes.byteLength,
           modifiedAt,
           overwrite: input.overwrite ?? "fail",
+          createMissingDirectories: input.createMissingDirectories ?? false,
           requestId,
         },
         responseType: "fs.entry.upload.response",
