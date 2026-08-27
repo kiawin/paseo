@@ -1096,6 +1096,9 @@ export const es: TranslationResources = {
     },
   },
   sidebar: {
+    agentList: {
+      toggle: "Agentes ({{count}})",
+    },
     display: {
       trigger: "Preferencias de visualización",
       heading: "Visualización",
@@ -1111,6 +1114,7 @@ export const es: TranslationResources = {
         branch: "Nombre de rama",
       },
       show: {
+        agents: "Agentes",
         label: "Mostrar",
         branch: "Rama",
         project: "Proyecto",
@@ -1125,6 +1129,11 @@ export const es: TranslationResources = {
       checks: {
         iconAndText: "Icono y texto",
         icon: "Solo icono",
+        none: "Oculto",
+      },
+      agents: {
+        collapsed: "Contraído",
+        expanded: "Expandido",
         none: "Oculto",
       },
       hostFilter: {

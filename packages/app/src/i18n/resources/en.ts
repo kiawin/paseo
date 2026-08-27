@@ -1070,6 +1070,9 @@ export const en = {
     },
   },
   sidebar: {
+    agentList: {
+      toggle: "Agents ({{count}})",
+    },
     display: {
       trigger: "Display preferences",
       heading: "Display",
@@ -1085,6 +1088,7 @@ export const en = {
         branch: "Branch name",
       },
       show: {
+        agents: "Agents",
         label: "Show",
         branch: "Branch",
         project: "Project",
@@ -1099,6 +1103,11 @@ export const en = {
       checks: {
         iconAndText: "Icon and text",
         icon: "Icon only",
+        none: "Hidden",
+      },
+      agents: {
+        collapsed: "Collapsed",
+        expanded: "Expanded",
         none: "Hidden",
       },
       hostFilter: {
