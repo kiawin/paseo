@@ -1154,6 +1154,9 @@ export const ko: TranslationResources = {
       working: "실행 중",
       done: "완료",
     },
+    agentList: {
+      toggle: "에이전트 ({{count}})",
+    },
     display: {
       showBackground: "백그라운드 표시",
       trigger: "표시 설정",
@@ -1170,6 +1173,7 @@ export const ko: TranslationResources = {
         branch: "브랜치 이름",
       },
       show: {
+        agents: "에이전트",
         label: "표시 항목",
         branch: "브랜치",
         project: "프로젝트",
@@ -1184,6 +1188,11 @@ export const ko: TranslationResources = {
       checks: {
         iconAndText: "아이콘 및 텍스트",
         icon: "아이콘만",
+        none: "숨김",
+      },
+      agents: {
+        collapsed: "접힘",
+        expanded: "펼침",
         none: "숨김",
       },
       hostFilter: {

@@ -1155,6 +1155,9 @@ export const en = {
       working: "Working",
       done: "Done",
     },
+    agentList: {
+      toggle: "Agents ({{count}})",
+    },
     display: {
       showBackground: "Show background",
       trigger: "Display preferences",
@@ -1171,6 +1174,7 @@ export const en = {
         branch: "Branch name",
       },
       show: {
+        agents: "Agents",
         label: "Show",
         branch: "Branch",
         project: "Project",
@@ -1185,6 +1189,11 @@ export const en = {
       checks: {
         iconAndText: "Icon and text",
         icon: "Icon only",
+        none: "Hidden",
+      },
+      agents: {
+        collapsed: "Collapsed",
+        expanded: "Expanded",
         none: "Hidden",
       },
       hostFilter: {
