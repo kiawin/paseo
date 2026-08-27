@@ -97,11 +97,12 @@ export function IsolationOption({
     <ComboboxItem
       testID={`workspace-create-isolation-${option.id}`}
       label={option.label}
+      description={option.description}
       selected={selected}
       active={active}
       disabled={disabled}
       onPress={onPress}
-      leadingSlot={option.id === "worktree" ? worktreeLeading : localLeading}
+      leadingSlot={option.id === "local" ? localLeading : worktreeLeading}
     />
   );
 }
