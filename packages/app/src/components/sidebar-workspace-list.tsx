@@ -96,6 +96,7 @@ import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press
 import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
+import { SidebarWorkspaceAgentRows } from "@/components/sidebar/workspace-agent-list";
 import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
@@ -1199,6 +1200,7 @@ function WorkspaceRowInner({
                 />
               </SidebarWorkspaceRowContent>
             </SidebarWorkspaceContextMenu>
+            <SidebarWorkspaceAgentRows workspace={workspace} />
           </View>
         );
       }}
