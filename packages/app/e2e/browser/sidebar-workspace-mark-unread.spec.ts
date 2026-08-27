@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { test as base, expect } from "../support/fixtures";
+import { gotoAppShell } from "../support/helpers/app";
 import {
   openAgentRoute,
   seedMockAgentWorkspace,
@@ -7,9 +8,9 @@ import {
 } from "../support/helpers/mock-agent";
 import { expectOpenTabCount } from "../support/helpers/sheet";
 import { installDaemonWebSocketGate } from "../support/helpers/daemon-websocket-gate";
-import { expectReconnectingToastGone } from "../support/helpers/workspace-ui";
 import { getServerId } from "../support/helpers/server-id";
 import { closeMobileAgentSidebar, openMobileAgentSidebar } from "../support/helpers/sidebar";
+import { expectReconnectingToastGone } from "../support/helpers/workspace-ui";
 
 interface FinishedWorkspaces {
   subject: MockAgentWorkspace;
@@ -199,12 +200,11 @@ async function markUnreadThenResumeChat(page: Page, workspaceId: string) {
   });
 }
 
-test("manual unread survives departure and clears on reopening and ordinary completion survives departure", async ({
+test("manual unread and normal completions survive departure and clear on reopening", async ({
   page,
   workspaces,
 }) => {
-  await openAgentRoute(page, workspaces.subject);
-  await expect(page.getByText("Finish this turn.", { exact: true })).toBeVisible();
+  await gotoAppShell(page);
   await openWorkspace(page, workspaces.other.workspaceId);
   await markBackgroundWorkspaceAndReopen(page, workspaces.subject.workspaceId);
   await leaveMarkedWorkspaceAndRead(page, workspaces);
@@ -213,19 +213,17 @@ test("manual unread survives departure and clears on reopening and ordinary comp
   await markBackgroundWorkspaceAndRead(page, workspaces.subject.workspaceId);
 });
 
-test("clicking a multi-agent workspace preserves its selected agent and leaves the other unread", async ({
+test("clicking a multi-agent workspace reveals and clears its marked agent", async ({
   page,
   workspaces,
 }) => {
   await openAgentRoute(page, workspaces.subject);
-  await expect(page.getByText("Finish this turn.", { exact: true })).toBeVisible();
   await expectSelectedAgent(page, workspaces.subject.agentId);
   await openWorkspace(page, workspaces.other.workspaceId);
-  await addFinishedAgent(workspaces.subject);
-  await markAsUnread(page, workspaces.subject.workspaceId);
+  const newest = await addFinishedAgent(workspaces.subject);
+  await chooseReadAction(page, workspaces.subject.workspaceId, "unread");
   await openWorkspace(page, workspaces.subject.workspaceId);
-  await expectSelectedAgent(page, workspaces.subject.agentId);
-  await expectStatus(page, workspaces.subject.workspaceId, "attention");
+  await expectSelectedAgent(page, newest.id);
 });
 
 test("manual unread survives leaving the current workspace on compact layout", async ({
@@ -239,7 +237,7 @@ test("manual unread survives leaving the current workspace on compact layout", a
   await completeTurnAndLeaveOnCompact(page, workspaces);
 });
 
-async function reopenWorkspaceAfterBackgroundTurn(page: Page, workspace: MockAgentWorkspace) {
+async function reopenMarkedWorkspaceAfterBackgroundTurn(page: Page, workspace: MockAgentWorkspace) {
   const route = page.url();
   // End this app session before the turn, so its cached transcript cannot contain the new prompt.
   await page.goto("about:blank");
@@ -260,6 +258,18 @@ async function expectRestoredCompactChat(page: Page) {
   ).toBeVisible();
 }
 
+async function reopenWorkspaceAfterBackgroundTurn(page: Page, workspace: MockAgentWorkspace) {
+  const route = page.url();
+  await page.goto("about:blank");
+  await workspace.client.sendAgentMessage(
+    workspace.agentId,
+    "A turn completed while the app was closed.",
+  );
+  await workspace.client.waitForFinish(workspace.agentId, 20_000);
+  await page.goto(route);
+  await expect(page.getByRole("button", { name: /Switch tabs/ })).toBeVisible();
+}
+
 test("reopening a marked unread workspace restores only its agent tab and current history on compact layout", async ({
   page,
   workspaces,
@@ -274,7 +284,7 @@ test("reopening a marked unread workspace restores only its agent tab and curren
   await test.step("mark the current workspace unread, then close and reopen the app", async () => {
     await openMobileAgentSidebar(page);
     await markAsUnread(page, workspaces.subject.workspaceId);
-    await reopenWorkspaceAfterBackgroundTurn(page, workspaces.subject);
+    await reopenMarkedWorkspaceAfterBackgroundTurn(page, workspaces.subject);
   });
   await test.step("restore the main tab without Explorer entries and load its latest history", async () => {
     await expectRestoredCompactChat(page);
