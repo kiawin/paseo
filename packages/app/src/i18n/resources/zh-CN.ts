@@ -1192,6 +1192,9 @@ export const zhCN: TranslationResources = {
       working: "运行中",
       done: "已完成",
     },
+    agentList: {
+      toggle: "Agents ({{count}})",
+    },
     display: {
       showBackground: "显示后台工作区",
       trigger: "显示偏好",
@@ -1215,6 +1218,7 @@ export const zhCN: TranslationResources = {
         branch: "分支名称",
       },
       show: {
+        agents: "Agents",
         label: "显示",
         branch: "分支",
         project: "项目",
@@ -1229,6 +1233,11 @@ export const zhCN: TranslationResources = {
       checks: {
         iconAndText: "图标和文字",
         icon: "仅图标",
+        none: "隐藏",
+      },
+      agents: {
+        collapsed: "折叠",
+        expanded: "展开",
         none: "隐藏",
       },
       hostFilter: {
