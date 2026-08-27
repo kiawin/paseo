@@ -213,7 +213,8 @@ test("clicking a multi-agent workspace reveals and clears its marked agent", asy
   await expectSelectedAgent(page, workspaces.subject.agentId);
   await openWorkspace(page, workspaces.other.workspaceId);
   const newest = await addFinishedAgent(workspaces.subject);
-  await markBackgroundWorkspaceAndReopen(page, workspaces.subject.workspaceId);
+  await chooseReadAction(page, workspaces.subject.workspaceId, "unread");
+  await openWorkspace(page, workspaces.subject.workspaceId);
   await expectSelectedAgent(page, newest.id);
 });
 
