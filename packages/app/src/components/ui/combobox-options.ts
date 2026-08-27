@@ -13,6 +13,11 @@ export interface ComboboxOptionModel {
   /** Additional text to match without displaying it in the option row. */
   searchText?: string;
   kind?: ComboboxOptionKind;
+  /**
+   * Group label drawn above the first option carrying it. Options sharing a
+   * section must be adjacent — the header is emitted on change, not on lookup.
+   */
+  section?: string;
 }
 
 const SECONDARY_TEXT_FALLBACK_TIER = 99;
