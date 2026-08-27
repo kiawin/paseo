@@ -82,9 +82,22 @@ export interface SidebarAgentListSource {
   agents: readonly WorkspaceAgentEntry[];
 }
 
+/**
+ * Statuses that open a workspace's list on their own. Deliberately the two an agent cannot leave
+ * without you — `attention` means finished, which is worth a dot but not worth rearranging the
+ * sidebar for every time a turn ends.
+ */
+function hasBlockedAgent(agents: readonly WorkspaceAgentEntry[]): boolean {
+  return agents.some((agent) => agent.status === "needs_input" || agent.status === "failed");
+}
+
 export function useSidebarAgentListModel(input: SidebarAgentListSource): SidebarAgentListModel {
   const mode: SidebarAgentRows = useSidebarAgentRows();
-  const expandedByDefault = mode === "expanded";
+  // A blocked agent opens its list without being asked. This is the case the sub-list exists for,
+  // and it is the case where reaching the toggle is most awkward — a phone, one thumb, a 6px dot.
+  // It moves the default rather than forcing the state, so a workspace you collapsed stays
+  // collapsed: an override always wins.
+  const expandedByDefault = mode === "expanded" || hasBlockedAgent(input.agents);
   // Select this workspace's answer, not the map it lives in. The store replaces the whole
   // overrides map on every toggle, and this hook runs twice per row, so subscribing to the map
   // would re-render every row in the sidebar each time one workspace expanded.
@@ -127,16 +140,15 @@ export function useSidebarAgentListModel(input: SidebarAgentListSource): Sidebar
  * to open.
  */
 export const SidebarAgentListToggle = memo(function SidebarAgentListToggle({
-  workspace,
+  model,
   isHovered,
   children,
 }: {
-  workspace: SidebarAgentListSource;
+  model: SidebarAgentListModel;
   isHovered: boolean;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const model = useSidebarAgentListModel(workspace);
   const accessibilityState = useMemo(() => ({ expanded: model.expanded }), [model.expanded]);
   const handlePress = useCallback(
     (event: GestureResponderEvent) => {

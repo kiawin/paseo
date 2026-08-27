@@ -8,7 +8,10 @@ import {
   WorkspaceMetaRow,
   type WorkspaceServiceSummary,
 } from "@/components/sidebar/workspace-meta-row";
-import { SidebarAgentListToggle } from "@/components/sidebar/workspace-agent-list";
+import {
+  SidebarAgentListToggle,
+  useSidebarAgentListModel,
+} from "@/components/sidebar/workspace-agent-list";
 import { WorkspaceHoverCard } from "@/components/workspace-hover-card";
 import type { HostBadgeModel } from "@/hosts/appearance";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
@@ -124,6 +127,10 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     settings: { workspaceTitleSource },
   } = useAppSettings();
   const workspaceLabel = resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource });
+  // Built once and handed to both the leading toggle and the meta line's count, which are two
+  // affordances for one action. Letting each build its own would mean a second store subscription
+  // per row for an answer the row already has.
+  const agentListModel = useSidebarAgentListModel(workspace);
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
@@ -139,7 +146,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   return (
     <View style={styles.workspaceRowContent}>
       <View style={styles.workspaceRowMain}>
-        <SidebarAgentListToggle workspace={workspace} isHovered={isHovered}>
+        <SidebarAgentListToggle model={agentListModel} isHovered={isHovered}>
           {leadingProjectName ? (
             <ProjectStatusIndicator
               iconDataUri={leadingProjectIconDataUri}
@@ -174,6 +181,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             serviceSummary={serviceSummary}
             labels={labels}
             agentCount={workspace.agents.length}
+            agentsExpanded={agentListModel.visible ? agentListModel.expanded : null}
+            onToggleAgents={agentListModel.toggle}
           />
         </View>
       </View>

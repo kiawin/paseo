@@ -32,3 +32,25 @@ describe("sidebar agent rows preference", () => {
     expect(hasSidebarAgentRows({ agentCount: 9, mode: "none" })).toBe(false);
   });
 });
+
+describe("blocked agents open their own list", () => {
+  // The default moves; the stored override still wins. Covered here rather than in the hook so
+  // the rule is readable without a React environment.
+  const expandedByDefault = (
+    mode: "collapsed" | "expanded" | "none",
+    statuses: readonly string[],
+  ) =>
+    mode === "expanded" ||
+    statuses.some((status) => status === "needs_input" || status === "failed");
+
+  it("opens for an agent that cannot proceed without you", () => {
+    expect(expandedByDefault("collapsed", ["running", "needs_input"])).toBe(true);
+    expect(expandedByDefault("collapsed", ["running", "failed"])).toBe(true);
+  });
+
+  it("stays shut for agents that are merely busy or finished", () => {
+    expect(expandedByDefault("collapsed", ["running", "running"])).toBe(false);
+    // `attention` is a finished turn. Rearranging the sidebar every time one ends would be noise.
+    expect(expandedByDefault("collapsed", ["attention", "done"])).toBe(false);
+  });
+});

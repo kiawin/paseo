@@ -235,6 +235,41 @@ test.describe("sidebar agent rows", () => {
     }
   });
 
+  test("opens the list from the meta-line count as well", async ({ page }) => {
+    // The leading toggle is a 6px dot with no hover on touch. The count is the same action on a
+    // target a thumb can find.
+    const workspace = await seedWorkspace({ repoPrefix: "paseo-e2e-agent-rows-count-" });
+    try {
+      for (const title of AGENT_TITLES) {
+        await workspace.client.createAgent({
+          provider: "mock",
+          cwd: workspace.repoPath,
+          workspaceId: workspace.workspaceId,
+          title,
+          modeId: "load-test",
+          model: "e2e-fast-stream",
+        });
+      }
+
+      await gotoAppShell(page);
+      await expect(page.getByTestId(rowTestId(workspace.workspaceId))).toBeVisible({
+        timeout: 30_000,
+      });
+      const count = page.getByTestId("sidebar-workspace-agent-count");
+      await expect(count).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId("sidebar-agent-list")).toHaveCount(0);
+
+      await count.click();
+      await expect(page.getByTestId("sidebar-agent-list")).toBeVisible({ timeout: 10_000 });
+      // Same action as the leading toggle, so it closes again and never navigates.
+      await count.click();
+      await expect(page.getByTestId("sidebar-agent-list")).toHaveCount(0);
+      await expect(page).not.toHaveURL(/\/workspace\//);
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
   test("draws nothing for a workspace holding one agent", async ({ page }) => {
     const workspace = await seedWorkspace({ repoPrefix: "paseo-e2e-agent-rows-single-" });
     try {
