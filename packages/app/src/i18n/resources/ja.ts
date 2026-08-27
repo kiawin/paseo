@@ -1099,6 +1099,9 @@ export const ja: TranslationResources = {
     },
   },
   sidebar: {
+    agentList: {
+      toggle: "エージェント ({{count}})",
+    },
     display: {
       trigger: "表示設定",
       heading: "表示",
@@ -1114,6 +1117,7 @@ export const ja: TranslationResources = {
         branch: "ブランチ名",
       },
       show: {
+        agents: "エージェント",
         label: "表示項目",
         branch: "ブランチ",
         project: "プロジェクト",
@@ -1128,6 +1132,11 @@ export const ja: TranslationResources = {
       checks: {
         iconAndText: "アイコンとテキスト",
         icon: "アイコンのみ",
+        none: "非表示",
+      },
+      agents: {
+        collapsed: "折りたたむ",
+        expanded: "展開",
         none: "非表示",
       },
       hostFilter: {

@@ -1112,6 +1112,9 @@ export const ptBR: TranslationResources = {
     },
   },
   sidebar: {
+    agentList: {
+      toggle: "Agentes ({{count}})",
+    },
     display: {
       trigger: "Preferências de exibição",
       heading: "Exibição",
@@ -1127,6 +1130,7 @@ export const ptBR: TranslationResources = {
         branch: "Nome da branch",
       },
       show: {
+        agents: "Agentes",
         label: "Mostrar",
         branch: "Branch",
         project: "Projeto",
@@ -1141,6 +1145,11 @@ export const ptBR: TranslationResources = {
       checks: {
         iconAndText: "Ícone e texto",
         icon: "Somente ícone",
+        none: "Oculto",
+      },
+      agents: {
+        collapsed: "Recolhido",
+        expanded: "Expandido",
         none: "Oculto",
       },
       hostFilter: {
