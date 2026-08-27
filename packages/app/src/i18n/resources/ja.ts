@@ -1205,6 +1205,7 @@ export const ja: TranslationResources = {
     isolation: {
       local: "ローカル",
       worktree: "新しいワークツリー",
+      existingSection: "既存のワークツリー",
       label: "分離方法",
     },
     fields: {
