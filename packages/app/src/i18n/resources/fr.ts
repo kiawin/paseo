@@ -1361,6 +1361,7 @@ export const fr: TranslationResources = {
     isolation: {
       local: "Local",
       worktree: "Nouveau worktree",
+      existingSection: "Worktrees existants",
       label: "Isolation",
     },
     fields: {
