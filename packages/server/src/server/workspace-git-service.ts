@@ -53,7 +53,11 @@ import {
 import type { GitProcessPriority } from "../utils/git-process-scheduler.js";
 import { GitObservationPaths } from "./git-observation-paths.js";
 import { branchNameFromRef } from "../utils/worktree-metadata.js";
-import { listPaseoWorktrees, type PaseoWorktreeInfo } from "../utils/worktree.js";
+import {
+  listPaseoWorktrees,
+  listRepoWorktrees,
+  type PaseoWorktreeInfo,
+} from "../utils/worktree.js";
 import { READ_ONLY_GIT_ENV } from "./checkout-git-utils.js";
 import { classifyGitMetadataPath, getPrunedGitMetadataPaths } from "./git-metadata-event-rules.js";
 import {
@@ -267,6 +271,10 @@ export interface WorkspaceGitService {
     options?: WorkspaceGitReadOptions,
   ): Promise<WorkspaceGitWorktreeInfo[]>;
   invalidateWorktrees(): void;
+  listRepoWorktrees(
+    cwdOrRepoRoot: string,
+    options?: WorkspaceGitReadOptions,
+  ): Promise<WorkspaceGitWorktreeInfo[]>;
   getProjectSlug(cwd: string, options?: WorkspaceGitReadOptions): Promise<string>;
   resolveRepoRoot(cwd: string, options?: WorkspaceGitReadOptions): Promise<string>;
   resolveDefaultBranch(cwdOrRepoRoot: string, options?: WorkspaceGitReadOptions): Promise<string>;
@@ -422,6 +430,7 @@ interface WorkspaceGitServiceDependencies {
   resolveRepositoryDefaultBranch: typeof resolveRepositoryDefaultBranch;
   listBranchSuggestions: typeof listBranchSuggestions;
   listPaseoWorktrees: typeof listPaseoWorktrees;
+  listRepoWorktrees: typeof listRepoWorktrees;
   /**
    * Adapter instances to bind by forge id instead of building from the registry
    * — the injection seam for the daemon's shared GitHub adapter and for test
@@ -641,6 +650,7 @@ function buildDefaultWorkspaceGitServiceDeps(
     resolveRepositoryDefaultBranch,
     listBranchSuggestions,
     listPaseoWorktrees,
+    listRepoWorktrees,
     resolveAbsoluteGitDir,
     hasOriginRemote,
     runGitFetch: fetchWorkspaceGitRemote,
@@ -1038,6 +1048,18 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
         paseoHome: this.paseoHome,
         worktreesRoot: this.worktreesRoot,
       }),
+    );
+  }
+
+  async listRepoWorktrees(
+    cwdOrRepoRoot: string,
+    options?: WorkspaceGitReadOptions,
+  ): Promise<WorkspaceGitWorktreeInfo[]> {
+    this.assertNotDisposed();
+    const repoRoot = await this.resolveRepoRoot(cwdOrRepoRoot, options);
+    const key = JSON.stringify(["repo-worktrees", repoRoot]);
+    return this.readAuxiliaryCache(this.worktreeListCache, key, options, () =>
+      this.deps.listRepoWorktrees({ cwd: repoRoot }),
     );
   }
 
