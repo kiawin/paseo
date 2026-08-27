@@ -19,8 +19,15 @@ import {
 import { branchIcon, folderIcon, ProjectIcon, pullRequestIcon } from "./icons";
 import { LaunchControl } from "./launch-control";
 import { AddProjectOption, IsolationOption, ProjectOption, RefOption } from "./options";
+import {
+  buildIsolationOptions,
+  isolationFromOptionId,
+  isolationLabel,
+  isolationOptionId,
+  type ExistingWorktree,
+  type WorkspaceIsolation,
+} from "../isolation";
 
-type Isolation = "local" | "worktree";
 type RenderOption = NonNullable<ComboboxProps["renderOption"]>;
 
 interface PickerControl {
@@ -53,9 +60,10 @@ export interface NewWorkspaceFormProps {
     onAddHost: () => void;
   };
   isolation: PickerControl & {
-    effectiveIsolation: Isolation;
+    effectiveIsolation: WorkspaceIsolation;
+    existingWorktrees: readonly ExistingWorktree[];
     canCreateWorktree: boolean;
-    onSelect: (isolation: Isolation) => void;
+    onSelect: (isolation: WorkspaceIsolation) => void;
   };
   base: PickerControl & {
     selectedSourceDirectory: string | null;
@@ -128,17 +136,16 @@ function useIsolationPicker(
   isPending: boolean,
 ): { options: ComboboxOption[]; onSelect: (id: string) => void; renderOption: RenderOption } {
   const { t } = useTranslation();
-  const { canCreateWorktree, onSelect, onOpenChange } = isolation;
+  const { canCreateWorktree, existingWorktrees, onSelect, onOpenChange } = isolation;
   // "New worktree" is omitted entirely (not disabled) when the project isn't a
   // git checkout, since worktree isolation is impossible there.
-  const options = useMemo<ComboboxOption[]>(() => {
-    const local = { id: "local", label: t("newWorkspace.isolation.local") };
-    if (!canCreateWorktree) return [local];
-    return [local, { id: "worktree", label: t("newWorkspace.isolation.worktree") }];
-  }, [canCreateWorktree, t]);
+  const options = useMemo(
+    () => buildIsolationOptions({ t, canCreateWorktree, existingWorktrees }),
+    [canCreateWorktree, existingWorktrees, t],
+  );
   const handleSelect = useCallback(
     (id: string) => {
-      onSelect(id === "worktree" ? "worktree" : "local");
+      onSelect(isolationFromOptionId(id));
       onOpenChange(false);
     },
     [onOpenChange, onSelect],
@@ -194,10 +201,12 @@ export function useNewWorkspaceForm(props: NewWorkspaceFormProps): ReactElement 
     () => <HostStatusDot serverId={host.selectedServerId} />,
     [host.selectedServerId],
   );
-  const isWorktree = isolation.effectiveIsolation === "worktree";
-  const isolationValue = isWorktree
-    ? t("newWorkspace.isolation.worktree")
-    : t("newWorkspace.isolation.local");
+  const isWorktree = isolation.effectiveIsolation.kind !== "local";
+  const isolationValue = isolationLabel({
+    t,
+    isolation: isolation.effectiveIsolation,
+    existingWorktrees: isolation.existingWorktrees,
+  });
   const refIcon = base.selectedItem?.kind === "github-pr" ? pullRequestIcon : branchIcon;
 
   const projectField = (
@@ -302,7 +311,7 @@ export function useNewWorkspaceForm(props: NewWorkspaceFormProps): ReactElement 
       />
       <Combobox
         options={isolationPicker.options}
-        value={isolation.effectiveIsolation}
+        value={isolationOptionId(isolation.effectiveIsolation)}
         onSelect={isolationPicker.onSelect}
         title={t("newWorkspace.isolation.label")}
         open={isolation.openState}
