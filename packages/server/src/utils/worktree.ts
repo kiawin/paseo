@@ -168,6 +168,8 @@ export interface PaseoWorktreeInfo {
   createdAt: string;
   branchName?: string;
   head?: string;
+  /** Set only by `listRepoWorktrees`: the repository's main working tree. */
+  isMainWorktree?: boolean;
 }
 
 export interface PaseoWorktreeOwnership {
@@ -1069,7 +1071,9 @@ async function resolveMetadataOwnedWorktree(
   }
 }
 
-type ParsedPaseoWorktreeInfo = Omit<PaseoWorktreeInfo, "createdAt">;
+type ParsedPaseoWorktreeInfo = Omit<PaseoWorktreeInfo, "createdAt" | "isMainWorktree"> & {
+  bare?: boolean;
+};
 
 function parseWorktreeList(output: string): ParsedPaseoWorktreeInfo[] {
   const entries: ParsedPaseoWorktreeInfo[] = [];
@@ -1088,7 +1092,9 @@ function parseWorktreeList(output: string): ParsedPaseoWorktreeInfo[] {
       continue;
     }
 
-    if (line.startsWith("branch ")) {
+    if (line.trim() === "bare") {
+      current.bare = true;
+    } else if (line.startsWith("branch ")) {
       const ref = line.slice("branch ".length).trim();
       current.branchName = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
     } else if (line.startsWith("HEAD ")) {
@@ -1120,6 +1126,19 @@ async function resolveWorktreeCreatedAtIso(worktreePath: string): Promise<string
   }
 }
 
+async function readWorktreeList(cwd: string): Promise<ParsedPaseoWorktreeInfo[]> {
+  const { stdout } = await runGitCommand(["worktree", "list", "--porcelain"], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+  });
+  const entries: ParsedPaseoWorktreeInfo[] = [];
+  // Resolve paths sequentially; a large worktree list must not consume the FS pool.
+  for (const entry of parseWorktreeList(stdout)) {
+    entries.push({ ...entry, path: await normalizePathForOwnership(entry.path) });
+  }
+  return entries;
+}
+
 export async function listPaseoWorktrees({
   cwd,
   paseoHome,
@@ -1130,17 +1149,14 @@ export async function listPaseoWorktrees({
   worktreesRoot?: string;
 }): Promise<PaseoWorktreeInfo[]> {
   const projectWorktreesRoot = await getPaseoWorktreesRoot(cwd, paseoHome, worktreesRoot);
-  const { stdout } = await runGitCommand(["worktree", "list", "--porcelain"], {
-    cwd,
-    envOverlay: READ_ONLY_GIT_ENV,
-  });
+  const entries = await readWorktreeList(cwd);
 
   const mainCheckoutPath = await resolveRepoRootFromGitCommonDir(await getGitCommonDir(cwd));
   const roots = await ownershipPathVariants(projectWorktreesRoot);
   const worktrees: PaseoWorktreeInfo[] = [];
   // Inspect foreign paths sequentially; a large worktree list must not consume the FS pool.
-  for (const entry of parseWorktreeList(stdout)) {
-    const path = await normalizePathForOwnership(entry.path);
+  for (const { bare: _bare, ...entry } of entries) {
+    const path = entry.path;
     if (
       !roots.some((root) => getRelativePathInsideRoot(root, path) !== null) &&
       !(path !== mainCheckoutPath && (await hasPaseoWorktreeMetadata(path)))
@@ -1151,6 +1167,25 @@ export async function listPaseoWorktrees({
   return worktrees;
 }
 
+/**
+ * Every worktree of the repository, Paseo-owned or not, so the New Workspace
+ * screen can offer one a person cut by hand. `git worktree list` puts the main
+ * working tree first; a bare repository has none, and its bare entry is not a
+ * directory anyone can work in, so it is dropped either way.
+ */
+export async function listRepoWorktrees({ cwd }: { cwd: string }): Promise<PaseoWorktreeInfo[]> {
+  const entries = await readWorktreeList(cwd);
+  const mainPath = entries.find((entry) => !entry.bare)?.path;
+
+  return entries
+    .filter((entry) => !entry.bare)
+    .map(({ bare: _bare, ...entry }) =>
+      Object.assign({}, entry, {
+        createdAt: resolveWorktreeCreatedAtIso(entry.path),
+        isMainWorktree: entry.path === mainPath,
+      }),
+    );
+}
 export interface DeletePaseoWorktreeOptions {
   cwd: string | null;
   worktreePath?: string;

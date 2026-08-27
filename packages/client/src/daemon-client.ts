@@ -5377,7 +5377,7 @@ export class DaemonClient {
   }
 
   async getPaseoWorktreeList(
-    input: { cwd?: string; repoRoot?: string },
+    input: { cwd?: string; repoRoot?: string; scope?: "paseo" | "repo" },
     requestId?: string,
   ): Promise<PaseoWorktreeListPayload> {
     return this.sendCorrelatedSessionRequest({
@@ -5386,6 +5386,7 @@ export class DaemonClient {
         type: "paseo_worktree_list_request",
         cwd: input.cwd,
         repoRoot: input.repoRoot,
+        scope: input.scope,
       },
       responseType: "paseo_worktree_list_response",
     });
