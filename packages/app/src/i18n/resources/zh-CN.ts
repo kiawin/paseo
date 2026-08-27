@@ -1242,6 +1242,7 @@ export const zhCN: TranslationResources = {
     isolation: {
       local: "本地",
       worktree: "新建 worktree",
+      existingSection: "现有工作树",
       label: "隔离",
     },
     fields: {
