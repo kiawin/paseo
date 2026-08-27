@@ -1343,6 +1343,7 @@ export const ru: TranslationResources = {
     isolation: {
       local: "Локально",
       worktree: "Новый worktree",
+      existingSection: "Существующие рабочие деревья",
       label: "Изоляция",
     },
     fields: {
