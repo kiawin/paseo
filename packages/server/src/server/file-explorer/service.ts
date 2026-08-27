@@ -758,7 +758,7 @@ async function resolveUploadParent(
   root: string,
   relativePath: string,
   createMissingDirectories: boolean,
-): Promise<{ parentDir: string; fileName: string }> {
+): Promise<{ parentDir: string; fileName: string; realRoot: string }> {
   const scoped = await resolveScopedPath({ root, relativePath });
   const fileName = path.basename(scoped.requestedPath);
   if (!fileName || fileName === "." || fileName === "..") {
@@ -776,7 +776,7 @@ async function resolveUploadParent(
   if (relative !== "" && (relative.startsWith("..") || path.isAbsolute(relative))) {
     throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
   }
-  return { parentDir: realParent, fileName };
+  return { parentDir: realParent, fileName, realRoot };
 }
 
 /**
@@ -873,7 +873,10 @@ export async function createUploadSink({
   /** Set when uploading a folder tree, whose intermediate directories may not exist. */
   createMissingDirectories?: boolean;
 }): Promise<UploadSink> {
-  const { parentDir, fileName } = await resolveUploadParent(
+  // The target is resolved through realpath, so the reported path has to be relative to
+  // the canonical root too. A root that is not already canonical — a symlink, or an 8.3
+  // short name on Windows — otherwise yields a path that climbs out of the workspace.
+  const { parentDir, fileName, realRoot } = await resolveUploadParent(
     root,
     relativePath,
     createMissingDirectories,
@@ -896,7 +899,7 @@ export async function createUploadSink({
   };
 
   return {
-    targetPath: normalizeRelativePath({ root, targetPath }),
+    targetPath: normalizeRelativePath({ root: realRoot, targetPath }),
     async write(chunk) {
       if (!handle) {
         throw new Error("Upload is no longer open.");
@@ -934,7 +937,7 @@ export async function createUploadSink({
       }
       const stats = await fs.stat(targetPath, { bigint: true });
       return {
-        path: normalizeRelativePath({ root, targetPath }),
+        path: normalizeRelativePath({ root: realRoot, targetPath }),
         size: Number(stats.size),
         modifiedAt: stats.mtime.toISOString(),
         revision: fileRevision(stats),

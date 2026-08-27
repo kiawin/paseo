@@ -188,6 +188,27 @@ describe("createUploadSink lifecycle", () => {
 
     expect(result.path).toBe("assets/logo.png");
   });
+
+  // The sink resolves the target through realpath, so a root that is not already
+  // canonical — a symlink here, an 8.3 short name on Windows — made the reported
+  // path relative to the wrong directory and climb out of the workspace.
+  test("reports a path relative to a root that is not canonical", async () => {
+    const real = makeDir("upload-real-");
+    const link = join(mkdtempSync(join(tmpdir(), "upload-link-")), "root");
+    tempDirs.push(link);
+    symlinkSync(real, link, "dir");
+
+    const sink = await createUploadSink({
+      root: link,
+      relativePath: "notes.txt",
+      overwrite: "fail",
+    });
+    await sink.write(bytes("via a symlinked root"));
+    const result = await sink.commit();
+
+    expect(result.path).toBe("notes.txt");
+    expect(readFileSync(join(real, "notes.txt"), "utf8")).toBe("via a symlinked root");
+  });
 });
 
 describe("createUploadSink folder trees", () => {
