@@ -759,13 +759,17 @@ async function resolveUploadParent(
   relativePath: string,
   createMissingDirectories: boolean,
 ): Promise<{ parentDir: string; fileName: string; realRoot: string }> {
-  const scoped = await resolveScopedPath({ root, relativePath });
+  // Everything downstream compares against the canonical root, so the request is scoped
+  // to it as well. Scoping to the caller's root instead leaves the two in different forms
+  // whenever the root is a symlink or a Windows 8.3 short name, and every comparison then
+  // reads as an escape out of the workspace.
+  const realRoot = await fs.realpath(expandUserPath(root));
+  const scoped = await resolveScopedPath({ root: realRoot, relativePath });
   const fileName = path.basename(scoped.requestedPath);
   if (!fileName || fileName === "." || fileName === "..") {
     throw new Error("Upload target must be a file name");
   }
 
-  const realRoot = await fs.realpath(expandUserPath(root));
   const parentDir = path.dirname(scoped.requestedPath);
   if (createMissingDirectories) {
     await createScopedDirectories(realRoot, parentDir);
@@ -873,9 +877,8 @@ export async function createUploadSink({
   /** Set when uploading a folder tree, whose intermediate directories may not exist. */
   createMissingDirectories?: boolean;
 }): Promise<UploadSink> {
-  // The target is resolved through realpath, so the reported path has to be relative to
-  // the canonical root too. A root that is not already canonical — a symlink, or an 8.3
-  // short name on Windows — otherwise yields a path that climbs out of the workspace.
+  // realRoot, not root: the reported path has to be relative to the directory the bytes
+  // actually landed in.
   const { parentDir, fileName, realRoot } = await resolveUploadParent(
     root,
     relativePath,

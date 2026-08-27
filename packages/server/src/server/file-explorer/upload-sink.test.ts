@@ -209,6 +209,27 @@ describe("createUploadSink lifecycle", () => {
     expect(result.path).toBe("notes.txt");
     expect(readFileSync(join(real, "notes.txt"), "utf8")).toBe("via a symlinked root");
   });
+
+  test("creates a folder tree under a root that is not canonical", async () => {
+    const real = makeDir("upload-tree-real-");
+    const link = join(mkdtempSync(join(tmpdir(), "upload-tree-link-")), "root");
+    tempDirs.push(link);
+    symlinkSync(real, link, "dir");
+
+    const sink = await createUploadSink({
+      root: link,
+      relativePath: "src/components/button.tsx",
+      overwrite: "fail",
+      createMissingDirectories: true,
+    });
+    await sink.write(bytes("export const Button = () => null;"));
+    const result = await sink.commit();
+
+    expect(result.path).toBe("src/components/button.tsx");
+    expect(readFileSync(join(real, "src/components/button.tsx"), "utf8")).toBe(
+      "export const Button = () => null;",
+    );
+  });
 });
 
 describe("createUploadSink folder trees", () => {
