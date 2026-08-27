@@ -1079,6 +1079,9 @@ export const fr: TranslationResources = {
     },
   },
   sidebar: {
+    agentList: {
+      toggle: "Agents ({{count}})",
+    },
     display: {
       trigger: "Préférences d'affichage",
       heading: "Affichage",
@@ -1094,6 +1097,7 @@ export const fr: TranslationResources = {
         branch: "Nom de branche",
       },
       show: {
+        agents: "Agents",
         label: "Afficher",
         branch: "Branche",
         project: "Projet",
@@ -1108,6 +1112,11 @@ export const fr: TranslationResources = {
       checks: {
         iconAndText: "Icône et texte",
         icon: "Icône seule",
+        none: "Masqué",
+      },
+      agents: {
+        collapsed: "Replié",
+        expanded: "Déplié",
         none: "Masqué",
       },
       hostFilter: {

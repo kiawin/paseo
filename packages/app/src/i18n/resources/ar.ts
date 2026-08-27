@@ -1046,6 +1046,9 @@ export const ar: TranslationResources = {
     },
   },
   sidebar: {
+    agentList: {
+      toggle: "الوكلاء ({{count}})",
+    },
     display: {
       trigger: "تفضيلات العرض",
       heading: "العرض",
@@ -1061,6 +1064,7 @@ export const ar: TranslationResources = {
         branch: "اسم الفرع",
       },
       show: {
+        agents: "الوكلاء",
         label: "إظهار",
         branch: "الفرع",
         project: "المشروع",
@@ -1075,6 +1079,11 @@ export const ar: TranslationResources = {
       checks: {
         iconAndText: "أيقونة ونص",
         icon: "أيقونة فقط",
+        none: "مخفي",
+      },
+      agents: {
+        collapsed: "مطوي",
+        expanded: "موسّع",
         none: "مخفي",
       },
       hostFilter: {
