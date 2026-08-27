@@ -1355,6 +1355,7 @@ export const ptBR: TranslationResources = {
     isolation: {
       local: "Local",
       worktree: "Novo worktree",
+      existingSection: "Worktrees existentes",
       label: "Isolamento",
     },
     fields: {
