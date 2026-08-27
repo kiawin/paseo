@@ -1,9 +1,9 @@
 import { PressHighlight as Pressable } from "@/components/ui/press-highlight";
-import { Fragment, useCallback, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
+import { Bot, ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
 import {
   workspaceLabelKey,
   type WorkspaceLabelDefinition,
@@ -14,7 +14,10 @@ import { WorkspaceLabelChip, WORKSPACE_LABEL_CHIP_INSET } from "@/workspace-labe
 import type { PrHint } from "@/git/pr-hint";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
 import { openExternalUrl } from "@/utils/open-external-url";
-import { useSidebarMetaPreferences } from "@/components/sidebar/display-preferences/model";
+import {
+  useSidebarAgentRows,
+  useSidebarMetaPreferences,
+} from "@/components/sidebar/display-preferences/model";
 import type { Theme } from "@/styles/theme";
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
 import { PullRequestStateIcon } from "@/git/pull-request-state-icon";
@@ -42,6 +45,7 @@ const META_ICON_SIZE = HOST_BADGE_ICON_SIZE;
 
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedFolder = withUnistyles(Folder);
+const ThemedBot = withUnistyles(Bot);
 const ThemedGitBranch = withUnistyles(GitBranch);
 const ThemedGlobe = withUnistyles(Globe);
 
@@ -78,6 +82,9 @@ export function WorkspaceMetaRow({
   labels = EMPTY_LABELS,
   workspace = null,
   backdrop,
+  agentCount,
+  agentsExpanded,
+  onToggleAgents,
 }: {
   currentBranch: string | null;
   projectName: string | null;
@@ -88,8 +95,13 @@ export function WorkspaceMetaRow({
   /** The real workspace behind the row; previews leave it out and get no plugin items. */
   workspace?: { serverId: string; workspaceId: string } | null;
   backdrop: SidebarSurfaceBackdrop;
+  agentCount: number;
+  /** Expansion state of the sub-list, or null when this workspace draws none. */
+  agentsExpanded: boolean | null;
+  onToggleAgents: () => void;
 }) {
   const { rowItems, checksDisplay } = useSidebarMetaPreferences();
+  const agentRows = useSidebarAgentRows();
   const items = selectMetaRowItems({
     currentBranch,
     projectName,
@@ -99,6 +111,8 @@ export function WorkspaceMetaRow({
     labels,
     visible: rowItems,
     checksDisplay,
+    agentCount,
+    agentRows,
   });
   const pluginItems = usePluginWorkspaceRowBadgeItems(workspace?.serverId ?? null);
 
@@ -119,7 +133,13 @@ export function WorkspaceMetaRow({
               ·
             </Text>
           ) : null}
-          <MetaItemNode item={item} hostBadge={hostBadge} leading={index === 0} />
+          <MetaItemNode
+            item={item}
+            hostBadge={hostBadge}
+            leading={index === 0}
+            agentsExpanded={agentsExpanded}
+            onToggleAgents={onToggleAgents}
+          />
         </Fragment>
       ))}
       {workspace ? (
@@ -133,12 +153,19 @@ function MetaItemNode({
   item,
   hostBadge,
   leading,
+  agentsExpanded,
+  onToggleAgents,
 }: {
   item: MetaRowItem;
   hostBadge: HostBadgeModel | null;
   /** First on the line, so this item's ink sets the rail the title above it already uses. */
   leading: boolean;
+  agentsExpanded: boolean | null;
+  onToggleAgents: () => void;
 }): ReactNode {
+  if (item.kind === "agents") {
+    return <AgentsItem count={item.count} expanded={agentsExpanded} onToggle={onToggleAgents} />;
+  }
   if (item.kind === "branch") {
     return <IdentityItem kind="branch" name={item.name} />;
   }
@@ -159,6 +186,60 @@ function MetaItemNode({
   }
   return <ServiceItem summary={item.summary} />;
 }
+
+/**
+ * How many agents are working in this workspace, and the second way to open them.
+ *
+ * The leading slot is the primary control, but it is a 6px dot on touch with no hover to reveal
+ * its chevron. This is the same action on a target a thumb can find: it is already on the row,
+ * already says how many agents there are, and sits clear of both the kebab and the title.
+ *
+ * Two affordances for one action is fine — neither is ambiguous about what it does — and it is
+ * why this stays a count rather than growing a chevron of its own.
+ */
+function AgentsItem({
+  count,
+  expanded,
+  onToggle,
+}: {
+  count: number;
+  expanded: boolean | null;
+  onToggle: () => void;
+}) {
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      // The row beneath navigates.
+      event.stopPropagation();
+      onToggle();
+    },
+    [onToggle],
+  );
+  const accessibilityState = useMemo(
+    () => (expanded === null ? undefined : { expanded }),
+    [expanded],
+  );
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={accessibilityState}
+      onPress={handlePress}
+      hitSlop={AGENT_COUNT_HIT_SLOP}
+      style={styles.identityItem}
+      testID="sidebar-workspace-agent-count"
+    >
+      <View style={styles.identityIcon}>
+        <ThemedBot size={META_ICON_SIZE} uniProps={mutedMapping} />
+      </View>
+      <Text style={styles.identityText} numberOfLines={1}>
+        {count}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Vertical room is the meta line's own padding; horizontal would reach the next item. */
+const AGENT_COUNT_HIT_SLOP = { top: 10, bottom: 10, left: 6, right: 6 };
 
 function IdentityItem({ kind, name }: { kind: "branch" | "project"; name: string }) {
   const Icon = kind === "branch" ? ThemedGitBranch : ThemedFolder;
