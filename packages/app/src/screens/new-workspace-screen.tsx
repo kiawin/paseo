@@ -109,6 +109,14 @@ import {
 import { buildNewWorkspaceProjectIconTargets } from "./new-workspace/project-icon-targets";
 import { useNewWorkspaceProjectPicker } from "./new-workspace/project-picker";
 import { useNewWorkspaceForm } from "./new-workspace/form";
+import { useExistingWorktrees } from "./new-workspace/existing-worktrees";
+import {
+  LOCAL_ISOLATION,
+  NEW_WORKTREE_ISOLATION,
+  resolveIsolation,
+  type ExistingWorktree,
+  type WorkspaceIsolation,
+} from "./new-workspace/isolation";
 import { ImportSessionButton } from "./new-workspace/import-session-button";
 import { useImportSession } from "@/hooks/use-import-session";
 import {
@@ -183,9 +191,8 @@ function noopClearDraft() {}
 const PROJECT_PICK_ACTIONS: readonly KeyboardActionId[] = ["workspace.project.pick"];
 
 interface WorkspaceIsolationState {
-  isolation: "local" | "worktree";
-  setIsolation: (value: "local" | "worktree") => void;
-  effectiveIsolation: "local" | "worktree";
+  setIsolation: (value: WorkspaceIsolation) => void;
+  effectiveIsolation: WorkspaceIsolation;
   canCreateWorktree: boolean;
   showRefPicker: boolean;
 }
@@ -195,31 +202,35 @@ interface WorkspaceIsolationState {
 function useWorkspaceIsolation(input: {
   supportsMultiplicity: boolean;
   worktreeSupport: "supported" | "unsupported" | "unknown";
+  existingWorktrees: readonly ExistingWorktree[];
 }): WorkspaceIsolationState {
-  const { supportsMultiplicity, worktreeSupport } = input;
+  const { supportsMultiplicity, worktreeSupport, existingWorktrees } = input;
   // The last isolation choice is remembered alongside the other New Workspace
   // form preferences (provider, model, mode). A manual in-screen pick overrides
   // the remembered default until the screen remounts.
   const { preferences, updatePreferences } = useFormPreferences();
-  const [manualIsolation, setManualIsolation] = useState<"local" | "worktree" | null>(null);
-  const isolation = manualIsolation ?? preferences.isolation ?? "local";
+  const [manualIsolation, setManualIsolation] = useState<WorkspaceIsolation | null>(null);
+  const isolation =
+    manualIsolation ??
+    (preferences.isolation === "worktree" ? NEW_WORKTREE_ISOLATION : LOCAL_ISOLATION);
   const canCreateWorktree = supportsMultiplicity && worktreeSupport !== "unsupported";
-  const isWorktree = isolation === "worktree" && canCreateWorktree;
+  const effectiveIsolation = resolveIsolation({ isolation, canCreateWorktree, existingWorktrees });
 
   const setIsolation = useCallback(
-    (value: "local" | "worktree") => {
+    (value: WorkspaceIsolation) => {
       setManualIsolation(value);
-      void updatePreferences({ isolation: value });
+      if (value.kind !== "existing-worktree") {
+        void updatePreferences({ isolation: value.kind });
+      }
     },
     [updatePreferences],
   );
 
   return {
-    isolation,
     setIsolation,
-    effectiveIsolation: isWorktree ? "worktree" : "local",
+    effectiveIsolation,
     canCreateWorktree,
-    showRefPicker: !supportsMultiplicity || isWorktree,
+    showRefPicker: !supportsMultiplicity || effectiveIsolation.kind === "worktree",
   };
 }
 
@@ -284,7 +295,7 @@ async function createMultiplicityWorkspace(input: {
   idempotencyKey: string;
   worktreeSlug: string;
   client: NonNullable<ReturnType<typeof useHostRuntimeClient>>;
-  isolation: "local" | "worktree";
+  isolation: WorkspaceIsolation;
   project: HostProjectListItem;
   sourceDirectory: string;
   checkoutRequest: PickerCheckoutRequest | undefined;
@@ -302,7 +313,6 @@ async function createMultiplicityWorkspace(input: {
 }): Promise<WorkspaceCreationResult> {
   const projectId = getHostProjectId(input.project, input.serverId);
   if (!projectId) throw new Error("Project is not available on the selected host");
-  const isWorktree = input.isolation === "worktree";
   const firstAgentContext = buildFirstAgentContext({
     prompt: input.prompt,
     attachments: input.attachments,
@@ -311,19 +321,23 @@ async function createMultiplicityWorkspace(input: {
     idempotencyKey: input.idempotencyKey,
     agent: input.agent,
     onEvent: input.onEvent,
-    source: isWorktree
-      ? {
-          kind: "worktree",
-          cwd: input.sourceDirectory,
-          projectId,
-          worktreeSlug: input.worktreeSlug,
-          ...input.checkoutRequest,
-        }
-      : {
-          kind: "directory",
-          path: input.sourceDirectory,
-          projectId,
-        },
+    source:
+      input.isolation.kind === "worktree"
+        ? {
+            kind: "worktree",
+            cwd: input.sourceDirectory,
+            projectId,
+            worktreeSlug: input.worktreeSlug,
+            ...input.checkoutRequest,
+          }
+        : {
+            kind: "directory",
+            path:
+              input.isolation.kind === "existing-worktree"
+                ? input.isolation.path
+                : input.sourceDirectory,
+            projectId,
+          },
     ...(firstAgentContext ? { firstAgentContext } : {}),
   });
   if (payload.error || !payload.workspace) {
@@ -884,6 +898,8 @@ export function NewWorkspaceScreen({
   });
   // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
   const supportsWorkspaceMultiplicity = useHostFeature(selectedServerId, "workspaceMultiplicity");
+  // COMPAT(worktreeListRepoScope): added in v0.6.2, drop the gate when floor >= v0.6.2.
+  const supportsWorktreeListRepoScope = useHostFeature(selectedServerId, "worktreeListRepoScope");
   const supportsForgeSearch = useHostFeature(selectedServerId, "forgeSearch");
   const [creationIdentity] = useState(() => ({
     draftId: draftId ?? generateDraftId(),
@@ -1038,10 +1054,19 @@ export function NewWorkspaceScreen({
     ? getWorktreeSupportForHostProject({ project: selectedProject, serverId: selectedServerId })
     : "unsupported";
   const isPending = isNewWorkspacePending({ pendingAction, isDraftHandoffActive });
+  const existingWorktrees = useExistingWorktrees({
+    serverId: selectedServerId,
+    sourceDirectory: selectedSourceDirectory,
+    client,
+    clientReady,
+    pickerOpen: isolationPickerOpen,
+    supported: supportsWorktreeListRepoScope,
+  });
   const { effectiveIsolation, setIsolation, canCreateWorktree, showRefPicker } =
     useWorkspaceIsolation({
       supportsMultiplicity: supportsWorkspaceMultiplicity,
       worktreeSupport,
+      existingWorktrees,
     });
 
   const branchSuggestionsQuery = useQuery({
@@ -1236,7 +1261,8 @@ export function NewWorkspaceScreen({
         throw new Error("Choose a host for this project");
       }
       const connectedClient = withConnectedClient();
-      const createsWorktree = !supportsWorkspaceMultiplicity || effectiveIsolation === "worktree";
+      const createsWorktree =
+        !supportsWorkspaceMultiplicity || effectiveIsolation.kind === "worktree";
       const checkoutStatusForCreate = createsWorktree
         ? await ensureCheckoutStatus({
             queryClient,
@@ -1254,7 +1280,7 @@ export function NewWorkspaceScreen({
         idempotencyKey: creationIdentity.draftId,
         worktreeSlug: creationIdentity.worktreeSlug,
         client: connectedClient,
-        isolation: createsWorktree ? "worktree" : "local",
+        isolation: effectiveIsolation,
         project: selectedProject,
         sourceDirectory: selectedSourceDirectory,
         checkoutRequest,
@@ -1492,6 +1518,7 @@ export function NewWorkspaceScreen({
       openState: isolationPickerOpen,
       onOpenChange: handleIsolationPickerOpenChange,
       effectiveIsolation,
+      existingWorktrees,
       canCreateWorktree,
       onSelect: setIsolation,
     },
