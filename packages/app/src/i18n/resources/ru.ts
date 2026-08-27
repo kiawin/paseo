@@ -1204,6 +1204,9 @@ export const ru: TranslationResources = {
       working: "В работе",
       done: "Готово",
     },
+    agentList: {
+      toggle: "Агенты ({{count}})",
+    },
     display: {
       showBackground: "Показать фоновые пространства",
       trigger: "Настройки отображения",
@@ -1227,6 +1230,7 @@ export const ru: TranslationResources = {
         branch: "Имя ветки",
       },
       show: {
+        agents: "Агенты",
         label: "Показывать",
         branch: "Ветка",
         project: "Проект",
@@ -1241,6 +1245,11 @@ export const ru: TranslationResources = {
       checks: {
         iconAndText: "Значок и текст",
         icon: "Только значок",
+        none: "Скрыто",
+      },
+      agents: {
+        collapsed: "Свёрнуто",
+        expanded: "Развёрнуто",
         none: "Скрыто",
       },
       hostFilter: {

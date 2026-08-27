@@ -213,7 +213,7 @@ test("manual unread survives departure and clears on reopening and ordinary comp
   await markBackgroundWorkspaceAndRead(page, workspaces.subject.workspaceId);
 });
 
-test("clicking a multi-agent workspace preserves its selected agent and leaves the other unread", async ({
+test("opening a multi-agent workspace preserves focus until its marked agent is selected", async ({
   page,
   workspaces,
 }) => {
@@ -221,11 +221,18 @@ test("clicking a multi-agent workspace preserves its selected agent and leaves t
   await expect(page.getByText("Finish this turn.", { exact: true })).toBeVisible();
   await expectSelectedAgent(page, workspaces.subject.agentId);
   await openWorkspace(page, workspaces.other.workspaceId);
-  await addFinishedAgent(workspaces.subject);
-  await markAsUnread(page, workspaces.subject.workspaceId);
+  const newest = await addFinishedAgent(workspaces.subject);
+  await chooseReadAction(page, workspaces.subject.workspaceId, "unread");
   await openWorkspace(page, workspaces.subject.workspaceId);
   await expectSelectedAgent(page, workspaces.subject.agentId);
-  await expectStatus(page, workspaces.subject.workspaceId, "attention");
+  const disclosure = page.getByTestId("sidebar-agent-list-disclosure");
+  await expect(disclosure).toBeVisible();
+  await disclosure.click();
+  const markedAgentRow = page.getByTestId(`sidebar-agent-row-${newest.id}`);
+  await expect(markedAgentRow).toBeVisible();
+  await markedAgentRow.click();
+  await expectSelectedAgent(page, newest.id);
+  await expectStatus(page, workspaces.subject.workspaceId, "done");
 });
 
 test("manual unread survives leaving the current workspace on compact layout", async ({
