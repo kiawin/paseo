@@ -1185,6 +1185,9 @@ export const es: TranslationResources = {
       working: "En ejecución",
       done: "Terminado",
     },
+    agentList: {
+      toggle: "Agentes ({{count}})",
+    },
     display: {
       showBackground: "Mostrar espacios en segundo plano",
       trigger: "Preferencias de visualización",
@@ -1201,6 +1204,7 @@ export const es: TranslationResources = {
         branch: "Nombre de rama",
       },
       show: {
+        agents: "Agentes",
         label: "Mostrar",
         branch: "Rama",
         project: "Proyecto",
@@ -1215,6 +1219,11 @@ export const es: TranslationResources = {
       checks: {
         iconAndText: "Icono y texto",
         icon: "Solo icono",
+        none: "Oculto",
+      },
+      agents: {
+        collapsed: "Contraído",
+        expanded: "Expandido",
         none: "Oculto",
       },
       hostFilter: {

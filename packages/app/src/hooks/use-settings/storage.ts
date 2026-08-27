@@ -10,6 +10,10 @@ import {
   type UsagePreferences,
 } from "@/usage/preferences";
 import {
+  DEFAULT_SIDEBAR_AGENT_ROWS,
+  type SidebarAgentRows,
+} from "@/components/sidebar/display-preferences/agent-rows";
+import {
   DEFAULT_SIDEBAR_CHECKS_DISPLAY,
   type SidebarChecksDisplay,
 } from "@/components/sidebar/display-preferences/checks-display";
@@ -100,6 +104,7 @@ export interface AppSettings {
   sidebarFooterItems: SidebarNavPreference[];
   /** How usage reads and which windows the sidebar summary shows. */
   usage: UsagePreferences;
+  sidebarAgentRows: SidebarAgentRows;
   autoExpandReasoning: boolean;
   toolCallDetailLevel: ToolCallDetailLevel;
   chatOutlineEnabled: boolean;
@@ -156,6 +161,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sidebarNavItems: [],
   sidebarFooterItems: [],
   usage: DEFAULT_USAGE_PREFERENCES,
+  sidebarAgentRows: DEFAULT_SIDEBAR_AGENT_ROWS,
   autoExpandReasoning: false,
   toolCallDetailLevel: "detailed",
   chatOutlineEnabled: true,
@@ -251,6 +257,7 @@ const StoredAppSettingsSchema = z
     sidebarNavItems: z.array(z.object({ key: z.string(), visible: z.boolean() })).catch([]),
     sidebarFooterItems: z.array(z.object({ key: z.string(), visible: z.boolean() })).catch([]),
     usage: UsagePreferencesSchema,
+    sidebarAgentRows: z.enum(["collapsed", "expanded", "none"]).catch(DEFAULT_SIDEBAR_AGENT_ROWS),
     autoExpandReasoning: z.boolean().catch(false),
     toolCallDetailLevel: z
       .enum(["overview", "detailed"])
