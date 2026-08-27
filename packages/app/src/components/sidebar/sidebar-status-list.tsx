@@ -45,6 +45,7 @@ import { useWorkspaceArchive } from "@/workspace/use-workspace-archive";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useWorkspaceReadState } from "@/hooks/use-workspace-read-state";
+import { SidebarWorkspaceAgentRows } from "@/components/sidebar/workspace-agent-list";
 import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
@@ -1068,6 +1069,7 @@ function StatusWorkspaceRowInnerContent({
               </SidebarWorkspaceRowContent>
               {feedback}
             </SidebarWorkspaceContextMenu>
+            <SidebarWorkspaceAgentRows workspace={workspace} />
           </View>
         );
       }}

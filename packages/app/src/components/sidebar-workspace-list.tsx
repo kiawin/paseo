@@ -113,6 +113,7 @@ import {
   useWorkspaceSelectionPress,
 } from "@/sidebar-selection";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
+import { SidebarWorkspaceAgentRows } from "@/components/sidebar/workspace-agent-list";
 import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
@@ -1239,6 +1240,7 @@ function WorkspaceRowInner({
               </SidebarWorkspaceRowContent>
               {feedback}
             </SidebarWorkspaceContextMenu>
+            <SidebarWorkspaceAgentRows workspace={workspace} />
           </View>
         );
       }}
@@ -1426,12 +1428,19 @@ function WorkspaceRowItem({
   isDragging = false,
   dragHandleProps,
 }: WorkspaceRowItemProps) {
+  const unreadAgentId = workspaceEntry?.agents.find(
+    (agent) => agent.status === "attention",
+  )?.agentId;
   const handlePress = useCallback(() => {
     if (!workspace.serverId) {
       return;
     }
-    navigateToWorkspace({ serverId: workspace.serverId, workspaceId: workspace.workspaceId });
-  }, [workspace.serverId, workspace.workspaceId]);
+    navigateToWorkspace({
+      serverId: workspace.serverId,
+      workspaceId: workspace.workspaceId,
+      ...(unreadAgentId ? { target: { kind: "agent", agentId: unreadAgentId } as const } : {}),
+    });
+  }, [unreadAgentId, workspace.serverId, workspace.workspaceId]);
 
   return (
     <WorkspaceRow

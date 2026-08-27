@@ -1272,6 +1272,9 @@ export const fr: TranslationResources = {
       working: "En cours",
       done: "Terminé",
     },
+    agentList: {
+      toggle: "Agents ({{count}})",
+    },
     display: {
       showBackground: "Afficher les espaces en arrière-plan",
       trigger: "Préférences d’affichage",
@@ -1295,6 +1298,7 @@ export const fr: TranslationResources = {
         branch: "Nom de branche",
       },
       show: {
+        agents: "Agents",
         label: "Afficher",
         branch: "Branche",
         project: "Projet",
@@ -1309,6 +1313,11 @@ export const fr: TranslationResources = {
       checks: {
         iconAndText: "Icône et texte",
         icon: "Icône seule",
+        none: "Masqué",
+      },
+      agents: {
+        collapsed: "Replié",
+        expanded: "Déplié",
         none: "Masqué",
       },
       hostFilter: {
