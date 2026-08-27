@@ -1211,6 +1211,9 @@ export const ar: TranslationResources = {
       working: "قيد العمل",
       done: "تم",
     },
+    agentList: {
+      toggle: "الوكلاء ({{count}})",
+    },
     display: {
       showBackground: "إظهار مساحات العمل في الخلفية",
       trigger: "تفضيلات العرض",
@@ -1234,6 +1237,7 @@ export const ar: TranslationResources = {
         branch: "اسم الفرع",
       },
       show: {
+        agents: "الوكلاء",
         label: "إظهار",
         branch: "الفرع",
         project: "المشروع",
@@ -1248,6 +1252,11 @@ export const ar: TranslationResources = {
       checks: {
         iconAndText: "أيقونة ونص",
         icon: "أيقونة فقط",
+        none: "مخفي",
+      },
+      agents: {
+        collapsed: "مطوي",
+        expanded: "موسّع",
         none: "مخفي",
       },
       hostFilter: {
