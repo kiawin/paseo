@@ -1,4 +1,11 @@
-const versionPattern = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/;
+// A fork build appends `.<owner>.g<short-sha>` to the upstream version so one
+// string serves as the tag, the release and the artifact version. It only ever
+// follows beta.N, because that is the only shape a release tag can carry.
+// Version codes ignore it and stay aligned with upstream; only the marketing
+// version carries it. That version is also the iOS CFBundleShortVersionString,
+// which Apple requires to be numeric, so a fork version can be built and
+// sideloaded but never submitted to App Store Connect.
+const versionPattern = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+)(\.[0-9A-Za-z-]+\.g[0-9a-f]{7,40})?)?$/;
 const stableIosBuildSlot = 999;
 const FDROID_ABI_VERSION_CODE_SUFFIXES = {
   "armeabi-v7a": 1,
@@ -13,7 +20,7 @@ function getNativeReleaseVersion(version) {
     throw new Error(`Cannot derive native release version from unsupported version: ${version}`);
   }
 
-  const [, majorText, minorText, patchText, betaText] = match;
+  const [, majorText, minorText, patchText, betaText, forkSuffix] = match;
   const major = Number(majorText);
   const minor = Number(minorText);
   const patch = Number(patchText);
@@ -42,7 +49,7 @@ function getNativeReleaseVersion(version) {
   }
 
   return {
-    appVersion: `${major}.${minor}.${patch}`,
+    appVersion: `${major}.${minor}.${patch}${forkSuffix ?? ""}`,
     androidVersionCode: versionCode,
     iosBuildNumber: String(iosBuildNumber),
   };
