@@ -405,7 +405,8 @@ export class SessionDelivery {
     if (
       owner?.active &&
       owner.source.socket === socket &&
-      BINARY_REPLY_REQUESTS.has(owner.request.type)
+      (BINARY_REPLY_REQUESTS.has(owner.request.type) ||
+        isWorkspaceFileTransferRequest(owner.request))
     )
       this.proofs.set(frame, owner);
   }
@@ -463,6 +464,10 @@ export class SessionDelivery {
     }
     return owner.release;
   }
+}
+
+function isWorkspaceFileTransferRequest(request: SessionInboundMessage): boolean {
+  return request.type === "file_explorer_request" || request.type === "fs.entry.download.request";
 }
 
 function withSubscriptionId<T extends SessionOutboundMessage>(
