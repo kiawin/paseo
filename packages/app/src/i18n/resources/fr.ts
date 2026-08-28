@@ -57,6 +57,8 @@ export const fr: TranslationResources = {
       copiedLabel: "Copié : {{label}}",
       downloadComplete: "Téléchargement terminé",
       downloadFailed: "Échec du téléchargement",
+      uploadComplete: "Téléversement terminé",
+      uploadFailed: "Échec du téléversement",
     },
     errors: {
       error: "Erreur",
@@ -476,6 +478,8 @@ export const fr: TranslationResources = {
       download: "Télécharger",
       addToChat: "Ajouter à la conversation",
       moreActions: "Plus d’actions",
+      uploadFiles: "Téléverser des fichiers…",
+      uploadFolder: "Téléverser un dossier…",
       newFile: "Nouveau fichier",
       newFolder: "Nouveau dossier",
       collapseFolder: "Replier le dossier",
@@ -1927,6 +1931,9 @@ export const fr: TranslationResources = {
     failed: "Impossible de télécharger le fichier.",
     shareFile: "Partager le fichier",
     shareFileNamed: "Partager {{fileName}}",
+  },
+  uploads: {
+    failed: "Échec du téléversement du fichier.",
   },
   menu: {
     backdrop: "Arrière-plan du menu",
