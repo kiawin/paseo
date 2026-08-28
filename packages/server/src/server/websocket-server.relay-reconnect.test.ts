@@ -66,6 +66,7 @@ const sessionMock = vi.hoisted(() => {
     clearAgentTimelineSubscription = vi.fn((source: object) => {
       void this.delivery.detach(source);
     });
+    cancelWorkspaceTransfersForSource = vi.fn();
     getClientActivity = vi.fn(() => null);
     wantsSourceEvent = (source: object) => !this.delivery.isModern(source);
     getSessionId = vi.fn(() => "mock-session-id");
