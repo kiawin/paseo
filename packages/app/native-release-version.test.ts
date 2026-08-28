@@ -23,6 +23,21 @@ describe("native release version", () => {
     });
   });
 
+  it("keeps a fork suffix in the marketing version and out of the version codes", () => {
+    expect(getNativeReleaseVersion("0.7.0-beta.1.kiawin.gfff20d5")).toEqual({
+      appVersion: "0.7.0.kiawin.gfff20d5",
+      androidVersionCode: 7000,
+      iosBuildNumber: "7000001",
+    });
+  });
+
+  it("rejects a fork suffix that no release tag could carry", () => {
+    // Only beta.N can precede the suffix, so these are unreachable by design.
+    expect(() => getNativeReleaseVersion("0.7.0.kiawin.gfff20d5")).toThrow("unsupported version");
+    expect(() => getNativeReleaseVersion("0.7.0-beta.1.kiawin")).toThrow("unsupported version");
+    expect(() => getNativeReleaseVersion("0.7.0-rc.1")).toThrow("unsupported version");
+  });
+
   it("rejects beta numbers that consume the stable iOS build slot", () => {
     expect(() => getNativeReleaseVersion("0.2.6-beta.999")).toThrow(
       "iOS beta number must be between 1 and 998",
