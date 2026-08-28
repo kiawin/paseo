@@ -48,6 +48,29 @@ test("emits beta release info from tags", () => {
   });
 });
 
+test("carries a fork suffix without changing the release identity", () => {
+  assert.deepEqual(getReleaseInfoFromSourceTag("android-v0.7.0-beta.1.kiawin.g6d79066"), {
+    sourceTag: "android-v0.7.0-beta.1.kiawin.g6d79066",
+    releaseTag: "v0.7.0-beta.1.kiawin.g6d79066",
+    version: "0.7.0-beta.1.kiawin.g6d79066",
+    baseVersion: "0.7.0",
+    prerelease: "beta.1.kiawin.g6d79066",
+    isPrerelease: true,
+    isBeta: true,
+    betaNumber: 1,
+    releaseType: "prerelease",
+    releaseChannel: "beta",
+    isSmokeTag: false,
+  });
+});
+
+test("rejects a prerelease suffix that is not a fork tag", () => {
+  assert.throws(
+    () => parseReleaseVersion("0.7.0-beta.1.kiawin"),
+    /Expected beta prerelease versions/,
+  );
+});
+
 test("rejects non-beta prerelease versions", () => {
   assert.throws(() => parseReleaseVersion("0.1.60-canary.1"), /Expected beta prerelease versions/);
 });
