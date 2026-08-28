@@ -58,6 +58,8 @@ export const es: TranslationResources = {
       copiedLabel: "Copiado{{label}}",
       downloadComplete: "Descarga completa",
       downloadFailed: "Descarga fallida",
+      uploadComplete: "Subida completada",
+      uploadFailed: "Error al subir",
     },
     errors: {
       error: "Error",
@@ -479,6 +481,8 @@ export const es: TranslationResources = {
       copyRelativePath: "Copiar ruta relativa",
       revealIn: "Mostrar en {{target}}",
       download: "Descargar",
+      uploadFiles: "Subir archivos…",
+      uploadFolder: "Subir carpeta…",
       addToChat: "Añadir al chat",
       moreActions: "Más acciones",
       newFile: "Nuevo archivo",
@@ -1947,6 +1951,9 @@ export const es: TranslationResources = {
     failed: "No se pudo descargar el archivo.",
     shareFile: "compartir archivo",
     shareFileNamed: "Compartir{{fileName}}",
+  },
+  uploads: {
+    failed: "No se pudo subir el archivo.",
   },
   menu: {
     backdrop: "Fondo del menú",
