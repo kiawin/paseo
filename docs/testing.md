@@ -196,7 +196,7 @@ Test suites in this repo are heavy. Running them in bulk freezes the machine, es
 - Global setup accepts Metro as ready only when `/status` returns `packager-status:running`, then fetches the document's scripts so the cold bundle compilation finishes before Playwright's per-test timeout starts. A generic TCP listener is not sufficient readiness evidence. The browser suite uses direct local daemon connections and does not start a relay. Automated Metro launches set `EXPO_UNSTABLE_HEADLESS=1` so Expo does not download the native DevTools shell into temporary test homes; its read-only cache breaks teardown. Browser fixtures and the standalone Electron browser runner share the developer-toast dismissal helper while retaining console logs. A pointer click moves hover away from the tested control and stalls behind app modal backdrops.
 - The app Playwright harness boots on Windows as well as POSIX. Spawn Node entrypoints through `process.execPath`, not `npx` or `node_modules/.bin` shims: Node refuses to spawn `.cmd` or `.bat` without `shell: true`, and shell mode concatenates argv without escaping and sends kill signals to `cmd.exe` instead of the real child.
 - Teardown kills the process tree, because a Windows signal reaches only the direct child and leaves forked workers holding the listening port.
-- The `asdf`-backed local Elixir relay stays POSIX-only, so the `relay-deployment` Playwright project is unavailable on Windows.
+- The local Elixir relay stays POSIX-only, so the `relay-deployment` Playwright project is unavailable on Windows. It runs `mix` through mise, asdf, or a system install, whichever it finds first; the Erlang and Elixir versions come from the relay checkout's own `.tool-versions`.
 
 ## Pull-request test routing
 
