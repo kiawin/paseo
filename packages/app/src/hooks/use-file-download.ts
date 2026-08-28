@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from "react";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
+import { useHostFeature } from "@/runtime/host-features";
 import { useDownloadStore } from "@/stores/download-store";
+import { downloadPlatform } from "@/stores/download-platform";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 
 interface UseFileDownloadParams {
@@ -31,12 +33,13 @@ export function useFileDownload({
     () => workspaceId?.trim() || normalizedWorkspaceRoot,
     [normalizedWorkspaceRoot, workspaceId],
   );
-  const { requestFileDownloadToken, requestFileBytes } = useFileExplorerActions({
+  const { requestFileDownloadToken, requestFileBytes, downloadEntry } = useFileExplorerActions({
     serverId,
     workspaceId,
     workspaceRoot: normalizedWorkspaceRoot,
   });
   const startDownload = useDownloadStore((state) => state.startDownload);
+  const supportsBinaryTransfer = useHostFeature(serverId, "workspaceFileTransfer");
 
   return useCallback(
     ({ fileName, path }) => {
@@ -51,6 +54,8 @@ export function useFileDownload({
         daemonProfile,
         activeConnectionId: getHostRuntimeStore().getSnapshot(serverId)?.activeConnectionId ?? null,
         requestFileDownloadToken: (targetPath) => requestFileDownloadToken(targetPath),
+        downloadEntry: supportsBinaryTransfer ? downloadEntry : undefined,
+        platform: downloadPlatform,
         readFile: requestFileBytes,
       });
     },
@@ -60,6 +65,8 @@ export function useFileDownload({
       requestFileDownloadToken,
       serverId,
       startDownload,
+      downloadEntry,
+      supportsBinaryTransfer,
       workspaceScopeId,
     ],
   );
