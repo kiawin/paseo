@@ -953,6 +953,67 @@ describe("entry upload into the workspace", () => {
   });
 });
 
+describe("upload cleanup when the client socket goes away", () => {
+  function leftovers(cwd: string): string[] {
+    return readdirSync(cwd).filter((name) => name !== ".git");
+  }
+
+  // Observed on a real relay run: the sink opened, the socket dropped before any chunk
+  // arrived, and a 0-byte ".<name>.paseo-<uuid>.tmp" stayed in the workspace.
+  test("a socket dropping before any chunk leaves no temp file behind", async () => {
+    const { subsystem } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-upload-socketloss-");
+    const source = {};
+
+    await subsystem.handleEntryUploadRequest(
+      {
+        type: "fs.entry.upload.request",
+        cwd,
+        path: "dropped.bin",
+        mimeType: "application/octet-stream",
+        size: 1024,
+        modifiedAt: "2026-08-28T00:00:00.000Z",
+        overwrite: "fail",
+        requestId: "up-socketloss",
+      },
+      source,
+    );
+
+    expect(leftovers(cwd)).toHaveLength(1);
+
+    subsystem.cancelTransfersForSource(source);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(leftovers(cwd)).toEqual([]);
+  });
+
+  // The same drop, but while the sink is still opening: cancellation must still reach it.
+  test("a socket dropping while the sink is still opening leaves no temp file behind", async () => {
+    const { subsystem } = makeSubsystem({ hasBinaryChannel: true });
+    const cwd = makeDir("workspace-upload-socketloss-early-");
+    const source = {};
+
+    const pending = subsystem.handleEntryUploadRequest(
+      {
+        type: "fs.entry.upload.request",
+        cwd,
+        path: "early.bin",
+        mimeType: "application/octet-stream",
+        size: 1024,
+        modifiedAt: "2026-08-28T00:00:00.000Z",
+        overwrite: "fail",
+        requestId: "up-socketloss-early",
+      },
+      source,
+    );
+    subsystem.cancelTransfersForSource(source);
+    await pending;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(leftovers(cwd)).toEqual([]);
+  });
+});
+
 describe("upload cancellation racing an in-flight write", () => {
   async function beginUpload(subsystem: WorkspaceFilesSession, cwd: string, requestId: string) {
     await subsystem.handleEntryUploadRequest({
