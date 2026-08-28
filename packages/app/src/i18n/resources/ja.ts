@@ -58,6 +58,8 @@ export const ja: TranslationResources = {
       copiedLabel: "{{label}}をコピーしました",
       downloadComplete: "ダウンロード完了",
       downloadFailed: "ダウンロード失敗",
+      uploadComplete: "アップロード完了",
+      uploadFailed: "アップロードに失敗しました",
     },
     errors: {
       error: "エラー",
@@ -478,6 +480,8 @@ export const ja: TranslationResources = {
       copyRelativePath: "相対パスをコピー",
       revealIn: "{{target}}で表示",
       download: "ダウンロード",
+      uploadFiles: "ファイルをアップロード…",
+      uploadFolder: "フォルダーをアップロード…",
       addToChat: "チャットに追加",
       moreActions: "その他のアクション",
       newFile: "新規ファイル",
@@ -1917,6 +1921,9 @@ export const ja: TranslationResources = {
     failed: "ファイルのダウンロードに失敗しました。",
     shareFile: "ファイルを共有",
     shareFileNamed: "{{fileName}}を共有",
+  },
+  uploads: {
+    failed: "ファイルのアップロードに失敗しました。",
   },
   menu: {
     backdrop: "メニューの背景",
