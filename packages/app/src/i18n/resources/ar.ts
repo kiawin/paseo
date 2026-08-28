@@ -32,6 +32,8 @@ export const ar: TranslationResources = {
       copiedLabel: "منسوخ{{label}}",
       downloadComplete: "اكتمل التنزيل",
       downloadFailed: "فشل التنزيل",
+      uploadComplete: "اكتمل الرفع",
+      uploadFailed: "فشل الرفع",
     },
     errors: {
       error: "خطأ",
@@ -435,6 +437,8 @@ export const ar: TranslationResources = {
       copyRelativePath: "نسخ المسار النسبي",
       revealIn: "إظهار في {{target}}",
       download: "تحميل",
+      uploadFiles: "رفع الملفات…",
+      uploadFolder: "رفع مجلد…",
       addToChat: "إضافة إلى الدردشة",
       moreActions: "المزيد من الإجراءات",
       newFile: "ملف جديد",
@@ -1765,6 +1769,9 @@ export const ar: TranslationResources = {
     failed: "فشل تنزيل الملف.",
     shareFile: "مشاركة الملف",
     shareFileNamed: "مشاركة{{fileName}}",
+  },
+  uploads: {
+    failed: "تعذّر رفع الملف.",
   },
   menu: {
     backdrop: "خلفية القائمة",
