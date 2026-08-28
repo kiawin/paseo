@@ -164,6 +164,15 @@ jobs:
           build_args=(-- --publish never --mac --${{ matrix.electron_arch }})
           build_args+=("-c.publish.releaseType=$RELEASE_TYPE")
           build_args+=("-c.publish.channel=$RELEASE_CHANNEL")
+          # An absent APPLE_CERTIFICATE secret still defines CSC_LINK, as the
+          # empty string. electron-builder reads that as a certificate path,
+          # resolves it against the working directory and dies on the directory
+          # itself: "packages/desktop not a file". Setting the identity to null
+          # returns before that import, which is what a build without signing
+          # credentials wants anyway. No effect once the secret is configured.
+          if [ -z "${CSC_LINK:-}" ]; then
+            build_args+=("-c.mac.identity=null" "-c.mac.notarize=false")
+          fi
           npm run build:desktop "${build_args[@]}"
 
       - name: Upload packaged smoke diagnostics
