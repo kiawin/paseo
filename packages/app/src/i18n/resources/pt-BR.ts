@@ -63,6 +63,8 @@ export const ptBR: TranslationResources = {
       copiedLabel: "{{label}} copiado",
       downloadComplete: "Download concluído",
       downloadFailed: "Falha no download",
+      uploadComplete: "Envio concluído",
+      uploadFailed: "Falha no envio",
     },
     errors: {
       error: "Erro",
@@ -514,6 +516,8 @@ export const ptBR: TranslationResources = {
       copyRelativePath: "Copiar caminho relativo",
       revealIn: "Mostrar no {{target}}",
       download: "Baixar",
+      uploadFiles: "Enviar arquivos…",
+      uploadFolder: "Enviar pasta…",
       addToChat: "Adicionar ao chat",
       moreActions: "Mais ações",
       newFile: "Novo arquivo",
@@ -2064,6 +2068,9 @@ export const ptBR: TranslationResources = {
     httpFailed: "Falha ao baixar arquivo (HTTP {{status}}).",
     shareFile: "Compartilhar arquivo",
     shareFileNamed: "Compartilhar {{fileName}}",
+  },
+  uploads: {
+    failed: "Falha ao enviar o arquivo.",
   },
   menu: {
     backdrop: "Fundo do menu",
