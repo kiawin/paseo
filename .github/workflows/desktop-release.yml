@@ -29,6 +29,11 @@ on:
         required: false
         default: ""
         type: string
+      desktop_version:
+        description: "Optional version to stamp instead of the one derived from the tag."
+        required: false
+        default: ""
+        type: string
       publish:
         description: "Publish built artifacts to GitHub Releases."
         required: false
@@ -53,6 +58,15 @@ env:
   SHOULD_PUBLISH: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.publish != 'false' }}
   ROLLOUT_HOURS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.rollout_hours || '36' }}
   DESKTOP_PACKAGE_PATH: "packages/desktop"
+  # electron-builder bakes the publish config into the app's app-update.yml, so
+  # a build that leaves it at the committed getpaseo/paseo ships binaries that
+  # look for updates in upstream's releases rather than the ones they shipped
+  # beside. Point it at whoever is building. Identical values upstream.
+  PUBLISH_OWNER: ${{ github.repository_owner }}
+  PUBLISH_REPO: ${{ github.event.repository.name }}
+  # The tag parser only accepts upstream release versions, so a fork version can
+  # never travel through SOURCE_TAG. This carries it separately.
+  DESKTOP_VERSION_OVERRIDE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.desktop_version || '' }}
 
 jobs:
   create-release:
@@ -138,7 +152,7 @@ jobs:
           const fs = require('node:fs');
           const path = require('node:path');
 
-          const version = process.env.DESKTOP_VERSION;
+          const version = process.env.DESKTOP_VERSION_OVERRIDE || process.env.DESKTOP_VERSION;
           if (!version) throw new Error('DESKTOP_VERSION env var is missing');
 
           const packageJsonPath = path.join(process.env.DESKTOP_PACKAGE_PATH, 'package.json');
@@ -164,6 +178,16 @@ jobs:
           build_args=(-- --publish never --mac --${{ matrix.electron_arch }})
           build_args+=("-c.publish.releaseType=$RELEASE_TYPE")
           build_args+=("-c.publish.channel=$RELEASE_CHANNEL")
+          build_args+=("-c.publish.owner=$PUBLISH_OWNER" "-c.publish.repo=$PUBLISH_REPO")
+          # An absent APPLE_CERTIFICATE secret still defines CSC_LINK, as the
+          # empty string. electron-builder reads that as a certificate path,
+          # resolves it against the working directory and dies on the directory
+          # itself: "packages/desktop not a file". Setting the identity to null
+          # returns before that import, which is what a build without signing
+          # credentials wants anyway. No effect once the secret is configured.
+          if [ -z "${CSC_LINK:-}" ]; then
+            build_args+=("-c.mac.identity=null" "-c.mac.notarize=false")
+          fi
           npm run build:desktop "${build_args[@]}"
 
       - name: Upload packaged smoke diagnostics
@@ -248,7 +272,7 @@ jobs:
           const fs = require('node:fs');
           const path = require('node:path');
 
-          const version = process.env.DESKTOP_VERSION;
+          const version = process.env.DESKTOP_VERSION_OVERRIDE || process.env.DESKTOP_VERSION;
           if (!version) throw new Error('DESKTOP_VERSION env var is missing');
 
           const packageJsonPath = path.join(process.env.DESKTOP_PACKAGE_PATH, 'package.json');
@@ -272,6 +296,7 @@ jobs:
           build_args=(-- --publish never --linux --x64)
           build_args+=("-c.publish.releaseType=$RELEASE_TYPE")
           build_args+=("-c.publish.channel=$RELEASE_CHANNEL")
+          build_args+=("-c.publish.owner=$PUBLISH_OWNER" "-c.publish.repo=$PUBLISH_REPO")
           npm run build:desktop "${build_args[@]}"
 
       - name: Upload packaged smoke diagnostics
@@ -356,7 +381,7 @@ jobs:
           const fs = require('node:fs');
           const path = require('node:path');
 
-          const version = process.env.DESKTOP_VERSION;
+          const version = process.env.DESKTOP_VERSION_OVERRIDE || process.env.DESKTOP_VERSION;
           if (!version) throw new Error('DESKTOP_VERSION env var is missing');
 
           const packageJsonPath = path.join(process.env.DESKTOP_PACKAGE_PATH, 'package.json');
@@ -377,6 +402,7 @@ jobs:
           build_args=(-- --publish never --win --x64 --arm64)
           build_args+=("-c.publish.releaseType=$RELEASE_TYPE")
           build_args+=("-c.publish.channel=$RELEASE_CHANNEL")
+          build_args+=("-c.publish.owner=$PUBLISH_OWNER" "-c.publish.repo=$PUBLISH_REPO")
           npm run build:desktop "${build_args[@]}"
 
       - name: Upload packaged smoke diagnostics
