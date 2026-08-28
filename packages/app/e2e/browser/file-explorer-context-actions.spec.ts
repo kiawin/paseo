@@ -5,7 +5,7 @@ import { test } from "../support/fixtures";
 import { downloadFileFromExplorer, openFileExplorer } from "../support/helpers/file-explorer";
 import { openChangesPanel } from "../support/helpers/workspace-tabs";
 import { gotoWorkspace } from "../support/helpers/launcher";
-import { daemonWsRoutePattern, getE2EDaemonPort } from "../support/helpers/daemon-port";
+import { daemonWsRoutePattern } from "../support/helpers/daemon-port";
 import { seedWorkspace, type SeededWorkspace } from "../support/helpers/seed-client";
 
 let workspace: SeededWorkspace;
@@ -445,7 +445,7 @@ test("hides unsupported file operations and revert actions", async ({ page }) =>
   await expect(page.getByTestId("diff-file-0-revert")).toHaveCount(0);
 });
 
-test("downloads a file over direct TCP with its original filename and bytes", async ({
+test("downloads a file over the WebSocket with its original filename and bytes", async ({
   page,
 }, testInfo) => {
   const fileName = "rapport données.bin";
@@ -455,11 +455,8 @@ test("downloads a file over direct TCP with its original filename and bytes", as
   await openFileExplorer(page);
 
   const downloaded = await downloadFileFromExplorer(page, fileName);
-  const url = new URL(downloaded.url());
-  expect(url.protocol).toBe("http:");
-  expect(url.port).toBe(getE2EDaemonPort());
-  expect(url.pathname).toBe("/api/files/download");
-  expect(url.searchParams.get("token")).toBeTruthy();
+  // The bytes arrive over the daemon WebSocket and are handed to the browser as a blob.
+  expect(new URL(downloaded.url()).protocol).toBe("blob:");
   expect(downloaded.suggestedFilename()).toBe(fileName);
   const savedFile = testInfo.outputPath(fileName);
   await downloaded.saveAs(savedFile);
