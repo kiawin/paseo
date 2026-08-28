@@ -22,7 +22,11 @@ export function parseReleaseVersion(version) {
   const minor = Number.parseInt(match.groups.minor, 10);
   const patch = Number.parseInt(match.groups.patch, 10);
   const prerelease = match.groups.prerelease ?? null;
-  const betaMatch = prerelease?.match(/^beta\.(?<beta>\d+)$/) ?? null;
+  // A fork build appends `.<owner>.g<short-sha>` so one string serves as the
+  // tag, the release and the artifact version. It rides along here without
+  // changing what the release is: beta.N still decides the channel.
+  const betaMatch =
+    prerelease?.match(/^beta\.(?<beta>\d+)(?:\.[0-9A-Za-z-]+\.g[0-9a-f]{7,40})?$/) ?? null;
   const betaNumber = betaMatch?.groups?.beta ? Number.parseInt(betaMatch.groups.beta, 10) : null;
 
   if (prerelease !== null && betaNumber === null) {
