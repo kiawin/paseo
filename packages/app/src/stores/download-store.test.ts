@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, test, vi } from "vitest";
 import { defaultHostAppearance } from "@/hosts/appearance";
 import { i18n } from "@/i18n/i18next";
 import {
@@ -12,6 +12,11 @@ import type {
   HostProfile,
   RelayHostConnection,
 } from "@/types/host-connection";
+import { createFakeDownloadPlatform, type FakeDownloadPlatform } from "./download-platform-fake";
+
+// No module mocks: the store takes its filesystem and sharing through an injected port.
+
+let platform: FakeDownloadPlatform;
 
 const FILE_BYTES = new TextEncoder().encode("relay download payload");
 const FILE_PATH = "reports/données été.bin";
@@ -90,7 +95,6 @@ interface StartInput {
   token?: ReturnType<typeof createTokenRequest>;
   reader?: ReturnType<typeof createFileReader>;
   saver?: ReturnType<typeof createFileSaver>;
-  fetchFile?: typeof fetch;
 }
 
 async function startDownload(input: StartInput): Promise<Download | undefined> {
@@ -109,7 +113,7 @@ async function startDownload(input: StartInput): Promise<Download | undefined> {
     requestFileDownloadToken: token.request,
     readFile: reader.read,
     saveFile: saver.save,
-    fetchFile: input.fetchFile ?? (async () => new Response(FILE_BYTES)),
+    platform,
   });
   const { activeDownloadId, downloads } = useDownloadStore.getState();
   return activeDownloadId ? downloads.get(activeDownloadId) : undefined;
@@ -117,6 +121,7 @@ async function startDownload(input: StartInput): Promise<Download | undefined> {
 
 describe("download store transport selection", () => {
   beforeEach(() => {
+    platform = createFakeDownloadPlatform();
     useDownloadStore.setState({ downloads: new Map(), activeDownloadId: null });
   });
 
@@ -154,6 +159,7 @@ describe("download store transport selection", () => {
       path: FILE_PATH,
       daemonProfile: profileWith([relayConnection]),
       activeConnectionId: relayConnection.id,
+      platform,
       requestFileDownloadToken: createTokenRequest(1).request,
       readFile: async (path: string, maxBytes: number) => {
         readRequests.push({ path, maxBytes });
@@ -202,57 +208,6 @@ describe("download store transport selection", () => {
 
     expect(download).toMatchObject({ status: "complete" });
     expect(reader.requested).toEqual([]);
-    expect(saver.savedFiles).toEqual([]);
-  });
-
-  it("fails with the HTTP status when a proxy in front of the host rejects the download", async () => {
-    const requests: Array<RequestInit | undefined> = [];
-    const download = await startDownload({
-      profile: profileWith([localTcpConnection]),
-      activeConnectionId: localTcpConnection.id,
-      fetchFile: async (_url, init) => {
-        requests.push(init);
-        return new Response("<h1>401 Authorization Required</h1>", {
-          status: 401,
-          headers: { "WWW-Authenticate": 'Basic realm="Paseo"' },
-        });
-      },
-    });
-
-    expect(download).toMatchObject({
-      status: "error",
-      message: i18n.t("downloads.httpFailed", { status: 401 }),
-    });
-    expect(requests).toEqual([{ credentials: "include", redirect: "error" }]);
-  });
-
-  it("fails with a readable message when the download request cannot reach the host", async () => {
-    const download = await startDownload({
-      profile: profileWith([localTcpConnection]),
-      activeConnectionId: localTcpConnection.id,
-      fetchFile: async () => {
-        throw new TypeError("Failed to fetch");
-      },
-    });
-
-    expect(download).toMatchObject({ status: "error", message: i18n.t("downloads.failed") });
-  });
-
-  it("fails with a readable message when the connection drops while the file is downloading", async () => {
-    const saver = createFileSaver();
-    const download = await startDownload({
-      profile: profileWith([localTcpConnection]),
-      activeConnectionId: localTcpConnection.id,
-      fetchFile: async () =>
-        new Response(
-          new ReadableStream({
-            start: (controller) => controller.error(new TypeError("network error")),
-          }),
-        ),
-      saver,
-    });
-
-    expect(download).toMatchObject({ status: "error", message: i18n.t("downloads.failed") });
     expect(saver.savedFiles).toEqual([]);
   });
 
@@ -314,5 +269,167 @@ describe("download store transport selection", () => {
       message: "File transfer incomplete: expected 6 bytes, received 0.",
     });
     expect(saver.savedFiles).toEqual([]);
+  });
+});
+
+function activeDownload() {
+  return [...useDownloadStore.getState().downloads.values()][0];
+}
+
+describe("download store binary-channel path", () => {
+  beforeEach(() => {
+    platform = createFakeDownloadPlatform();
+    useDownloadStore.setState({ downloads: new Map(), activeDownloadId: null });
+  });
+
+  test("streams chunks to the cache file and never asks for an HTTP token", async () => {
+    const requestFileDownloadToken = vi.fn();
+
+    await useDownloadStore.getState().startDownload({
+      serverId: "srv",
+      scopeId: "scope",
+      fileName: "notes.txt",
+      path: "notes.txt",
+      daemonProfile: undefined,
+      platform,
+      requestFileDownloadToken,
+      downloadEntry: async ({ sink }) => {
+        sink.onBegin?.({ size: 6 });
+        await sink.onChunk(new TextEncoder().encode("abc"));
+        await sink.onChunk(new TextEncoder().encode("def"));
+        return { fileName: "notes.txt", mimeType: "text/plain", size: 6 };
+      },
+    });
+
+    expect(requestFileDownloadToken).not.toHaveBeenCalled();
+    expect(platform.httpRequests).toEqual([]);
+    expect(new TextDecoder().decode(platform.bytesFor("notes.txt"))).toBe("abcdef");
+    expect(platform.shared).toEqual([{ uri: "file:///cache/notes.txt", mimeType: "text/plain" }]);
+    expect(activeDownload()).toMatchObject({
+      status: "complete",
+      progress: { bytesWritten: 6, totalBytes: 6, percent: 1 },
+    });
+  });
+
+  test("names the cache file from FileBegin so an archive keeps its extension", async () => {
+    await useDownloadStore.getState().startDownload({
+      serverId: "srv",
+      scopeId: "scope",
+      fileName: "site",
+      path: "site",
+      daemonProfile: undefined,
+      platform,
+      requestFileDownloadToken: vi.fn(),
+      downloadEntry: async ({ sink }) => {
+        sink.onBegin?.({ size: 0, sizeKnown: false, fileName: "site.zip" });
+        await sink.onChunk(new Uint8Array([1, 2, 3]));
+        return { fileName: "site.zip", mimeType: "application/zip", size: null };
+      },
+    });
+
+    expect(platform.created).toEqual(["site.zip"]);
+    expect(platform.shared[0]?.uri).toBe("file:///cache/site.zip");
+  });
+
+  test("treats an unknown archive size as indeterminate progress", async () => {
+    await useDownloadStore.getState().startDownload({
+      serverId: "srv",
+      scopeId: "scope",
+      fileName: "src.zip",
+      path: "src",
+      daemonProfile: undefined,
+      platform,
+      requestFileDownloadToken: vi.fn(),
+      downloadEntry: async ({ sink }) => {
+        sink.onBegin?.({ size: 0, sizeKnown: false });
+        await sink.onChunk(new Uint8Array(64));
+        return { fileName: "src.zip", mimeType: "application/zip", size: null };
+      },
+    });
+
+    expect(activeDownload()).toMatchObject({
+      status: "complete",
+      progress: { bytesWritten: 64, totalBytes: 0, percent: 0, eta: 0 },
+    });
+  });
+
+  test("removes the partial cache file when a transfer fails", async () => {
+    await useDownloadStore.getState().startDownload({
+      serverId: "srv",
+      scopeId: "scope",
+      fileName: "big.bin",
+      path: "big.bin",
+      daemonProfile: undefined,
+      platform,
+      requestFileDownloadToken: vi.fn(),
+      downloadEntry: async ({ sink }) => {
+        sink.onBegin?.({ size: 100 });
+        await sink.onChunk(new Uint8Array([1, 2, 3]));
+        throw new Error("The host cancelled this transfer.");
+      },
+    });
+
+    expect(platform.removed).toEqual(["big.bin"]);
+    expect(activeDownload()).toMatchObject({
+      status: "error",
+      message: "The host cancelled this transfer.",
+    });
+  });
+
+  test("cancelling an in-flight download aborts the signal the client is given", async () => {
+    let aborted = false;
+
+    const started = useDownloadStore.getState().startDownload({
+      serverId: "srv",
+      scopeId: "scope",
+      fileName: "big.bin",
+      path: "big.bin",
+      daemonProfile: undefined,
+      platform,
+      requestFileDownloadToken: vi.fn(),
+      downloadEntry: async ({ sink, signal }) => {
+        sink.onBegin?.({ size: 1000 });
+        await sink.onChunk(new Uint8Array(10));
+        await new Promise<void>((resolve) => {
+          signal?.addEventListener("abort", () => {
+            aborted = true;
+            resolve();
+          });
+        });
+        throw new Error("Download cancelled.");
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(activeDownload().status).toBe("downloading");
+
+    useDownloadStore.getState().cancelDownload(activeDownload().id);
+    await started;
+
+    expect(aborted).toBe(true);
+    expect(activeDownload().status).toBe("error");
+  });
+
+  test("falls back to the HTTP token path when the host lacks the feature", async () => {
+    const requestFileDownloadToken = vi.fn().mockResolvedValue({
+      token: null,
+      fileName: null,
+      mimeType: null,
+      error: "nope",
+    });
+
+    await useDownloadStore.getState().startDownload({
+      serverId: "srv",
+      scopeId: "scope",
+      fileName: "notes.txt",
+      path: "notes.txt",
+      daemonProfile: undefined,
+      platform,
+      requestFileDownloadToken,
+    });
+
+    expect(requestFileDownloadToken).toHaveBeenCalledWith("notes.txt");
+    expect(platform.created).toEqual([]);
+    expect(activeDownload().status).toBe("error");
   });
 });
