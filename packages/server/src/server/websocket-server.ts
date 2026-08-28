@@ -1812,6 +1812,8 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
         workspaceSetupObservation: true,
+        // COMPAT(workspaceFileTransfer): added in v0.6.2, remove gate after 2027-08-24.
+        workspaceFileTransfer: true,
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
         providersSnapshot: true,
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
@@ -2080,6 +2082,7 @@ export class VoiceAssistantWebSocketServer {
     this.sessions.delete(ws);
     connection.sockets.delete(ws);
     connection.session.clearAgentTimelineSubscription(ws);
+    connection.session.cancelWorkspaceTransfersForSource(ws);
     this.socketIdentities.delete(ws);
 
     if (connection.sockets.size === 0) {
