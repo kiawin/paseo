@@ -29,6 +29,8 @@ export const fr: TranslationResources = {
       copiedLabel: "{{label}}copié",
       downloadComplete: "Téléchargement terminé",
       downloadFailed: "Le téléchargement a échoué",
+      uploadComplete: "Téléversement terminé",
+      uploadFailed: "Échec du téléversement",
     },
     errors: {
       error: "Erreur",
@@ -425,6 +427,8 @@ export const fr: TranslationResources = {
       copyRelativePath: "Copier le chemin relatif",
       revealIn: "Afficher dans {{target}}",
       download: "Télécharger",
+      uploadFiles: "Téléverser des fichiers…",
+      uploadFolder: "Téléverser un dossier…",
       addToChat: "Ajouter au chat",
       moreActions: "Plus de propositions",
       newFile: "Nouveau fichier",
@@ -1784,6 +1788,9 @@ export const fr: TranslationResources = {
     failed: "Échec du téléchargement du fichier.",
     shareFile: "Partager un fichier",
     shareFileNamed: "Partager{{fileName}}",
+  },
+  uploads: {
+    failed: "Échec du téléversement du fichier.",
   },
   menu: {
     backdrop: "Toile de fond du menu",
