@@ -72,7 +72,19 @@ interface WorkspaceUploadState {
   receivedBytes: number;
   ackedBytes: number;
   source?: object;
+  /** Reaps the sink when the client stops sending without closing its socket. */
+  idleTimer: ReturnType<typeof setTimeout> | null;
 }
+
+/**
+ * How long an upload may sit without a frame before the daemon reclaims it.
+ *
+ * Socket close already cancels a departing client's uploads, but a client can stop sending
+ * without the daemon ever seeing a close — a dropped relay data channel leaves the session
+ * attached, so nothing reaches cancelTransfersForSource and the temp file stays in the
+ * workspace. Generous enough that a slow link between chunks is never mistaken for a stall.
+ */
+const UPLOAD_IDLE_TIMEOUT_MS = 60_000;
 
 export interface WorkspaceFilesSessionOptions {
   host: WorkspaceFilesSessionHost;
@@ -80,6 +92,8 @@ export interface WorkspaceFilesSessionOptions {
   paseoHome: string;
   logger: pino.Logger;
   fileObserver?: FileObserver;
+  /** Overridden in tests so an idle upload can be reaped without a 60s wait. */
+  uploadIdleTimeoutMs?: number;
 }
 
 /**
@@ -101,6 +115,7 @@ export class WorkspaceFilesSession {
     { flow: TransferFlowControl; source?: object }
   >();
   private readonly activeUploads = new Map<string, WorkspaceUploadState>();
+  private readonly uploadIdleTimeoutMs: number;
 
   constructor(options: WorkspaceFilesSessionOptions) {
     this.host = options.host;
@@ -108,6 +123,7 @@ export class WorkspaceFilesSession {
     this.logger = options.logger;
     this.fileUploads = new FileUploadStore({ paseoHome: options.paseoHome });
     this.fileObserver = options.fileObserver ?? workspaceFileObserver;
+    this.uploadIdleTimeoutMs = options.uploadIdleTimeoutMs ?? UPLOAD_IDLE_TIMEOUT_MS;
   }
 
   async handleFileSubscribeRequest(request: FileSubscribeRequest): Promise<void> {
@@ -254,6 +270,7 @@ export class WorkspaceFilesSession {
     // A half-written upload must not survive the connection that was feeding it.
     for (const upload of this.activeUploads.values()) {
       upload.cancelled = true;
+      this.clearUploadIdleTimer(upload);
       void upload.ready.then((sink) => sink.abort()).catch(() => undefined);
     }
     this.activeUploads.clear();
@@ -607,11 +624,16 @@ export class WorkspaceFilesSession {
       receivedBytes: 0,
       ackedBytes: 0,
       source,
+      idleTimer: null,
     });
+    const registered = this.activeUploads.get(requestId);
+    if (registered) this.armUploadIdleTimer(requestId, registered);
 
     try {
       await ready;
     } catch (error) {
+      const failed = this.activeUploads.get(requestId);
+      if (failed) this.clearUploadIdleTimer(failed);
       this.activeUploads.delete(requestId);
       this.logger.error(
         { err: error, cwd, path: requestedPath },
@@ -650,6 +672,7 @@ export class WorkspaceFilesSession {
       if (upload.cancelled) return;
       const sink = await upload.ready;
       if (upload.cancelled) return;
+      this.armUploadIdleTimer(requestId, upload);
 
       if (frame.opcode === FileTransferOpcode.FileBegin) {
         // Everything the daemon needs came in fs.entry.upload.request.
@@ -670,6 +693,7 @@ export class WorkspaceFilesSession {
       }
 
       const result = await sink.commit();
+      this.clearUploadIdleTimer(upload);
       this.activeUploads.delete(requestId);
       this.host.emit(
         {
@@ -688,6 +712,7 @@ export class WorkspaceFilesSession {
         upload.source,
       );
     } catch (error) {
+      this.clearUploadIdleTimer(upload);
       this.activeUploads.delete(requestId);
       await upload.ready.then((openSink) => openSink.abort()).catch(() => undefined);
       this.logger.error(
@@ -695,6 +720,38 @@ export class WorkspaceFilesSession {
         `Failed to receive upload for workspace ${upload.cwd}`,
       );
       this.emitUploadFailure(upload.cwd, requestId, getErrorMessage(error), upload.source);
+    }
+  }
+
+  /** Restarts the idle deadline; every frame counts as progress. */
+  private armUploadIdleTimer(requestId: string, upload: WorkspaceUploadState): void {
+    this.clearUploadIdleTimer(upload);
+    const timer = setTimeout(() => {
+      if (this.activeUploads.get(requestId) !== upload) return;
+      upload.cancelled = true;
+      upload.idleTimer = null;
+      this.activeUploads.delete(requestId);
+      void upload.ready.then((sink) => sink.abort()).catch(() => undefined);
+      this.logger.warn(
+        { cwd: upload.cwd, path: upload.requestedPath, idleMs: this.uploadIdleTimeoutMs },
+        `Upload stalled with no frames; reclaimed the sink for workspace ${upload.cwd}`,
+      );
+      this.emitUploadFailure(
+        upload.cwd,
+        requestId,
+        "Upload timed out waiting for data.",
+        upload.source,
+      );
+    }, this.uploadIdleTimeoutMs);
+    // Never hold the process open for an upload nobody is feeding.
+    timer.unref?.();
+    upload.idleTimer = timer;
+  }
+
+  private clearUploadIdleTimer(upload: WorkspaceUploadState): void {
+    if (upload.idleTimer) {
+      clearTimeout(upload.idleTimer);
+      upload.idleTimer = null;
     }
   }
 
@@ -716,6 +773,7 @@ export class WorkspaceFilesSession {
     for (const [requestId, upload] of Array.from(this.activeUploads.entries())) {
       if (upload.source === source) {
         upload.cancelled = true;
+        this.clearUploadIdleTimer(upload);
         this.activeUploads.delete(requestId);
         void upload.ready.then((sink) => sink.abort()).catch(() => undefined);
       }
@@ -731,6 +789,7 @@ export class WorkspaceFilesSession {
     const upload = this.activeUploads.get(message.requestId);
     if (upload) {
       upload.cancelled = true;
+      this.clearUploadIdleTimer(upload);
       this.activeUploads.delete(message.requestId);
       void upload.ready.then((sink) => sink.abort()).catch(() => undefined);
     }

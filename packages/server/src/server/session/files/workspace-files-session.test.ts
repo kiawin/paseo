@@ -43,6 +43,7 @@ function makeSubsystem(
   options: {
     hasBinaryChannel?: boolean;
     emitBinary?: (frame: Uint8Array) => Promise<void> | void;
+    uploadIdleTimeoutMs?: number;
   } = {},
 ) {
   const emitted: SessionOutboundMessage[] = [];
@@ -62,6 +63,9 @@ function makeSubsystem(
     downloadTokenStore: new DownloadTokenStore({ ttlMs: 60_000 }),
     paseoHome,
     logger: pino({ level: "silent" }),
+    ...(options.uploadIdleTimeoutMs !== undefined
+      ? { uploadIdleTimeoutMs: options.uploadIdleTimeoutMs }
+      : {}),
   });
   return {
     subsystem,
@@ -1011,6 +1015,105 @@ describe("upload cleanup when the client socket goes away", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(leftovers(cwd)).toEqual([]);
+  });
+});
+
+describe("an upload that stalls without its socket closing", () => {
+  function leftovers(cwd: string): string[] {
+    return readdirSync(cwd).filter((name) => name !== ".git");
+  }
+
+  async function beginStalledUpload(cwd: string, requestId: string, idleMs: number) {
+    const made = makeSubsystem({ hasBinaryChannel: true, uploadIdleTimeoutMs: idleMs });
+    await made.subsystem.handleEntryUploadRequest(
+      {
+        type: "fs.entry.upload.request",
+        cwd,
+        path: "stalled.bin",
+        mimeType: "application/octet-stream",
+        size: 4096,
+        modifiedAt: "2026-08-28T00:00:00.000Z",
+        overwrite: "fail",
+        requestId,
+      },
+      {},
+    );
+    return made;
+  }
+
+  test("the sink is reclaimed and the temp file removed", async () => {
+    const cwd = makeDir("workspace-upload-idle-");
+    const { subsystem } = await beginStalledUpload(cwd, "up-idle", 40);
+
+    // The sink is open and its temp file is on disk before the deadline passes.
+    expect(leftovers(cwd)).toHaveLength(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(leftovers(cwd)).toEqual([]);
+    void subsystem;
+  });
+
+  test("the client is told the upload failed rather than left waiting", async () => {
+    const cwd = makeDir("workspace-upload-idle-report-");
+    const { emitted } = await beginStalledUpload(cwd, "up-idle-report", 40);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const response = emitted.find(
+      (msg) =>
+        msg.type === "fs.entry.upload.response" && msg.payload.requestId === "up-idle-report",
+    );
+    expect(response).toBeDefined();
+    if (response?.type === "fs.entry.upload.response") {
+      expect(response.payload.success).toBe(false);
+      expect(response.payload.path).toBeNull();
+      expect(response.payload.error).toMatch(/timed out/i);
+    }
+  });
+
+  test("a frame restarts the deadline instead of letting a slow upload die", async () => {
+    const cwd = makeDir("workspace-upload-idle-progress-");
+    const { subsystem } = await beginStalledUpload(cwd, "up-idle-progress", 120);
+
+    // Three gaps, each shorter than the deadline but longer than it in total.
+    for (let i = 0; i < 3; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await subsystem.handleFileTransferFrame({
+        opcode: FileTransferOpcode.FileChunk,
+        requestId: "up-idle-progress",
+        payload: new TextEncoder().encode("still going"),
+      });
+    }
+
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileEnd,
+      requestId: "up-idle-progress",
+    });
+
+    expect(readFileSync(join(cwd, "stalled.bin"), "utf8")).toBe(
+      "still goingstill goingstill going",
+    );
+  });
+
+  test("a committed upload leaves no timer able to fire later", async () => {
+    const cwd = makeDir("workspace-upload-idle-committed-");
+    const { subsystem } = await beginStalledUpload(cwd, "up-idle-done", 40);
+
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "up-idle-done",
+      payload: new TextEncoder().encode("done"),
+    });
+    await subsystem.handleFileTransferFrame({
+      opcode: FileTransferOpcode.FileEnd,
+      requestId: "up-idle-done",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // The committed file must survive a deadline that has since elapsed.
+    expect(readFileSync(join(cwd, "stalled.bin"), "utf8")).toBe("done");
   });
 });
 
