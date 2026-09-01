@@ -23,6 +23,7 @@ import {
 import { curateAgentActivity } from "../activity-curator.js";
 import { selectItemsByProjectedLimit } from "../timeline-projection.js";
 import type { AgentStorage } from "../agent-storage.js";
+import type { ArtifactStore } from "../../artifact-store.js";
 import { ensureAgentLoaded } from "../agent-loading.js";
 import { isStoredAgentProviderAvailable } from "../../persistence-hooks.js";
 import {
@@ -111,6 +112,7 @@ export interface PaseoToolHostDependencies {
   archiveWorkspaceRecord?: ArchiveDependencies["archiveWorkspaceRecord"];
   emitWorkspaceUpdatesForWorkspaceIds?: ArchiveDependencies["emitWorkspaceUpdatesForWorkspaceIds"];
   workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "list" | "upsert">;
+  artifactStore?: Pick<ArtifactStore, "publish">;
   projectRegistry?: Pick<ProjectRegistry, "get" | "list">;
   createDirectoryWorkspace?: (
     cwd: string,
@@ -2425,6 +2427,81 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true }),
+      };
+    },
+  );
+
+  const resolveArtifactTarget = async (): Promise<{
+    projectId: string;
+    workspaceId: string | null;
+    provider: string | null;
+  }> => {
+    const caller = resolveCallerAgent();
+    if (!caller) throw new Error("publish_artifact must be called by an agent");
+    if (!caller.workspaceId) {
+      throw new Error(`Caller agent ${callerAgentId} has no current workspace`);
+    }
+    if (!options.workspaceRegistry) throw new Error("Workspace registry is not configured");
+    const workspace = await options.workspaceRegistry.get(caller.workspaceId);
+    if (!workspace) throw new Error(`Workspace ${caller.workspaceId} not found`);
+    return {
+      projectId: workspace.projectId,
+      workspaceId: workspace.workspaceId,
+      provider: caller.provider ?? null,
+    };
+  };
+
+  registerTool(
+    "publish_artifact",
+    {
+      title: "Publish artifact",
+      description:
+        "Publish an HTML document to this project's Artifacts view, where the user can open " +
+        "and read it from any of their devices. Use it to hand back a rendered deliverable — " +
+        "a report, a dashboard, a diagram — rather than a wall of text. The document is " +
+        "stored by Paseo and scoped to the project, so every workspace in it sees the same " +
+        "list. Pass artifactId to replace one you published earlier, and externalUrl when the " +
+        "same document is also live at a public address.",
+      inputSchema: {
+        title: z.string().describe("Short human-readable name shown in the Artifacts list."),
+        html: z.string().describe("The complete HTML document."),
+        artifactId: z
+          .string()
+          .optional()
+          .describe("Replace this artifact instead of publishing a new one. Must be your own."),
+        externalUrl: z
+          .string()
+          .optional()
+          .describe("Companion link to the same document published elsewhere. http/https only."),
+      },
+      outputSchema: {
+        artifactId: z.string(),
+        title: z.string(),
+        size: z.number().int().nonnegative(),
+      },
+    },
+    async ({ title, html, artifactId, externalUrl }) => {
+      if (!options.artifactStore) throw new Error("Artifacts are not configured on this daemon");
+      const target = await resolveArtifactTarget();
+      const { record } = await options.artifactStore.publish({
+        projectId: target.projectId,
+        title,
+        html,
+        artifactId: artifactId ?? null,
+        externalUrl: externalUrl ?? null,
+        origin: {
+          agentId: callerAgentId ?? null,
+          workspaceId: target.workspaceId,
+          provider: target.provider,
+        },
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          artifactId: record.artifactId,
+          title: record.title,
+          size: record.size,
+        }),
       };
     },
   );
