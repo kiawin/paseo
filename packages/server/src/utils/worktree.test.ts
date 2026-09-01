@@ -3,6 +3,9 @@ import {
   createWorktree as createWorktreePrimitive,
   deriveWorktreeProjectHash,
   deletePaseoWorktree,
+  getPaseoWorktreesRoot,
+  resolveCustomWorktreeRoot,
+  resolveWorktreeHolderDir,
   isPaseoOwnedWorktreeCwd,
   listPaseoWorktrees,
   listRepoWorktrees,
@@ -21,7 +24,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "fs";
-import { join } from "path";
+import { isAbsolute, join, relative, sep } from "path";
 import { tmpdir } from "os";
 import { createRealpathAwarePathMatcher } from "./path";
 
@@ -383,5 +386,155 @@ describe("slugify", () => {
       const slug = slugify(input);
       expect(slugify(slug)).toBe(slug);
     }
+  });
+});
+
+describe("resolveWorktreeHolderDir", () => {
+  let tempDir: string;
+  let repoDir: string;
+  let paseoHome: string;
+
+  beforeEach(() => {
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-holder-test-")));
+    repoDir = join(tempDir, "test-repo");
+    paseoHome = join(tempDir, "paseo-home");
+
+    mkdirSync(repoDir, { recursive: true });
+    execFileSync("git", ["init", "-b", "main"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "file.txt"), "hello\n");
+    execFileSync("git", ["add", "."], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "initial"], {
+      cwd: repoDir,
+    });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  // The regression bar for the whole refactor: managed must keep producing the
+  // exact path the pre-existing builder produced, hash and all.
+  it("managed is byte-identical to the pre-existing worktrees root", async () => {
+    const expected = await getPaseoWorktreesRoot(repoDir, paseoHome);
+
+    await expect(resolveWorktreeHolderDir({ cwd: repoDir, paseoHome })).resolves.toBe(expected);
+    await expect(
+      resolveWorktreeHolderDir({ cwd: repoDir, location: { mode: "managed" }, paseoHome }),
+    ).resolves.toBe(expected);
+    await expect(
+      resolveWorktreeHolderDir({ cwd: repoDir, location: null, paseoHome }),
+    ).resolves.toBe(expected);
+  });
+
+  it("managed honours a custom base root", async () => {
+    const worktreesBaseRoot = join(tempDir, "elsewhere");
+    const expected = await getPaseoWorktreesRoot(repoDir, paseoHome, worktreesBaseRoot);
+
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        location: { mode: "managed" },
+        paseoHome,
+        worktreesBaseRoot,
+      }),
+    ).resolves.toBe(expected);
+  });
+
+  it("sibling sits next to the repo", async () => {
+    await expect(
+      resolveWorktreeHolderDir({ cwd: repoDir, location: { mode: "sibling" }, paseoHome }),
+    ).resolves.toBe(join(tempDir, "test-repo-worktrees"));
+  });
+
+  it("nested sits inside the repo", async () => {
+    await expect(
+      resolveWorktreeHolderDir({ cwd: repoDir, location: { mode: "nested" }, paseoHome }),
+    ).resolves.toBe(join(repoDir, ".worktrees"));
+  });
+
+  // path.basename/dirname already tolerate a trailing separator, so this only
+  // pins the behaviour rather than guarding a bug.
+  it("sibling tolerates a repo root with a trailing separator", async () => {
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        repoRoot: `${repoDir}${sep}`,
+        location: { mode: "sibling" },
+        paseoHome,
+      }),
+    ).resolves.toBe(join(tempDir, "test-repo-worktrees"));
+  });
+
+  // This is what the resolve() in the sibling branch is actually for: without
+  // it a relative repoRoot yields a relative holder, and the worktree lands
+  // wherever the daemon's cwd happens to be.
+  it("sibling absolutises a relative repo root", async () => {
+    const relativeRepoRoot = relative(process.cwd(), repoDir);
+    expect(isAbsolute(relativeRepoRoot)).toBe(false);
+
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        repoRoot: relativeRepoRoot,
+        location: { mode: "sibling" },
+        paseoHome,
+      }),
+    ).resolves.toBe(join(tempDir, "test-repo-worktrees"));
+  });
+
+  it("resolves from a subdirectory of the repo", async () => {
+    const nestedCwd = join(repoDir, "packages", "app");
+    mkdirSync(nestedCwd, { recursive: true });
+
+    await expect(
+      resolveWorktreeHolderDir({ cwd: nestedCwd, location: { mode: "sibling" }, paseoHome }),
+    ).resolves.toBe(join(tempDir, "test-repo-worktrees"));
+  });
+
+  it("custom expands a tilde and returns an absolute root", async () => {
+    const home = process.env.HOME ?? "";
+    const result = resolveCustomWorktreeRoot("~/code/worktrees", repoDir);
+    expect(result).toEqual({ ok: true, root: join(home, "code", "worktrees") });
+
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        location: { mode: "custom", root: join(tempDir, "custom-holder") },
+        paseoHome,
+      }),
+    ).resolves.toBe(join(tempDir, "custom-holder"));
+  });
+
+  it("custom rejects relative, repo-root, inside-repo and containing roots", () => {
+    expect(resolveCustomWorktreeRoot("relative/path", repoDir)).toEqual({
+      ok: false,
+      rejection: "relative",
+    });
+    expect(resolveCustomWorktreeRoot(repoDir, repoDir)).toEqual({
+      ok: false,
+      rejection: "is_repo_root",
+    });
+    // Inside the repo is `nested`, which also writes .git/info/exclude.
+    expect(resolveCustomWorktreeRoot(join(repoDir, ".worktrees"), repoDir)).toEqual({
+      ok: false,
+      rejection: "inside_repo",
+    });
+    // A slug equal to the repo's own directory name would resolve to the repo.
+    expect(resolveCustomWorktreeRoot(tempDir, repoDir)).toEqual({
+      ok: false,
+      rejection: "contains_repo",
+    });
+  });
+
+  it("custom rejection surfaces as a thrown error from the resolver", async () => {
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        location: { mode: "custom", root: "relative/path" },
+        paseoHome,
+      }),
+    ).rejects.toThrow(/relative/);
   });
 });

@@ -42,6 +42,7 @@ import { spawnProcess } from "./spawn.js";
 import { resolvePaseoHome } from "../server/paseo-home.js";
 import { createExternalProcessEnv } from "../server/paseo-env.js";
 import { parseGitRevParsePath, resolveGitRevParsePath } from "./git-rev-parse-path.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { expandTilde, getRealpathAwareRelativePath, isPathInsideRoot } from "./path.js";
 import { terminateWithTreeKill } from "./tree-kill.js";
 
@@ -876,14 +877,98 @@ export async function getPaseoWorktreesRoot(
   return join(baseRoot, projectHash);
 }
 
-export async function computeWorktreePath(
-  cwd: string,
-  slug: string,
-  paseoHome?: string,
-  worktreesRoot?: string,
-): Promise<string> {
-  const projectWorktreesRoot = await getPaseoWorktreesRoot(cwd, paseoHome, worktreesRoot);
-  return join(projectWorktreesRoot, slug);
+/** Why a custom worktree root cannot be used. Mapped to a wire error by callers. */
+export type CustomWorktreeRootRejection =
+  | "relative"
+  | "is_repo_root"
+  | "inside_repo"
+  | "contains_repo";
+
+export type CustomWorktreeRootResult =
+  | { ok: true; root: string }
+  | { ok: false; rejection: CustomWorktreeRootRejection };
+
+/**
+ * Shape-level validation for a `custom` worktree root. Cross-project collision
+ * needs the project registry and is checked at the RPC boundary instead.
+ *
+ * A root inside the repo is rejected rather than accepted, because `nested`
+ * already expresses that and carries the `.git/info/exclude` write with it. A
+ * root containing the repo is rejected because a slug matching the repo's own
+ * directory name would then resolve to the repo itself.
+ */
+export function resolveCustomWorktreeRoot(
+  root: string,
+  repoRoot: string,
+): CustomWorktreeRootResult {
+  const expanded = expandTilde(root.trim());
+  if (!isAbsolute(expanded)) {
+    return { ok: false, rejection: "relative" };
+  }
+
+  const resolvedRoot = resolve(expanded);
+  const resolvedRepoRoot = resolve(repoRoot);
+
+  if (getRealpathAwareRelativePath(resolvedRepoRoot, resolvedRoot) === "") {
+    return { ok: false, rejection: "is_repo_root" };
+  }
+  if (isPathInsideRoot(resolvedRepoRoot, resolvedRoot)) {
+    return { ok: false, rejection: "inside_repo" };
+  }
+  if (isPathInsideRoot(resolvedRoot, resolvedRepoRoot)) {
+    return { ok: false, rejection: "contains_repo" };
+  }
+
+  return { ok: true, root: resolvedRoot };
+}
+
+export interface WorktreeHolderDirInput {
+  /** A path inside the repository. Used to derive the repo root when one is not supplied. */
+  cwd: string;
+  /** Absent or null means `managed`. */
+  location?: WorktreeLocation | null;
+  /** Pre-resolved repo root. Supplying it avoids a `git rev-parse`. */
+  repoRoot?: string;
+  paseoHome?: string;
+  worktreesBaseRoot?: string;
+}
+
+/**
+ * The directory that holds worktree slugs for a project. The worktree itself is
+ * this directory plus `/<slug>`.
+ *
+ * `managed` keeps the two-level `<base>/<hash8>/<slug>` layout and delegates to
+ * the pre-existing path builder so it stays byte-identical. The other three
+ * carry a single level and are derived from the repo root.
+ */
+export async function resolveWorktreeHolderDir(input: WorktreeHolderDirInput): Promise<string> {
+  const location: WorktreeLocation = input.location ?? { mode: "managed" };
+
+  if (location.mode === "managed") {
+    return getPaseoWorktreesRoot(input.cwd, input.paseoHome, input.worktreesBaseRoot);
+  }
+
+  const repoRoot = resolve(input.repoRoot ?? (await resolveRepoRootForHolder(input.cwd)));
+
+  if (location.mode === "sibling") {
+    // dirname/basename are taken after resolve() so a trailing separator on the
+    // repo root cannot produce an empty basename and a holder named "-worktrees".
+    return join(dirname(repoRoot), `${basename(repoRoot)}-worktrees`);
+  }
+
+  if (location.mode === "nested") {
+    return join(repoRoot, ".worktrees");
+  }
+
+  const custom = resolveCustomWorktreeRoot(location.root, repoRoot);
+  if (!custom.ok) {
+    throw new Error(`Invalid custom worktree root (${custom.rejection}): ${location.root}`);
+  }
+  return custom.root;
+}
+
+async function resolveRepoRootForHolder(cwd: string): Promise<string> {
+  return resolveRepoRootFromGitCommonDir(await getGitCommonDir(cwd));
 }
 
 export function mapWorkspaceCwdToWorktree(input: {
