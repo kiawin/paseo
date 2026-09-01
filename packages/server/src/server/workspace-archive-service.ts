@@ -5,10 +5,12 @@ import type { Logger } from "pino";
 import type { AgentManager } from "./agent/agent-manager.js";
 import type { AgentStorage, StoredAgentRecord } from "./agent/agent-storage.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
+import { resolveWorktreeDeletionPolicy } from "./worktree/ownership.js";
 import type { ForgeService } from "../services/forge-service.js";
 import {
   deletePaseoWorktree,
   isPaseoOwnedWorktreeCwd,
+  type WorktreeDeletionPolicy,
   runWorktreeTeardownCommands,
   WorktreeTeardownError,
 } from "../utils/worktree.js";
@@ -23,7 +25,13 @@ import { runWithGitCommandPriority } from "../utils/run-git-command.js";
 
 export type ActiveWorkspaceRef = Pick<
   PersistedWorkspaceRecord,
-  "workspaceId" | "cwd" | "kind" | "worktreeRoot" | "isPaseoOwnedWorktree" | "mainRepoRoot"
+  | "workspaceId"
+  | "cwd"
+  | "kind"
+  | "worktreeRoot"
+  | "isPaseoOwnedWorktree"
+  | "worktreePlacement"
+  | "mainRepoRoot"
 >;
 
 export interface ArchiveDependencies {
@@ -72,6 +80,13 @@ export interface ArchiveResult {
 export interface ArchiveByScopeRequest {
   scope: ArchiveScope;
   requestId: string;
+  /**
+   * Only consulted for worktrees outside the managed root, which are left on
+   * disk by default. Absent means "leave the directory", so a client that
+   * cannot ask gets the non-destructive path. Managed worktrees always remove
+   * their directory and ignore this.
+   */
+  removeWorktreeDirectory?: boolean;
 }
 
 export async function requireActiveWorkspaceForArchive(
@@ -92,6 +107,7 @@ interface BackingDirectory {
   isPaseoOwnedWorktree: boolean;
   mainRepoRoot: string | null;
   paseoWorktreesRoot: string | null;
+  deletionPolicy: WorktreeDeletionPolicy;
 }
 
 interface ArchiveTarget {
@@ -275,6 +291,15 @@ async function resolveWorkspaceBackingDirectory(
       isPaseoOwnedWorktree: true,
       mainRepoRoot: workspace.mainRepoRoot,
       paseoWorktreesRoot: null,
+      // Fixed when the worktree was created. Never re-derived from the
+      // project's current mode, which is mutable while placement is not.
+      deletionPolicy: resolveWorktreeDeletionPolicy({
+        workspace,
+        options: {
+          paseoHome: dependencies.paseoHome,
+          worktreesRoot: dependencies.paseoWorktreesBaseRoot,
+        },
+      }),
     };
   }
   if (workspace.kind !== "worktree") {
@@ -283,6 +308,7 @@ async function resolveWorkspaceBackingDirectory(
       isPaseoOwnedWorktree: false,
       mainRepoRoot: workspace.mainRepoRoot ?? null,
       paseoWorktreesRoot: null,
+      deletionPolicy: { kind: "managed" },
     };
   }
 
@@ -309,6 +335,7 @@ async function resolveBackingDirectory(
     isPaseoOwnedWorktree: ownership.allowed,
     mainRepoRoot: ownership.repoRoot ?? null,
     paseoWorktreesRoot: ownership.worktreeRoot ?? null,
+    deletionPolicy: { kind: "managed" },
   };
 }
 
@@ -347,12 +374,18 @@ async function archiveTargetRecords(
 
 async function maybeRemoveDirectory(
   dependencies: ArchiveDependencies,
-  request: Pick<ArchiveByScopeRequest, "requestId">,
+  request: Pick<ArchiveByScopeRequest, "requestId" | "removeWorktreeDirectory">,
   target: ArchiveTarget,
   archivedWorkspaceIds: string[],
 ): Promise<boolean> {
   const backing = target.backing;
   if (!backing?.isPaseoOwnedWorktree) {
+    return false;
+  }
+
+  // A worktree outside the managed root sits in a directory people also use, so
+  // archive leaves it alone unless the request explicitly asked for removal.
+  if (backing.deletionPolicy.kind === "git-validated" && request.removeWorktreeDirectory !== true) {
     return false;
   }
 
@@ -406,6 +439,7 @@ async function maybeRemoveDirectory(
       worktreesRoot: backing.paseoWorktreesRoot ?? undefined,
       paseoHome: dependencies.paseoHome,
       worktreesBaseRoot: dependencies.paseoWorktreesBaseRoot,
+      policy: backing.deletionPolicy,
     });
     dependencies.github.invalidate({ cwd: backing.path });
     return true;

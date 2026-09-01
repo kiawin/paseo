@@ -991,6 +991,28 @@ export const ProjectRenameRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// COMPAT(projectWorktreeLocation): added in v0.8.0, remove after 2027-09-02.
+export const ProjectWorktreeLocationSetRequestSchema = z.object({
+  type: z.literal("project.worktree.location.set.request"),
+  projectId: z.string(),
+  // Null clears the override and reverts to managed.
+  location: WorktreeLocationSchema.nullable(),
+  requestId: z.string(),
+});
+
+// Removes an archived workspace's worktree directory. Separate from the archive
+// request because by the time removal can be retried the record is already
+// archived, and archive resolves only against active workspaces — so a repeated
+// archive request cannot reach it, and would re-run teardown if it could.
+export const WorkspaceWorktreeRemoveRequestSchema = z.object({
+  type: z.literal("workspace.worktree.remove.request"),
+  workspaceId: z.string(),
+  // Only ever set from an explicit second confirmation by a person. It does not
+  // clear a locked worktree: git needs `remove -f -f` for that, deliberately.
+  force: z.boolean().optional(),
+  requestId: z.string(),
+});
+
 export const ProjectIconSetRequestSchema = z.object({
   type: z.literal("project.icon.set.request"),
   projectId: z.string(),
@@ -1963,6 +1985,34 @@ export const ProjectRenameResponsePayloadSchema = z.object({
 export const ProjectRenameResponseSchema = z.object({
   type: z.literal("project.rename.response"),
   payload: ProjectRenameResponsePayloadSchema,
+});
+
+export const ProjectWorktreeLocationSetResponseSchema = z.object({
+  type: z.literal("project.worktree.location.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    projectId: z.string(),
+    accepted: z.boolean(),
+    location: WorktreeLocationSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const WorkspaceWorktreeRemoveResponseSchema = z.object({
+  type: z.literal("workspace.worktree.remove.response"),
+  payload: z.object({
+    requestId: z.string(),
+    workspaceId: z.string(),
+    removed: z.boolean(),
+    // The resolved directory, always reported: the workspace record is already
+    // archived, so this response is the only place the path surfaces.
+    worktreePath: z.string().nullable(),
+    // Classified so the client can tell a retryable refusal from a terminal one
+    // and avoid offering a force button that cannot work.
+    refusal: z.enum(["not_a_worktree", "dirty", "locked", "unknown"]).nullable(),
+    recoverableWithForce: z.boolean(),
+    error: z.string().nullable(),
+  }),
 });
 
 export const ProjectIconSetResponseSchema = z.object({
@@ -3136,6 +3186,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   CloseItemsRequestMessageSchema,
   UpdateAgentRequestMessageSchema,
   ProjectRenameRequestSchema,
+  ProjectWorktreeLocationSetRequestSchema,
+  WorkspaceWorktreeRemoveRequestSchema,
   ProjectIconSetRequestSchema,
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
@@ -6641,6 +6693,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
+  ProjectWorktreeLocationSetResponseSchema,
+  WorkspaceWorktreeRemoveResponseSchema,
   ProjectIconSetResponseSchema,
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,
@@ -6996,6 +7050,14 @@ export type UpdateAgentRequestMessage = z.infer<typeof UpdateAgentRequestMessage
 export type ProjectIconSource = z.infer<typeof ProjectIconSourceSchema>;
 export type ProjectRenameRequest = z.infer<typeof ProjectRenameRequestSchema>;
 export type WorktreeLocation = z.infer<typeof WorktreeLocationSchema>;
+export type ProjectWorktreeLocationSetRequest = z.infer<
+  typeof ProjectWorktreeLocationSetRequestSchema
+>;
+export type ProjectWorktreeLocationSetResponse = z.infer<
+  typeof ProjectWorktreeLocationSetResponseSchema
+>;
+export type WorkspaceWorktreeRemoveRequest = z.infer<typeof WorkspaceWorktreeRemoveRequestSchema>;
+export type WorkspaceWorktreeRemoveResponse = z.infer<typeof WorkspaceWorktreeRemoveResponseSchema>;
 export type ProjectIconSetRequest = z.infer<typeof ProjectIconSetRequestSchema>;
 export type ProjectRemoveRequest = z.infer<typeof ProjectRemoveRequestSchema>;
 export type WorkspaceTitleSetRequest = z.infer<typeof WorkspaceTitleSetRequestSchema>;

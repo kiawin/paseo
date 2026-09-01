@@ -922,6 +922,22 @@ export function resolveCustomWorktreeRoot(
   return { ok: true, root: resolvedRoot };
 }
 
+/** User-facing wording for each shape-level rejection. */
+export function describeCustomWorktreeRootRejection(
+  rejection: CustomWorktreeRootRejection,
+): string {
+  switch (rejection) {
+    case "relative":
+      return "Enter an absolute path.";
+    case "is_repo_root":
+      return "That is the repository itself. Choose a different directory.";
+    case "inside_repo":
+      return "That is inside the repository. Choose Nested instead.";
+    case "contains_repo":
+      return "That directory contains the repository. Choose a different one.";
+  }
+}
+
 export interface WorktreeHolderDirInput {
   /** A path inside the repository. Used to derive the repo root when one is not supplied. */
   cwd: string;

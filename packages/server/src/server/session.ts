@@ -1,7 +1,7 @@
 import equal from "fast-deep-equal";
 import { v4 as uuidv4 } from "uuid";
 import { lstat, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
-import { basename, resolve, sep } from "path";
+import { basename, dirname, resolve, sep } from "path";
 import { homedir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import {
@@ -202,7 +202,7 @@ import {
   matchesAgentUpdatesFilter,
   type AgentUpdatesService,
 } from "./session/agent-updates/agent-updates-service.js";
-import { expandTilde } from "../utils/path.js";
+import { expandTilde, getRealpathAwareRelativePath } from "../utils/path.js";
 import {
   searchDirectoryEntries,
   WORKSPACE_SEARCH_HIDDEN_DIRECTORIES,
@@ -245,6 +245,16 @@ import {
   handleWorkspaceSetupStatusRequest as handleWorkspaceSetupStatusRequestMessage,
 } from "./worktree-session.js";
 import { archiveByScope, type ActiveWorkspaceRef } from "./workspace-archive-service.js";
+import {
+  deletePaseoWorktree,
+  describeCustomWorktreeRootRejection,
+  resolveCustomWorktreeRoot,
+  resolveWorktreeHolderDir,
+  WorktreeRemovalRefusedError,
+  type WorktreeRemovalRefusal,
+} from "../utils/worktree.js";
+import { isPaseoCreatedWorkspace, resolveWorktreeDeletionPolicy } from "./worktree/ownership.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { WorkspaceSetupRuntime } from "./workspace-setup-runtime.js";
 import { SessionAuthorization, type DaemonPermission } from "./authorization/index.js";
 
@@ -2541,6 +2551,10 @@ export class Session {
 
   private dispatchWorkspaceLabelMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
+      case "project.worktree.location.set.request":
+        return this.handleProjectWorktreeLocationSetRequest(msg);
+      case "workspace.worktree.remove.request":
+        return this.handleWorkspaceWorktreeRemoveRequest(msg);
       case "workspace.label.list.request":
         return this.handleWorkspaceLabelList(msg);
       case "workspace.label.assignment.set.request":
@@ -3096,6 +3110,204 @@ export class Session {
           error: getErrorMessageOr(error, "Failed to update agent"),
         },
       });
+    }
+  }
+
+  /**
+   * Validates a location against every other project's resolved holder.
+   *
+   * Comparison is symmetric on purpose: a sibling or nested holder can collide
+   * with another project's custom root just as easily as two custom roots can,
+   * and two spellings of the same directory must not read as distinct.
+   */
+  private async findConflictingProjectForLocation(input: {
+    projectId: string;
+    repoRoot: string;
+    location: WorktreeLocation;
+  }): Promise<PersistedProjectRecord | null> {
+    const candidate = await resolveWorktreeHolderDir({
+      cwd: input.repoRoot,
+      repoRoot: input.repoRoot,
+      location: input.location,
+      paseoHome: this.paseoHome,
+      worktreesBaseRoot: this.worktreesRoot,
+    });
+
+    for (const other of await this.projectRegistry.list()) {
+      if (other.projectId === input.projectId || other.archivedAt) continue;
+      // managed holders are disambiguated by a per-repo hash, so they never collide.
+      if ((other.worktreeLocation?.mode ?? "managed") === "managed") continue;
+
+      let otherHolder: string;
+      try {
+        otherHolder = await resolveWorktreeHolderDir({
+          cwd: other.rootPath,
+          repoRoot: other.rootPath,
+          location: other.worktreeLocation,
+          paseoHome: this.paseoHome,
+          worktreesBaseRoot: this.worktreesRoot,
+        });
+      } catch {
+        continue;
+      }
+      if (getRealpathAwareRelativePath(otherHolder, candidate) === "") {
+        return other;
+      }
+    }
+    return null;
+  }
+
+  private async handleProjectWorktreeLocationSetRequest(
+    request: Extract<SessionInboundMessage, { type: "project.worktree.location.set.request" }>,
+  ): Promise<void> {
+    const respond = (accepted: boolean, location: WorktreeLocation | null, error: string | null) =>
+      this.emit({
+        type: "project.worktree.location.set.response",
+        payload: {
+          requestId: request.requestId,
+          projectId: request.projectId,
+          accepted,
+          location,
+          error,
+        },
+      });
+
+    try {
+      const existing = await this.projectRegistry.get(request.projectId);
+      if (!existing) {
+        respond(false, null, "Project not found");
+        return;
+      }
+
+      const next = request.location?.mode === "managed" ? null : (request.location ?? null);
+
+      if (next?.mode === "custom") {
+        const custom = resolveCustomWorktreeRoot(next.root, existing.rootPath);
+        if (!custom.ok) {
+          respond(false, null, describeCustomWorktreeRootRejection(custom.rejection));
+          return;
+        }
+        next.root = custom.root;
+      }
+
+      if (next) {
+        const conflict = await this.findConflictingProjectForLocation({
+          projectId: existing.projectId,
+          repoRoot: existing.rootPath,
+          location: next,
+        });
+        if (conflict) {
+          respond(
+            false,
+            null,
+            `That directory is already used by ${resolveProjectDisplayName(conflict)}.`,
+          );
+          return;
+        }
+      }
+
+      const updated = {
+        ...existing,
+        worktreeLocation: next,
+        updatedAt: new Date().toISOString(),
+      };
+      await this.projectRegistry.upsert(updated);
+      respond(true, next, null);
+      await this.emitProjectUpdate({ kind: "upsert", project: updated });
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, projectId: request.projectId, requestId: request.requestId },
+        "session: project.worktree.location.set.request error",
+      );
+      respond(false, null, getErrorMessageOr(error, "Failed to set worktree location"));
+    }
+  }
+
+  /**
+   * Removes an archived workspace's worktree directory.
+   *
+   * Separate from archive because the record is already archived by the time
+   * this can be retried, and archive resolves only against active workspaces.
+   */
+  private async handleWorkspaceWorktreeRemoveRequest(
+    request: Extract<SessionInboundMessage, { type: "workspace.worktree.remove.request" }>,
+  ): Promise<void> {
+    const respond = (payload: {
+      removed: boolean;
+      worktreePath: string | null;
+      refusal: WorktreeRemovalRefusal | null;
+      recoverableWithForce: boolean;
+      error: string | null;
+    }) =>
+      this.emit({
+        type: "workspace.worktree.remove.response",
+        payload: { requestId: request.requestId, workspaceId: request.workspaceId, ...payload },
+      });
+
+    const failed = (error: string) =>
+      respond({
+        removed: false,
+        worktreePath: null,
+        refusal: null,
+        recoverableWithForce: false,
+        error,
+      });
+
+    try {
+      const workspace = await this.workspaceRegistry.get(request.workspaceId);
+      if (!workspace) {
+        failed("Workspace not found");
+        return;
+      }
+      if (!isPaseoCreatedWorkspace(workspace)) {
+        failed("Paseo did not create this worktree");
+        return;
+      }
+
+      const policy = resolveWorktreeDeletionPolicy({
+        workspace,
+        force: request.force === true,
+        options: { paseoHome: this.paseoHome, worktreesRoot: this.worktreesRoot },
+      });
+      if (policy.kind !== "git-validated") {
+        failed("This worktree is removed automatically when its workspace is archived");
+        return;
+      }
+
+      const worktreePath = workspace.worktreeRoot ?? workspace.cwd;
+      await deletePaseoWorktree({
+        cwd: workspace.mainRepoRoot,
+        worktreePath,
+        teardownCwds: [],
+        worktreesRoot: dirname(worktreePath),
+        paseoHome: this.paseoHome,
+        worktreesBaseRoot: this.worktreesRoot,
+        policy,
+      });
+
+      respond({
+        removed: true,
+        worktreePath,
+        refusal: null,
+        recoverableWithForce: false,
+        error: null,
+      });
+    } catch (error) {
+      if (error instanceof WorktreeRemovalRefusedError) {
+        respond({
+          removed: false,
+          worktreePath: error.worktreePath,
+          refusal: error.refusal,
+          recoverableWithForce: error.recoverableWithForce,
+          error: error.message,
+        });
+        return;
+      }
+      this.sessionLogger.error(
+        { err: error, workspaceId: request.workspaceId, requestId: request.requestId },
+        "session: workspace.worktree.remove.request error",
+      );
+      failed(getErrorMessageOr(error, "Failed to remove worktree"));
     }
   }
 
@@ -5225,6 +5437,7 @@ export class Session {
       projectDisplayName: resolveProjectDisplayName(project),
       projectCustomName: project.customName ?? null,
       projectCustomIconRevision: project.customIconRevision ?? null,
+      projectWorktreeLocation: project.worktreeLocation ?? null,
       projectIconRevision: icon.revision,
       projectRootPath: project.rootPath,
       projectKind: project.kind,
@@ -5304,6 +5517,7 @@ export class Session {
         kind: workspace.kind,
         worktreeRoot: workspace.worktreeRoot,
         isPaseoOwnedWorktree: workspace.isPaseoOwnedWorktree,
+        worktreePlacement: workspace.worktreePlacement,
         mainRepoRoot: workspace.mainRepoRoot,
       }));
   }
@@ -6773,6 +6987,7 @@ export class Session {
         {
           scope: { kind: "workspace", workspaceId: existing.workspaceId },
           requestId: request.requestId,
+          ...(request.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : {}),
         },
       );
 

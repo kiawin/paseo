@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import { z } from "zod";
+import { WorktreeLocationSchema } from "@getpaseo/protocol/messages";
 
 import { ArchivableFileBackedRegistry } from "./file-backed-registry.js";
 import { areEquivalentPaths } from "../utils/path.js";
@@ -25,6 +26,16 @@ const PersistedProjectRecordSchema = z.object({
   customName: z
     .string()
     .nullable()
+    .optional()
+    .transform((value) => value ?? null),
+  // Where this project's Paseo-managed worktrees are cut. Machine-local on
+  // purpose: paseo.json is committed, so a custom root there would be an
+  // attacker-controlled delete target, and it is read from inside the worktree
+  // after creation, which makes it circular for deciding placement.
+  // COMPAT(projectWorktreeLocation): added in v0.8.0, remove optional after 2027-09-02.
+  // Governs where the NEXT worktree is cut. Existing worktrees keep the
+  // placement class persisted on their own workspace record.
+  worktreeLocation: WorktreeLocationSchema.nullable()
     .optional()
     .transform((value) => value ?? null),
   // Identifies the project's stored custom icon; null means automatic.
