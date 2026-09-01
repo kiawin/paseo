@@ -3,6 +3,7 @@ import {
   createWorktree as createWorktreePrimitive,
   deriveWorktreeProjectHash,
   deletePaseoWorktree,
+  classifyWorktreeRemovalRefusal,
   getPaseoWorktreesRoot,
   resolveCustomWorktreeRoot,
   resolveWorktreeHolderDir,
@@ -536,5 +537,185 @@ describe("resolveWorktreeHolderDir", () => {
         paseoHome,
       }),
     ).rejects.toThrow(/relative/);
+  });
+});
+
+describe("git-validated worktree deletion", () => {
+  let tempDir: string;
+  let repoDir: string;
+  let holderDir: string;
+  let paseoHome: string;
+
+  function git(args: string[], cwd: string): void {
+    execFileSync("git", args, { cwd, stdio: "pipe" });
+  }
+
+  function initRepo(dir: string): void {
+    mkdirSync(dir, { recursive: true });
+    git(["init", "-b", "main"], dir);
+    git(["config", "user.email", "test@test.com"], dir);
+    git(["config", "user.name", "Test"], dir);
+    writeFileSync(join(dir, "file.txt"), "hello\n");
+    git(["add", "."], dir);
+    git(["-c", "commit.gpgsign=false", "commit", "-m", "initial"], dir);
+  }
+
+  /** A worktree cut outside the managed root, the way sibling/nested/custom do. */
+  function addWorktree(slug: string, branch: string): string {
+    const path = join(holderDir, slug);
+    git(["worktree", "add", path, "-b", branch], repoDir);
+    return path;
+  }
+
+  function removeGitValidated(worktreePath: string, force?: boolean): Promise<void> {
+    return deletePaseoWorktree({
+      cwd: repoDir,
+      worktreePath,
+      teardownCwds: [],
+      worktreesRoot: holderDir,
+      paseoHome,
+      policy: { kind: "git-validated", ...(force === undefined ? {} : { force }) },
+    });
+  }
+
+  beforeEach(() => {
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-git-validated-")));
+    repoDir = join(tempDir, "test-repo");
+    holderDir = join(tempDir, "test-repo-worktrees");
+    paseoHome = join(tempDir, "paseo-home");
+    initRepo(repoDir);
+    mkdirSync(holderDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("removes a clean worktree", async () => {
+    const worktreePath = addWorktree("clean", "clean-branch");
+    expect(existsSync(worktreePath)).toBe(true);
+
+    await removeGitValidated(worktreePath);
+
+    expect(existsSync(worktreePath)).toBe(false);
+  });
+
+  // The whole point of the policy: a directory nobody registered as a worktree
+  // is left alone instead of being recursively deleted.
+  it("refuses a plain directory and leaves it on disk", async () => {
+    const plainDir = join(holderDir, "not-a-worktree");
+    mkdirSync(plainDir, { recursive: true });
+    writeFileSync(join(plainDir, "important.txt"), "user data\n");
+
+    await expect(removeGitValidated(plainDir)).rejects.toMatchObject({
+      name: "WorktreeRemovalRefusedError",
+      refusal: "not_a_worktree",
+      worktreePath: plainDir,
+      recoverableWithForce: false,
+    });
+
+    expect(existsSync(join(plainDir, "important.txt"))).toBe(true);
+  });
+
+  it("refuses a worktree belonging to another repo and leaves it on disk", async () => {
+    const otherRepo = join(tempDir, "other-repo");
+    initRepo(otherRepo);
+    const foreignWorktree = join(holderDir, "foreign");
+    git(["worktree", "add", foreignWorktree, "-b", "foreign-branch"], otherRepo);
+    expect(existsSync(join(foreignWorktree, "file.txt"))).toBe(true);
+
+    await expect(removeGitValidated(foreignWorktree)).rejects.toMatchObject({
+      refusal: "not_a_worktree",
+    });
+
+    expect(existsSync(join(foreignWorktree, "file.txt"))).toBe(true);
+  });
+
+  it("refuses a worktree holding uncommitted work, and force overrides", async () => {
+    const worktreePath = addWorktree("dirty", "dirty-branch");
+    writeFileSync(join(worktreePath, "scratch.txt"), "unsaved work\n");
+
+    await expect(removeGitValidated(worktreePath)).rejects.toMatchObject({
+      refusal: "dirty",
+      recoverableWithForce: true,
+    });
+    expect(existsSync(worktreePath)).toBe(true);
+
+    await removeGitValidated(worktreePath, true);
+    expect(existsSync(worktreePath)).toBe(false);
+  });
+
+  // A lock is a deliberate act by whoever placed it, and git needs `-f -f` to
+  // override it. A single --force must not silently defeat it.
+  it("refuses a locked worktree even with force", async () => {
+    const worktreePath = addWorktree("locked", "locked-branch");
+    git(["worktree", "lock", worktreePath], repoDir);
+
+    for (const force of [false, true]) {
+      await expect(removeGitValidated(worktreePath, force)).rejects.toMatchObject({
+        refusal: "locked",
+        recoverableWithForce: false,
+      });
+      expect(existsSync(worktreePath)).toBe(true);
+    }
+  });
+
+  // Known, accepted gap: git proves repository membership and cleanliness, not
+  // that Paseo created the directory. Asserted so it stays a known gap rather
+  // than becoming an unnoticed one.
+  it("removes a clean worktree a human created, because git cannot prove authorship", async () => {
+    const handMade = join(holderDir, "hand-made");
+    git(["worktree", "add", handMade, "-b", "hand-made-branch"], repoDir);
+
+    await removeGitValidated(handMade);
+
+    expect(existsSync(handMade)).toBe(false);
+  });
+
+  // Known, accepted gap: ignored files are not protected by git's cleanliness
+  // check, so removal destroys them. The UI copy has to say so.
+  it("destroys ignored files such as .env without refusing", async () => {
+    writeFileSync(join(repoDir, ".gitignore"), ".env\nnode_modules/\n");
+    git(["add", "."], repoDir);
+    git(["-c", "commit.gpgsign=false", "commit", "-m", "ignore"], repoDir);
+
+    const worktreePath = addWorktree("ignored", "ignored-branch");
+    writeFileSync(join(worktreePath, ".env"), "SECRET=1\n");
+    mkdirSync(join(worktreePath, "node_modules"), { recursive: true });
+
+    await removeGitValidated(worktreePath);
+
+    expect(existsSync(worktreePath)).toBe(false);
+  });
+
+  it("requires a cwd so git has a repository to validate against", async () => {
+    const worktreePath = addWorktree("no-cwd", "no-cwd-branch");
+
+    await expect(
+      deletePaseoWorktree({
+        cwd: null,
+        worktreePath,
+        teardownCwds: [],
+        worktreesRoot: holderDir,
+        paseoHome,
+        policy: { kind: "git-validated" },
+      }),
+    ).rejects.toThrow(/cwd is required/);
+    expect(existsSync(worktreePath)).toBe(true);
+  });
+
+  it("classifies git's refusal messages", () => {
+    expect(classifyWorktreeRemovalRefusal(new Error("fatal: '/x' is not a working tree"))).toBe(
+      "not_a_worktree",
+    );
+    expect(
+      classifyWorktreeRemovalRefusal(
+        new Error("fatal: '/x' contains modified or untracked files, use --force to delete it"),
+      ),
+    ).toBe("dirty");
+    expect(
+      classifyWorktreeRemovalRefusal(new Error("fatal: cannot remove a locked working tree;")),
+    ).toBe("locked");
+    expect(classifyWorktreeRemovalRefusal(new Error("some other failure"))).toBe("unknown");
   });
 });

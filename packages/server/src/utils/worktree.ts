@@ -1174,6 +1174,62 @@ export async function listRepoWorktrees({ cwd }: { cwd: string }): Promise<Paseo
     );
 }
 
+/**
+ * How a worktree directory may be removed.
+ *
+ * `managed` is the pre-existing behaviour and only safe inside Paseo's private
+ * `<base>/<hash8>/` namespace, where nothing else writes: it forces the git
+ * removal, ignores git's verdict, and finishes with a recursive delete so a
+ * half-completed prior attempt still converges.
+ *
+ * `git-validated` is for worktrees cut into directories people also use. Git's
+ * worktree registry is the authority — it refuses a path that is not a worktree
+ * of this repo, and refuses one holding uncommitted work — and there is no
+ * recursive-delete fallback, so a refusal leaves the directory alone. Git proves
+ * repository membership and cleanliness, not that Paseo created the directory.
+ */
+export type WorktreeDeletionPolicy =
+  | { kind: "managed" }
+  | { kind: "git-validated"; force?: boolean };
+
+export type WorktreeRemovalRefusal =
+  /** Git has disowned the directory. No force level recovers this; only a raw delete would. */
+  | "not_a_worktree"
+  /** Uncommitted or untracked work present. `--force` overrides. */
+  | "dirty"
+  /** Deliberately locked. Needs `remove -f -f` or an unlock, so a single `--force` is not enough. */
+  | "locked"
+  /** Anything else — treated as possibly transient and retried. */
+  | "unknown";
+
+export class WorktreeRemovalRefusedError extends Error {
+  readonly refusal: WorktreeRemovalRefusal;
+  readonly worktreePath: string;
+  /** True only for refusals a single `--force` actually clears. */
+  readonly recoverableWithForce: boolean;
+
+  constructor(input: { refusal: WorktreeRemovalRefusal; worktreePath: string; cause?: unknown }) {
+    super(
+      `Refusing to remove worktree (${input.refusal}): ${input.worktreePath}${
+        input.cause instanceof Error ? `\n${input.cause.message}` : ""
+      }`,
+      input.cause instanceof Error ? { cause: input.cause } : undefined,
+    );
+    this.name = "WorktreeRemovalRefusedError";
+    this.refusal = input.refusal;
+    this.worktreePath = input.worktreePath;
+    this.recoverableWithForce = input.refusal === "dirty";
+  }
+}
+
+export function classifyWorktreeRemovalRefusal(error: unknown): WorktreeRemovalRefusal {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/is not a working tree/i.test(message)) return "not_a_worktree";
+  if (/contains modified or untracked files/i.test(message)) return "dirty";
+  if (/locked working tree/i.test(message)) return "locked";
+  return "unknown";
+}
+
 export interface DeletePaseoWorktreeOptions {
   cwd: string | null;
   worktreePath?: string;
@@ -1182,6 +1238,12 @@ export interface DeletePaseoWorktreeOptions {
   worktreesRoot?: string;
   paseoHome?: string;
   worktreesBaseRoot?: string;
+  /**
+   * Defaults to `managed`, which is the behaviour every existing caller relies
+   * on. Callers holding a worktree outside the managed base root must pass
+   * `git-validated` explicitly.
+   */
+  policy?: WorktreeDeletionPolicy;
 }
 
 export async function deletePaseoWorktree({
@@ -1192,6 +1254,7 @@ export async function deletePaseoWorktree({
   worktreesRoot,
   paseoHome,
   worktreesBaseRoot,
+  policy = { kind: "managed" },
 }: DeletePaseoWorktreeOptions): Promise<void> {
   if (!worktreePath && !worktreeSlug) {
     throw new Error("worktreePath or worktreeSlug is required");
@@ -1235,10 +1298,42 @@ export async function deletePaseoWorktree({
     }
   }
 
+  if (policy.kind === "git-validated") {
+    if (!cwd) {
+      throw new Error("cwd is required to remove a worktree with git validation");
+    }
+    await removeWorktreeWithGit({
+      cwd,
+      worktreePath: resolvedWorktree,
+      force: policy.force === true,
+    });
+  } else {
+    await removeWorktreeManaged({ cwd, worktreePath: resolvedWorktree });
+  }
+
   if (cwd) {
     try {
-      await runGitCommand(["worktree", "remove", resolvedWorktree, "--force"], {
-        cwd,
+      await runGitCommand(["worktree", "prune"], { cwd, timeout: 30_000 });
+    } catch {
+      // not critical; git will prune lazily
+    }
+  }
+}
+
+/**
+ * The pre-existing removal, unchanged. Safe only inside Paseo's private
+ * namespace: git's verdict is ignored and the recursive delete runs regardless,
+ * which is what makes archive idempotent when a previous attempt already took
+ * the admin dir but left the working tree behind.
+ */
+async function removeWorktreeManaged(input: {
+  cwd: string | null;
+  worktreePath: string;
+}): Promise<void> {
+  if (input.cwd) {
+    try {
+      await runGitCommand(["worktree", "remove", input.worktreePath, "--force"], {
+        cwd: input.cwd,
         timeout: 120_000,
       });
     } catch {
@@ -1249,15 +1344,55 @@ export async function deletePaseoWorktree({
     }
   }
 
-  await removeDirectoryWithRetries(resolvedWorktree);
+  await removeDirectoryWithRetries(input.worktreePath);
+}
 
-  if (cwd) {
+/**
+ * Removes the worktree through git and lets git's verdict stand. No recursive
+ * delete: when git refuses, the directory is left on disk and the caller
+ * reports the path.
+ *
+ * The retry ladder is the same one the recursive delete uses, but it only
+ * covers transient failures. A classified refusal is git's considered verdict
+ * about the directory's contents, so retrying cannot change it and the error is
+ * raised immediately.
+ */
+async function removeWorktreeWithGit(input: {
+  cwd: string;
+  worktreePath: string;
+  force: boolean;
+}): Promise<void> {
+  const args = ["worktree", "remove", input.worktreePath];
+  if (input.force) {
+    args.push("--force");
+  }
+
+  let lastError: unknown;
+  for (const delay of REMOVE_RETRY_DELAYS_MS) {
+    if (delay > 0) {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, delay));
+    }
     try {
-      await runGitCommand(["worktree", "prune"], { cwd, timeout: 30_000 });
-    } catch {
-      // not critical; git will prune lazily
+      await runGitCommand(args, { cwd: input.cwd, timeout: 120_000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      const refusal = classifyWorktreeRemovalRefusal(error);
+      if (refusal !== "unknown") {
+        throw new WorktreeRemovalRefusedError({
+          refusal,
+          worktreePath: input.worktreePath,
+          cause: error,
+        });
+      }
     }
   }
+
+  throw new WorktreeRemovalRefusedError({
+    refusal: "unknown",
+    worktreePath: input.worktreePath,
+    cause: lastError,
+  });
 }
 
 export async function rollbackCreatedPaseoWorktree(
@@ -1293,14 +1428,16 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
+/** Backoff for filesystem/git contention: a locked file, a watcher, an open handle. */
+const REMOVE_RETRY_DELAYS_MS = [0, 100, 300, 700, 1500];
+
 async function removeDirectoryWithRetries(path: string): Promise<void> {
   if (!(await pathExists(path))) {
     return;
   }
 
-  const delaysMs = [0, 100, 300, 700, 1500];
   let lastError: unknown = null;
-  for (const delay of delaysMs) {
+  for (const delay of REMOVE_RETRY_DELAYS_MS) {
     if (delay > 0) {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, delay));
     }
