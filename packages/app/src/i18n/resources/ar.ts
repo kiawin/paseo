@@ -1802,6 +1802,16 @@ export const ar: TranslationResources = {
       tooltip: "تصفح ملفات مساحة العمل",
       chooseFile: "اختر ملفًا",
     },
+    artifacts: {
+      label: "العناصر",
+      subtitle: "نشرها الوكلاء",
+      tooltip: "مستندات نشرها الوكلاء في هذا المشروع",
+      emptyTitle: "لا توجد عناصر في هذا المشروع",
+      emptyDescription: "ينشرها الوكلاء باستخدام publish_artifact.",
+      loadFailed: "تعذر تحميل العناصر",
+      hostTooOld: "حدّث المضيف لعرض العناصر.",
+      openOn: "فتح على {{host}}",
+    },
     pullRequest: {
       label: "طلب السحب",
       subtitle: "تفاصيل طلب السحب",

@@ -1833,6 +1833,16 @@ export const ru: TranslationResources = {
       tooltip: "Просмотр файлов рабочего пространства",
       chooseFile: "Выберите файл",
     },
+    artifacts: {
+      label: "Артефакты",
+      subtitle: "Опубликованы агентами",
+      tooltip: "Документы, опубликованные агентами в этом проекте",
+      emptyTitle: "В этом проекте нет артефактов",
+      emptyDescription: "Агенты публикуют их через publish_artifact.",
+      loadFailed: "Не удалось загрузить артефакты",
+      hostTooOld: "Обновите хост, чтобы просматривать артефакты.",
+      openOn: "Открыть на {{host}}",
+    },
     pullRequest: {
       label: "PR",
       subtitle: "Сведения о PR",

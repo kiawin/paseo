@@ -1852,6 +1852,16 @@ export const fr: TranslationResources = {
       tooltip: "Parcourir les fichiers de l’espace de travail",
       chooseFile: "Choisissez un fichier",
     },
+    artifacts: {
+      label: "Artefacts",
+      subtitle: "Publiés par les agents",
+      tooltip: "Documents publiés par les agents dans ce projet",
+      emptyTitle: "Aucun artefact dans ce projet",
+      emptyDescription: "Les agents les publient avec publish_artifact.",
+      loadFailed: "Échec du chargement des artefacts",
+      hostTooOld: "Mettez à jour l'hôte pour voir les artefacts.",
+      openOn: "Ouvrir sur {{host}}",
+    },
     pullRequest: {
       label: "Demande de fusion",
       subtitle: "Détails de la demande de fusion",

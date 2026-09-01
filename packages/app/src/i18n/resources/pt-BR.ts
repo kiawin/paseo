@@ -1834,6 +1834,16 @@ export const ptBR: TranslationResources = {
       tooltip: "Explorar arquivos do espaço de trabalho",
       chooseFile: "Escolha um arquivo",
     },
+    artifacts: {
+      label: "Artefatos",
+      subtitle: "Publicados por agentes",
+      tooltip: "Documentos que os agentes publicaram neste projeto",
+      emptyTitle: "Nenhum artefato neste projeto",
+      emptyDescription: "Os agentes os publicam com publish_artifact.",
+      loadFailed: "Falha ao carregar os artefatos",
+      hostTooOld: "Atualize o host para ver artefatos.",
+      openOn: "Abrir em {{host}}",
+    },
     pullRequest: {
       label: "Pull request",
       subtitle: "Detalhes do pull request",

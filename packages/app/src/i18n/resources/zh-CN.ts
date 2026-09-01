@@ -1781,6 +1781,16 @@ export const zhCN: TranslationResources = {
       tooltip: "浏览工作区文件",
       chooseFile: "选择文件",
     },
+    artifacts: {
+      label: "制品",
+      subtitle: "由智能体发布",
+      tooltip: "智能体在此项目中发布的文档",
+      emptyTitle: "此项目暂无制品",
+      emptyDescription: "智能体通过 publish_artifact 发布。",
+      loadFailed: "加载制品失败",
+      hostTooOld: "请更新主机以查看制品。",
+      openOn: "在 {{host}} 上打开",
+    },
     pullRequest: {
       label: "拉取请求",
       subtitle: "拉取请求详情",

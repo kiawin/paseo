@@ -1,7 +1,14 @@
-export type ExplorerTab = "changes" | "files" | "pr";
+export type ExplorerTab = "changes" | "files" | "pr" | "artifacts";
+
+const EXPLORER_TABS: ReadonlySet<string> = new Set<ExplorerTab>([
+  "changes",
+  "files",
+  "pr",
+  "artifacts",
+]);
 
 export function isExplorerTab(value: unknown): value is ExplorerTab {
-  return value === "changes" || value === "files" || value === "pr";
+  return typeof value === "string" && EXPLORER_TABS.has(value);
 }
 
 export function buildExplorerCheckoutKey(serverId: string, cwd: string): string | null {
