@@ -295,7 +295,18 @@ export class FileBackedProjectRegistry
     projectId: string;
     project: PersistedProjectRecord | null;
   }): Promise<void> {
-    await Promise.all([...this.mutationListeners].map((listener) => listener(mutation)));
+    await Promise.all(
+      [...this.mutationListeners].map(async (listener) => {
+        try {
+          await listener(mutation);
+        } catch (error) {
+          // Matches the workspace registry: publication runs after the registry commit, so a
+          // failing listener must not report failure for a removal that already happened.
+          // Cascades reached from here have to be idempotent and retryable.
+          this.logger.error({ err: error, mutation }, "Project mutation listener failed");
+        }
+      }),
+    );
   }
 }
 
