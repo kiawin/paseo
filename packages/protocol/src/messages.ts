@@ -3657,6 +3657,10 @@ export const KnownStatusPayloadSchema = z.discriminatedUnion("status", [
 
 export type KnownStatusPayload = z.infer<typeof KnownStatusPayloadSchema>;
 
+// COMPAT(artifactMessage): superseded by the artifact.* RPCs, remove after 2027-09-01.
+// Never had a producer in this repo, but the protocol forbids narrowing, so the parser stays
+// until we can establish no shipped peer emits it. The whole document inline in a JSON message
+// is the shape the binary transfer channel exists to avoid — do not extend this.
 export const ArtifactMessageSchema = z.object({
   type: z.literal("artifact"),
   payload: z.object({
