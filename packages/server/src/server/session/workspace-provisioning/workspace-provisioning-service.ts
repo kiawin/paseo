@@ -1,3 +1,4 @@
+import { classifyWorktreePlacementByPath } from "../../worktree/ownership.js";
 import { basename, resolve } from "node:path";
 import type { Logger } from "pino";
 import {
@@ -230,6 +231,7 @@ export function createWorkspaceProvisioningService(deps: {
         branch: input.branch,
         baseBranch: input.baseBranch,
         mainRepoRoot: repoRoot,
+        worktreePlacement: classifyWorktreePlacementByPath(worktreeRoot),
       }),
       title: input.title,
       createdAt: timestamp,

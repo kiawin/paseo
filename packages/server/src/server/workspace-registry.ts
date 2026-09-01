@@ -74,6 +74,17 @@ const PersistedWorkspaceRecordSchema = z.object({
     .optional()
     .transform((value) => value ?? null),
   isPaseoOwnedWorktree: z.boolean().default(false),
+  // How this worktree's directory may be removed, fixed when Paseo created it.
+  // COMPAT(projectWorktreeLocation): added in v0.8.0, remove optional after 2027-09-02.
+  //
+  // Never re-derive this from the project's current worktree location: mode is
+  // mutable while placement is not, so a project switched to "managed" would
+  // otherwise point the forced recursive delete at a shared-namespace path.
+  //
+  // Absence does NOT imply "managed". A daemon predating this field strips it on
+  // any re-parse, so readers fall back to the worktree's path instead — see
+  // resolveWorktreeDeletionPolicy.
+  worktreePlacement: z.enum(["managed", "external"]).nullable().optional().default(null),
   mainRepoRoot: z.string().nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -501,6 +512,7 @@ export function createPersistedWorkspaceRecord(input: {
   worktreeRoot?: string | null;
   baseBranch?: string | null;
   isPaseoOwnedWorktree?: boolean;
+  worktreePlacement?: "managed" | "external" | null;
   mainRepoRoot?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -516,6 +528,7 @@ export function createPersistedWorkspaceRecord(input: {
     worktreeRoot: input.worktreeRoot ?? null,
     baseBranch: input.baseBranch ?? null,
     isPaseoOwnedWorktree: input.isPaseoOwnedWorktree ?? false,
+    worktreePlacement: input.worktreePlacement ?? null,
     mainRepoRoot: input.mainRepoRoot ?? null,
     archivedAt: input.archivedAt ?? null,
     autoArchivedChangeRequestUrl: input.autoArchivedChangeRequestUrl ?? null,

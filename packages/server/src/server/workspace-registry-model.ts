@@ -48,6 +48,7 @@ export type PersistedWorkspacePlacement = Pick<
   | "worktreeRoot"
   | "baseBranch"
   | "isPaseoOwnedWorktree"
+  | "worktreePlacement"
   | "mainRepoRoot"
 >;
 
@@ -69,6 +70,8 @@ export type InitialWorkspacePlacementInput =
       branch: string | null;
       baseBranch: string | null;
       mainRepoRoot: string;
+      /** Fixed at creation. "external" means the worktree is outside Paseo's managed root. */
+      worktreePlacement: "managed" | "external";
     };
 
 export interface WorkspacePlacementUpdate {
@@ -89,6 +92,7 @@ export function initialWorkspacePlacement(
       worktreeRoot: input.worktreeRoot,
       baseBranch: input.baseBranch,
       isPaseoOwnedWorktree: true,
+      worktreePlacement: input.worktreePlacement,
       mainRepoRoot: input.mainRepoRoot,
     };
   }
@@ -102,6 +106,9 @@ export function initialWorkspacePlacement(
     worktreeRoot: input.checkout.isGit ? (input.checkout.worktreeRoot ?? input.cwd) : null,
     baseBranch: null,
     isPaseoOwnedWorktree: input.checkout.isGit && input.checkout.isPaseoOwnedWorktree,
+    // Discovered rather than created by Paseo, so there is no creation-time
+    // placement to record. Deletion policy falls back to the path.
+    worktreePlacement: null,
     mainRepoRoot: input.checkout.isGit ? input.checkout.mainRepoRoot : null,
   };
 }

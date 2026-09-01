@@ -3769,12 +3769,28 @@ const x = 1;
   });
 
   describe("isPaseoWorktreePath", () => {
-    it("matches Unix .paseo/worktrees/ paths", () => {
-      expect(isPaseoWorktreePath("/home/user/.paseo/worktrees/feature")).toBe(true);
+    it("matches worktrees under the default PASEO_HOME", () => {
+      const defaultHome = process.env.PASEO_HOME;
+      expect(defaultHome).toBeTruthy();
+      expect(isPaseoWorktreePath(join(defaultHome!, "worktrees", "project", "feature"))).toBe(true);
     });
 
-    it("matches Windows .paseo\\worktrees\\ paths", () => {
-      expect(isPaseoWorktreePath("C:\\Users\\dev\\.paseo\\worktrees\\feature")).toBe(true);
+    // The path is only Paseo's if it is under the base root this daemon actually
+    // resolves. A literal ".paseo/worktrees" segment proves nothing: a daemon
+    // with PASEO_HOME=/var/lib/paseo owns no such path, and one pointed at
+    // /srv/paseo-wt owns paths that contain neither segment.
+    it("rejects a .paseo/worktrees path belonging to a different home", () => {
+      expect(isPaseoWorktreePath("/home/someone-else/.paseo/worktrees/feature")).toBe(false);
+    });
+
+    it("matches a worktrees root with no 'worktrees' segment in it", () => {
+      const worktreesRoot = process.platform === "win32" ? "C:\\srv\\pw" : "/srv/pw";
+      const worktreePath =
+        process.platform === "win32"
+          ? win32.join(worktreesRoot, "project", "feature")
+          : `${worktreesRoot}/project/feature`;
+
+      expect(isPaseoWorktreePath(worktreePath, { worktreesRoot })).toBe(true);
     });
 
     it("matches worktrees under a custom PASEO_HOME", () => {
@@ -3791,7 +3807,7 @@ const x = 1;
       ).toBe(true);
     });
 
-    it("rejects paths without .paseo/worktrees segment", () => {
+    it("rejects paths outside the worktrees base root", () => {
       expect(isPaseoWorktreePath("/home/user/repo")).toBe(false);
       expect(isPaseoWorktreePath("C:\\Users\\dev\\repo")).toBe(false);
     });
