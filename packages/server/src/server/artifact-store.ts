@@ -144,6 +144,7 @@ export interface ArtifactLimits {
 export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
   private readonly root: string;
   private readonly limits: ArtifactLimits;
+  private readonly changeListeners = new Set<(projectId: string) => void>();
 
   constructor(root: string, logger: Logger, limits?: Partial<ArtifactLimits>) {
     super({
@@ -159,6 +160,25 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
       maxPerProject: limits?.maxPerProject ?? ARTIFACT_MAX_PER_PROJECT,
       maxBytesPerProject: limits?.maxBytesPerProject ?? ARTIFACT_MAX_BYTES_PER_PROJECT,
     };
+  }
+
+  /**
+   * Fired whenever a project's artifact list changes. Publishes arrive from the agent runtime,
+   * which has no session of its own, so the daemon broadcasts the invalidation from here.
+   */
+  subscribeToChanges(listener: (projectId: string) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  private notifyChanged(projectId: string): void {
+    for (const listener of this.changeListeners) {
+      try {
+        listener(projectId);
+      } catch (error) {
+        this.logger.error({ err: error, projectId }, "Artifact change listener failed");
+      }
+    }
   }
 
   override async initialize(): Promise<void> {
@@ -239,18 +259,22 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
     for (const artifactId of result.evictedArtifactIds) {
       await this.unlinkContent(input.projectId, artifactId);
     }
+    this.notifyChanged(input.projectId);
     return result;
   }
 
   /** Leaves `updatedAt` alone: pinning is not a content change and must not reorder the list. */
   async setPinned(artifactId: string, pinned: boolean): Promise<PersistedArtifactRecord | null> {
-    return this.update(artifactId, (record) => ({ ...record, pinned }));
+    const record = await this.update(artifactId, (next) => ({ ...next, pinned }));
+    if (record) this.notifyChanged(record.projectId);
+    return record;
   }
 
   async delete(artifactId: string): Promise<boolean> {
     const record = await this.removeIfPresent(artifactId);
     if (!record) return false;
     await this.unlinkContent(record.projectId, record.artifactId);
+    this.notifyChanged(record.projectId);
     return true;
   }
 
@@ -265,6 +289,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
       await this.remove(record.artifactId);
     }
     await fs.rm(path.join(this.root, projectId), { recursive: true, force: true });
+    if (records.length > 0) this.notifyChanged(projectId);
   }
 
   contentPath(record: Pick<PersistedArtifactRecord, "projectId" | "artifactId">): string {

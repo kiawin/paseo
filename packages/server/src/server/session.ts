@@ -167,6 +167,8 @@ import {
 import { ScheduleSession } from "./session/schedule/schedule-session.js";
 import { ProviderCatalogSession } from "./session/provider/provider-catalog-session.js";
 import { WorkspaceFilesSession } from "./session/files/workspace-files-session.js";
+import { ArtifactsSession } from "./session/artifacts/artifacts-session.js";
+import type { ArtifactStore } from "./artifact-store.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
 import { ProjectConfigSession } from "./session/project-config/project-config-session.js";
 import { DaemonSession, type DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
@@ -456,6 +458,7 @@ export interface SessionOptions {
   workspaceRegistry: WorkspaceRegistry;
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
+  artifactStore?: ArtifactStore;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -732,6 +735,7 @@ export class Session {
   private readonly scheduleSession: ScheduleSession;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
+  private readonly artifactsSession: ArtifactsSession;
   private readonly agentConfigSession: AgentConfigSession;
   private readonly projectConfigSession: ProjectConfigSession;
   private readonly daemonSession: DaemonSession;
@@ -763,6 +767,7 @@ export class Session {
       workspaceRegistry,
       directorySync,
       workspaceLabelService,
+      artifactStore,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -830,6 +835,7 @@ export class Session {
       paseoHome,
       logger: this.sessionLogger,
     });
+    this.artifactsSession = this.createArtifactsSession(artifactStore);
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry;
@@ -1943,28 +1949,44 @@ export class Session {
     this.emit(message);
   }
 
+  /**
+   * Ordered until one claims the message. A list rather than a `??` chain: the chain's
+   * branch count is the whole budget for one function, so every new domain pushed it over the
+   * complexity ceiling and had to be smuggled into an unrelated dispatcher.
+   */
+  private readonly inboundDispatchers: ReadonlyArray<
+    (msg: SessionInboundMessage, source?: object) => Promise<void> | undefined
+  > = [
+    (msg) => this.dispatchVoiceAndControlMessage(msg),
+    (msg, source) => this.dispatchAgentRewindMessage(msg, source),
+    (msg) => this.dispatchAgentRelationshipMessage(msg),
+    (msg, source) => this.dispatchAgentTimelineMessage(msg, source),
+    (msg) => this.dispatchHubExecutionMessage(msg),
+    (msg) => this.dispatchAgentLifecycleMessage(msg),
+    (msg) => this.dispatchAgentConfigMessage(msg),
+    (msg) => this.dispatchCheckoutMessage(msg),
+    (msg) => this.dispatchWorkspaceRecoveryMessage(msg),
+    (msg) => this.dispatchWorkspaceLabelMessage(msg),
+    (msg) => this.dispatchWorkspaceAndProjectMessage(msg),
+    (msg, source) => this.dispatchWorkspaceFileMessage(msg, source),
+    (msg, source) => this.dispatchArtifactMessage(msg, source),
+    (msg) => this.dispatchProviderMessage(msg),
+    (msg) => this.dispatchOrchestrationSkillsMessage(msg),
+    (msg) => this.dispatchPluginDirectoryMessage(msg),
+    (msg) => this.dispatchPluginMessage(msg),
+    (msg) => this.dispatchTerminalMessage(msg),
+    (msg) => this.dispatchScheduleMessage(msg),
+    (msg) => this.dispatchMiscMessage(msg),
+  ];
+
   private async dispatchInboundMessage(msg: SessionInboundMessage, source?: object): Promise<void> {
-    const promise =
-      this.dispatchVoiceAndControlMessage(msg) ??
-      this.dispatchAgentRewindMessage(msg, source) ??
-      this.dispatchAgentRelationshipMessage(msg) ??
-      this.dispatchAgentTimelineMessage(msg, source) ??
-      this.dispatchHubExecutionMessage(msg) ??
-      this.dispatchAgentLifecycleMessage(msg) ??
-      this.dispatchAgentConfigMessage(msg) ??
-      this.dispatchCheckoutMessage(msg) ??
-      this.dispatchWorkspaceRecoveryMessage(msg) ??
-      this.dispatchWorkspaceLabelMessage(msg) ??
-      this.dispatchWorkspaceAndProjectMessage(msg) ??
-      this.dispatchWorkspaceFileMessage(msg, source) ??
-      this.dispatchProviderMessage(msg) ??
-      this.dispatchOrchestrationSkillsMessage(msg) ??
-      this.dispatchPluginDirectoryMessage(msg) ??
-      this.dispatchPluginMessage(msg) ??
-      this.dispatchTerminalMessage(msg) ??
-      this.dispatchScheduleMessage(msg) ??
-      this.dispatchMiscMessage(msg);
-    if (promise) await promise;
+    for (const dispatch of this.inboundDispatchers) {
+      const promise = dispatch(msg, source);
+      if (promise) {
+        await promise;
+        return;
+      }
+    }
   }
 
   private dispatchOrchestrationSkillsMessage(
@@ -2528,6 +2550,36 @@ export class Session {
     }
   }
 
+  private createArtifactsSession(artifactStore: ArtifactStore | undefined): ArtifactsSession {
+    return new ArtifactsSession(
+      {
+        emit: (msg, source) => this.emitForSource(msg, source),
+        emitBinary: (frame, source) => this.emitBinaryForFileTransfer(frame, source),
+        hasBinaryChannel: () => this.onBinaryMessage !== null,
+      },
+      artifactStore ?? null,
+      this.sessionLogger,
+    );
+  }
+
+  private dispatchArtifactMessage(
+    msg: SessionInboundMessage,
+    source?: object,
+  ): Promise<void> | undefined {
+    switch (msg.type) {
+      case "artifact.list.request":
+        return this.artifactsSession.handleListRequest(msg, source);
+      case "artifact.entry.download.request":
+        return this.artifactsSession.handleEntryDownloadRequest(msg, source);
+      case "artifact.delete.request":
+        return this.artifactsSession.handleDeleteRequest(msg, source);
+      case "artifact.pin.set.request":
+        return this.artifactsSession.handlePinSetRequest(msg, source);
+      default:
+        return undefined;
+    }
+  }
+
   private dispatchWorkspaceFileMessage(
     msg: SessionInboundMessage,
     source?: object,
@@ -2555,10 +2607,14 @@ export class Session {
       case "fs.entry.upload.request":
         return this.workspaceFilesSession.handleEntryUploadRequest(msg, source);
       case "fs.transfer.ack":
+        // requestIds are unique per session and both subsystems ignore ids they do not own,
+        // so flow control does not need to know which kind of transfer it is pacing.
         this.workspaceFilesSession.handleFileTransferAck(msg);
+        this.artifactsSession.handleFileTransferAck(msg);
         return undefined;
       case "fs.transfer.cancel":
         this.workspaceFilesSession.handleFileTransferCancel(msg);
+        this.artifactsSession.handleFileTransferCancel(msg);
         return undefined;
       case "project_icon_request":
         return this.workspaceFilesSession.handleProjectIconRequest(msg);
@@ -7630,6 +7686,7 @@ export class Session {
 
     this.workspaceGitObserver.dispose();
     this.workspaceFilesSession.dispose();
+    this.artifactsSession.dispose();
   }
 }
 

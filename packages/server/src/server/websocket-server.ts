@@ -100,6 +100,7 @@ import type { DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 import { DirectorySyncService } from "./directory-sync/index.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
+import type { ArtifactStore } from "./artifact-store.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -549,6 +550,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly workspaceLabelService: WorkspaceLabelService | null;
+  private readonly artifactStore: ArtifactStore | null;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -648,6 +650,7 @@ export class VoiceAssistantWebSocketServer {
     pluginRuntime?: SessionOptions["pluginRuntime"],
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
+    artifactStore?: ArtifactStore,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -669,6 +672,8 @@ export class VoiceAssistantWebSocketServer {
     this.projectRegistry = projectRegistry ?? createNoopProjectRegistry();
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
+    this.artifactStore = artifactStore ?? null;
+    this.subscribeToArtifactChanges();
     const requiredServices = requireWebSocketServices({
       scheduleService,
       checkoutDiffManager,
@@ -917,6 +922,16 @@ export class VoiceAssistantWebSocketServer {
     }
 
     await this.attachSocket(ws, request);
+  }
+
+  /**
+   * Publishes come from the agent runtime, which owns no session, so the list invalidation is
+   * broadcast from here rather than emitted by the session that caused it.
+   */
+  private subscribeToArtifactChanges(): void {
+    this.artifactStore?.subscribeToChanges((projectId) => {
+      this.broadcast(wrapSessionMessage({ type: "artifact.changed", payload: { projectId } }));
+    });
   }
 
   public broadcast(message: WSOutboundMessage): void {
@@ -1412,6 +1427,7 @@ export class VoiceAssistantWebSocketServer {
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
+      artifactStore: this.artifactStore ?? undefined,
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -1634,6 +1650,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
         // COMPAT(workspaceFileTransfer): added in v0.6.2, remove gate after 2027-08-24.
         workspaceFileTransfer: true,
+        // COMPAT(artifacts): added in v0.7.x, remove gate after 2028-03-01.
+        ...(this.artifactStore ? { artifacts: true } : {}),
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
         providersSnapshot: true,
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
