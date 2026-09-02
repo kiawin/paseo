@@ -3,6 +3,7 @@ export {
   AssistantMarkdownCodeLink,
   AssistantMarkdownLink,
 } from "./link";
+export { AssistantLinkContextMenu } from "./link-context-menu";
 export { type AssistantLinkPress, useAssistantLinkPress } from "./link-press-context";
 export {
   classifyAssistantFileLink,

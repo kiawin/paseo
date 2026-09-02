@@ -28,6 +28,7 @@ interface MarkdownTextSpanProps {
   // recognizer dispatches to. The link's handler reaches these leaf spans via
   // AssistantLinkPressProvider (see assistant-file-links/link-press-context).
   onPress?: TextProps["onPress"];
+  onLongPress?: TextProps["onLongPress"];
   accessibilityRole?: TextProps["accessibilityRole"];
 }
 
@@ -39,6 +40,7 @@ export function MarkdownTextSpan({
   style,
   children,
   onPress,
+  onLongPress,
   accessibilityRole,
 }: MarkdownTextSpanProps) {
   const plainStyle = useMemo(() => resolvePlainMarkdownTextStyle(style), [style]);
@@ -52,6 +54,7 @@ export function MarkdownTextSpan({
         selectable={false}
         style={plainStyle}
         onPress={onPress}
+        onLongPress={onLongPress}
         accessibilityRole={accessibilityRole}
       >
         {children}
@@ -65,6 +68,7 @@ export function MarkdownTextSpan({
       selectable
       style={plainStyle}
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole={accessibilityRole}
     >
       {children}
