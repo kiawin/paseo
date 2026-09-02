@@ -403,6 +403,16 @@ export const en = {
         unarchiveAction: "Unarchive",
         restoringTitle: "Restoring workspace",
         restoringAction: "Restoring...",
+        removeWorktreeAction: "Remove worktree",
+        removeWorktreeInProgress: "Removing...",
+        removeWorktreeTitle: "Remove worktree?",
+        removeWorktreeMessage:
+          "Deletes {{path}} and everything in it, including ignored files such as node_modules and .env. Git refuses if there is uncommitted work.",
+        removeWorktreeConfirm: "Remove",
+        removeWorktreeDone: "Worktree removed",
+        removeWorktreeRefused: "Git would not remove the worktree",
+        removeWorktreeTerminal:
+          "Git no longer recognises this directory, so Paseo cannot remove it. Remove it yourself:",
         unavailableTitle: "Workspace unavailable",
         checkFailedTitle: "Couldn't check workspace",
       },

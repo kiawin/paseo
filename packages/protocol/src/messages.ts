@@ -2071,6 +2071,11 @@ export const WorkspaceRecoveryStateSchema = z.discriminatedUnion("kind", [
     workspaceName: z.string(),
     action: z.string(),
     branch: z.string().nullable(),
+    // COMPAT(projectWorktreeLocation): added in v0.8.0, remove optional after 2027-09-02.
+    // Present only when the worktree sits outside Paseo's managed root, is
+    // still on disk, and archive therefore left it there. Absent means there is
+    // nothing for the client to offer removing.
+    removableWorktreePath: z.string().nullable().optional(),
   }),
   z.object({
     kind: z.literal("unavailable"),

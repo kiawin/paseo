@@ -409,6 +409,16 @@ export const fr: TranslationResources = {
         unarchiveAction: "Désarchiver",
         restoringTitle: "Restauration de l'espace de travail",
         restoringAction: "Restauration...",
+        removeWorktreeAction: "Supprimer le worktree",
+        removeWorktreeInProgress: "Suppression...",
+        removeWorktreeTitle: "Supprimer le worktree ?",
+        removeWorktreeMessage:
+          "Supprime {{path}} et tout son contenu, y compris les fichiers ignorés comme node_modules et .env. Git refuse s'il y a des modifications non validées.",
+        removeWorktreeConfirm: "Supprimer",
+        removeWorktreeDone: "Worktree supprimé",
+        removeWorktreeRefused: "Git n'a pas supprimé le worktree",
+        removeWorktreeTerminal:
+          "Git ne reconnaît plus ce répertoire, Paseo ne peut donc pas le supprimer. Supprimez-le vous-même :",
         unavailableTitle: "Espace de travail indisponible",
         checkFailedTitle: "Impossible de vérifier l'espace de travail",
       },

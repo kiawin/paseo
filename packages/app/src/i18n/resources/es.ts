@@ -409,6 +409,16 @@ export const es: TranslationResources = {
         unarchiveAction: "Desarchivar",
         restoringTitle: "Restaurando espacio de trabajo",
         restoringAction: "Restaurando...",
+        removeWorktreeAction: "Eliminar worktree",
+        removeWorktreeInProgress: "Eliminando...",
+        removeWorktreeTitle: "¿Eliminar worktree?",
+        removeWorktreeMessage:
+          "Elimina {{path}} y todo lo que contiene, incluidos archivos ignorados como node_modules y .env. Git se niega si hay cambios sin confirmar.",
+        removeWorktreeConfirm: "Eliminar",
+        removeWorktreeDone: "Worktree eliminado",
+        removeWorktreeRefused: "Git no pudo eliminar el worktree",
+        removeWorktreeTerminal:
+          "Git ya no reconoce este directorio, así que Paseo no puede eliminarlo. Elimínalo tú:",
         unavailableTitle: "Espacio de trabajo no disponible",
         checkFailedTitle: "No se pudo comprobar el espacio de trabajo",
       },

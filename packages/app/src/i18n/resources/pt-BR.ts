@@ -409,6 +409,16 @@ export const ptBR: TranslationResources = {
         unarchiveAction: "Desarquivar",
         restoringTitle: "Restaurando workspace",
         restoringAction: "Restaurando...",
+        removeWorktreeAction: "Remover worktree",
+        removeWorktreeInProgress: "Removendo...",
+        removeWorktreeTitle: "Remover worktree?",
+        removeWorktreeMessage:
+          "Exclui {{path}} e tudo o que há nele, incluindo arquivos ignorados como node_modules e .env. O Git recusa se houver alterações não commitadas.",
+        removeWorktreeConfirm: "Remover",
+        removeWorktreeDone: "Worktree removido",
+        removeWorktreeRefused: "O Git não removeu o worktree",
+        removeWorktreeTerminal:
+          "O Git não reconhece mais este diretório, então o Paseo não pode removê-lo. Remova-o você mesmo:",
         unavailableTitle: "Workspace indisponível",
         checkFailedTitle: "Não foi possível verificar o workspace",
       },

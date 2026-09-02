@@ -405,6 +405,16 @@ export const ar: TranslationResources = {
         unarchiveAction: "إلغاء الأرشفة",
         restoringTitle: "جارٍ استعادة مساحة العمل",
         restoringAction: "جارٍ الاستعادة...",
+        removeWorktreeAction: "إزالة شجرة العمل",
+        removeWorktreeInProgress: "جارٍ الإزالة...",
+        removeWorktreeTitle: "إزالة شجرة العمل؟",
+        removeWorktreeMessage:
+          "يحذف {{path}} وكل ما بداخله، بما في ذلك الملفات المتجاهَلة مثل node_modules و .env. سيرفض git إذا كانت هناك تغييرات غير مُلتزَمة.",
+        removeWorktreeConfirm: "إزالة",
+        removeWorktreeDone: "تمت إزالة شجرة العمل",
+        removeWorktreeRefused: "لم يُزل git شجرة العمل",
+        removeWorktreeTerminal:
+          "لم يعد git يتعرف على هذا الدليل، لذا لا يستطيع Paseo إزالته. أزله بنفسك:",
         unavailableTitle: "مساحة العمل غير متاحة",
         checkFailedTitle: "تعذر التحقق من مساحة العمل",
       },

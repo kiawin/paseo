@@ -409,6 +409,16 @@ export const ja: TranslationResources = {
         unarchiveAction: "アーカイブを解除",
         restoringTitle: "ワークスペースを復元中",
         restoringAction: "復元中...",
+        removeWorktreeAction: "ワークツリーを削除",
+        removeWorktreeInProgress: "削除中...",
+        removeWorktreeTitle: "ワークツリーを削除しますか？",
+        removeWorktreeMessage:
+          "{{path}} とその中身をすべて削除します。node_modules や .env などの無視されたファイルも含みます。未コミットの変更がある場合、git は拒否します。",
+        removeWorktreeConfirm: "削除",
+        removeWorktreeDone: "ワークツリーを削除しました",
+        removeWorktreeRefused: "git がワークツリーを削除しませんでした",
+        removeWorktreeTerminal:
+          "git がこのディレクトリを認識しなくなったため、Paseo からは削除できません。手動で削除してください:",
         unavailableTitle: "ワークスペースを利用できません",
         checkFailedTitle: "ワークスペースを確認できませんでした",
       },

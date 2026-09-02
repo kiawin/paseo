@@ -408,6 +408,16 @@ export const ru: TranslationResources = {
         unarchiveAction: "Разархивировать",
         restoringTitle: "Восстановление рабочего пространства",
         restoringAction: "Восстановление...",
+        removeWorktreeAction: "Удалить worktree",
+        removeWorktreeInProgress: "Удаление...",
+        removeWorktreeTitle: "Удалить worktree?",
+        removeWorktreeMessage:
+          "Удаляет {{path}} и всё его содержимое, включая игнорируемые файлы вроде node_modules и .env. Git откажет, если есть незакоммиченные изменения.",
+        removeWorktreeConfirm: "Удалить",
+        removeWorktreeDone: "Worktree удалён",
+        removeWorktreeRefused: "Git не удалил worktree",
+        removeWorktreeTerminal:
+          "Git больше не распознаёт этот каталог, поэтому Paseo не может его удалить. Удалите его сами:",
         unavailableTitle: "Рабочая область недоступна",
         checkFailedTitle: "Не удалось проверить рабочее пространство",
       },
