@@ -22,6 +22,8 @@ export interface AssistantFileLinkResolverConfig {
   serverId?: string;
   workspaceRoot?: string;
   onOpenWorkspaceFile?: (target: InlinePathTarget, disposition: OpenFileDisposition) => void;
+  /** Opens an external URL as a browser tab in this workspace. Absent where that is impossible. */
+  onOpenUrlInBrowserTab?: ((url: string) => void) | null;
   toast?: ToastApi | null;
 }
 
@@ -42,6 +44,7 @@ export function AssistantFileLinkResolverProvider({
   serverId,
   workspaceRoot,
   onOpenWorkspaceFile,
+  onOpenUrlInBrowserTab,
   toast,
   children,
 }: AssistantFileLinkResolverProviderProps) {
@@ -50,9 +53,17 @@ export function AssistantFileLinkResolverProvider({
     serverId,
     workspaceRoot,
     onOpenWorkspaceFile,
+    onOpenUrlInBrowserTab,
     toast,
   });
-  configRef.current = { client, serverId, workspaceRoot, onOpenWorkspaceFile, toast };
+  configRef.current = {
+    client,
+    serverId,
+    workspaceRoot,
+    onOpenWorkspaceFile,
+    onOpenUrlInBrowserTab,
+    toast,
+  };
 
   const getDirectorySuggestions = useCallback<GetDirectorySuggestions>(async (input) => {
     const activeClient = configRef.current.client;
