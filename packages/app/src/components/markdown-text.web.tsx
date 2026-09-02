@@ -13,6 +13,7 @@ interface MarkdownTextSpanProps {
   // are accepted for prop-shape parity with the native variants and forwarded
   // harmlessly.
   onPress?: TextProps["onPress"];
+  onLongPress?: TextProps["onLongPress"];
   accessibilityRole?: TextProps["accessibilityRole"];
 }
 
@@ -27,6 +28,7 @@ export function MarkdownTextSpan({
   copyTag,
   children,
   onPress,
+  onLongPress,
   accessibilityRole,
 }: MarkdownTextSpanProps) {
   const dataSet = useMemo(() => {
@@ -44,6 +46,7 @@ export function MarkdownTextSpan({
       dataSet={dataSet}
       style={style}
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole={accessibilityRole}
     >
       {children}

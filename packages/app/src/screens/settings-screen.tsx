@@ -56,6 +56,7 @@ import {
   useAppSettings,
   useSettings,
   parseTerminalScrollbackLines,
+  type AgentLinkBehavior,
   type AppSettings,
   type SendBehavior,
   type ServiceUrlBehavior,
@@ -276,6 +277,16 @@ function getActiveLocale(language: string | undefined): SupportedLocale {
 
 const SERVICE_URL_BEHAVIOR_VALUES: ServiceUrlBehavior[] = ["ask", "in-app", "external"];
 
+function getAgentLinkBehaviorLabel(t: TFunction, value: AgentLinkBehavior): string {
+  const labels: Record<AgentLinkBehavior, string> = {
+    "in-app": t("settings.general.agentLinks.options.inApp"),
+    external: t("settings.general.agentLinks.options.external"),
+  };
+  return labels[value];
+}
+
+const AGENT_LINK_BEHAVIOR_VALUES: AgentLinkBehavior[] = ["external", "in-app"];
+
 // ---------------------------------------------------------------------------
 // Section components
 // ---------------------------------------------------------------------------
@@ -285,6 +296,7 @@ interface GeneralSectionProps {
   isDesktopApp: boolean;
   handleSendBehaviorChange: (behavior: SendBehavior) => void;
   handleServiceUrlBehaviorChange: (behavior: ServiceUrlBehavior) => void;
+  handleAgentLinkBehaviorChange: (behavior: AgentLinkBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
   handleTerminalScrollbackLinesChange: (lines: number) => void;
 }
@@ -294,6 +306,13 @@ interface ServiceUrlBehaviorMenuItemProps {
   label: string;
   selected: boolean;
   onChange: (value: ServiceUrlBehavior) => void;
+}
+
+interface AgentLinkBehaviorMenuItemProps {
+  value: AgentLinkBehavior;
+  label: string;
+  selected: boolean;
+  onChange: (value: AgentLinkBehavior) => void;
 }
 
 interface SendBehaviorMenuItemProps {
@@ -320,6 +339,22 @@ function ServiceUrlBehaviorMenuItem({
   selected,
   onChange,
 }: ServiceUrlBehaviorMenuItemProps) {
+  const handleSelect = useCallback(() => {
+    onChange(value);
+  }, [onChange, value]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect}>
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
+function AgentLinkBehaviorMenuItem({
+  value,
+  label,
+  selected,
+  onChange,
+}: AgentLinkBehaviorMenuItemProps) {
   const handleSelect = useCallback(() => {
     onChange(value);
   }, [onChange, value]);
@@ -359,6 +394,7 @@ function GeneralSection({
   isDesktopApp,
   handleSendBehaviorChange,
   handleServiceUrlBehaviorChange,
+  handleAgentLinkBehaviorChange,
   handleLanguageChange,
   handleTerminalScrollbackLinesChange,
 }: GeneralSectionProps) {
@@ -481,6 +517,40 @@ function GeneralSection({
                     label={getServiceUrlBehaviorLabel(t, value)}
                     selected={settings.serviceUrlBehavior === value}
                     onChange={handleServiceUrlBehaviorChange}
+                  />
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </View>
+        ) : null}
+        {isDesktopApp ? (
+          <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+            <View style={settingsStyles.rowContent}>
+              <Text style={settingsStyles.rowTitle}>{t("settings.general.agentLinks.label")}</Text>
+              <Text style={settingsStyles.rowHint}>
+                {t("settings.general.agentLinks.description")}
+              </Text>
+            </View>
+            <DropdownMenu>
+              <DropdownTrigger
+                accessibilityRole="button"
+                accessibilityLabel={t("settings.general.agentLinks.accessibilityLabel", {
+                  value: getAgentLinkBehaviorLabel(t, settings.agentLinkBehavior),
+                })}
+                style={themeTriggerStyle}
+              >
+                <Text style={styles.themeTriggerText}>
+                  {getAgentLinkBehaviorLabel(t, settings.agentLinkBehavior)}
+                </Text>
+              </DropdownTrigger>
+              <DropdownMenuContent side="bottom" align="end" width={200}>
+                {AGENT_LINK_BEHAVIOR_VALUES.map((value) => (
+                  <AgentLinkBehaviorMenuItem
+                    key={value}
+                    value={value}
+                    label={getAgentLinkBehaviorLabel(t, value)}
+                    selected={settings.agentLinkBehavior === value}
+                    onChange={handleAgentLinkBehaviorChange}
                   />
                 ))}
               </DropdownMenuContent>
@@ -1279,6 +1349,13 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleAgentLinkBehaviorChange = useCallback(
+    (behavior: AgentLinkBehavior) => {
+      void updateSettings({ agentLinkBehavior: behavior });
+    },
+    [updateSettings],
+  );
+
   const handleLanguageChange = useCallback(
     (language: AppLanguage) => {
       void updateSettings({ language });
@@ -1529,6 +1606,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
                   isDesktopApp={isDesktopApp}
                   handleSendBehaviorChange={handleSendBehaviorChange}
                   handleServiceUrlBehaviorChange={handleServiceUrlBehaviorChange}
+                  handleAgentLinkBehaviorChange={handleAgentLinkBehaviorChange}
                   handleLanguageChange={handleLanguageChange}
                   handleTerminalScrollbackLinesChange={handleTerminalScrollbackLinesChange}
                 />
