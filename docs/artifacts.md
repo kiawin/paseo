@@ -115,6 +115,18 @@ the live page stays canonical. An agent that wants a document Paseo actually hol
 Claude — writes the HTML and calls `publish_artifact` with it. That path is unaffected and is the
 normal one.
 
+Capture happens in `AgentManager.recordAndDispatchTimelineItem`, not in the Claude adapter, and
+keys on the `artifact` tool-call detail rather than on a tool name. Any provider that grows a
+publishing tool is captured by mapping onto that detail; nothing in the manager has to change.
+The manager reports the publication, and `artifact-capture.ts` resolves the agent's workspace to
+a project and files it — so the manager needs neither the store nor the registry.
+
+Two properties that path depends on. The store keys publication on `(agentId, callId)`, which is
+what makes capture safe from a code path that also runs on history replay: reloading a session
+resolves to the record it already produced instead of adding another. And the recorder never
+rejects — the tool call has already succeeded and the agent is not waiting, so a failure to file
+the record is logged and dropped rather than allowed to disturb the turn.
+
 ## Adding a surface
 
 The Explorer has two presentations that do not share chrome

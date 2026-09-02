@@ -277,6 +277,19 @@ export interface AgentManagerOptions {
   registry?: AgentStorage;
   onAgentAttention?: AgentAttentionCallback;
   onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
+  /**
+   * A completed tool call reported publishing a document to a URL of its own. Provider-agnostic
+   * on purpose: the hook fires on the `artifact` tool-call detail, so any provider that grows a
+   * publishing tool is captured without touching this class.
+   */
+  onExternalArtifactPublished?: (params: {
+    agentId: string;
+    workspaceId: string;
+    provider: AgentProvider;
+    callId: string;
+    url: string;
+    title: string | null;
+  }) => void;
   durableTimelineStore?: AgentTimelineStore;
   terminalManager?: TerminalManager | null;
   mcpBaseUrl?: string;
@@ -698,6 +711,7 @@ export class AgentManager {
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
   private onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
+  private onExternalArtifactPublished?: AgentManagerOptions["onExternalArtifactPublished"];
   private logger: Logger;
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
   private readonly beforeSteerUnavailableFallback?: AgentManagerOptions["beforeSteerUnavailableFallback"];
@@ -709,6 +723,7 @@ export class AgentManager {
     this.durableTimelineStore = options?.durableTimelineStore;
     this.onAgentAttention = options?.onAgentAttention;
     this.onWorkspaceStateMayHaveChanged = options?.onWorkspaceStateMayHaveChanged;
+    this.onExternalArtifactPublished = options?.onExternalArtifactPublished;
     this.mcpBaseUrl = options?.mcpBaseUrl ?? null;
     this.mcpAuthToken = options?.mcpAuthToken ?? null;
     this.configurePaseoTools(options);
@@ -4315,6 +4330,26 @@ export class AgentManager {
       const agent = this.agents.get(agentId);
       if (agent) {
         this.onWorkspaceStateMayHaveChanged?.({ cwd: agent.cwd });
+      }
+    }
+
+    if (
+      item.type === "tool_call" &&
+      item.status === "completed" &&
+      item.detail?.type === "artifact"
+    ) {
+      const agent = this.agents.get(agentId);
+      // A workspace is what resolves the project the artifact belongs to; without one there is
+      // nowhere to file it.
+      if (agent?.workspaceId) {
+        this.onExternalArtifactPublished?.({
+          agentId,
+          workspaceId: agent.workspaceId,
+          provider,
+          callId: item.callId,
+          url: item.detail.url,
+          title: item.detail.title ?? null,
+        });
       }
     }
 
