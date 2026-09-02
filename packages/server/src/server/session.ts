@@ -16,6 +16,9 @@ import { homedir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import { formatPluginSourceReference } from "@getpaseo/protocol/plugin-source-reference";
 import {
+  downgradeArtifactStreamEvent,
+  downgradeArtifactSubagentUpdate,
+  downgradeArtifactToolDetail,
   serializeAgentStreamEvent,
   type AgentSnapshotPayload,
   type AgentAttachment,
@@ -176,6 +179,8 @@ import {
 import { ScheduleSession } from "./session/schedule/schedule-session.js";
 import { ProviderCatalogSession } from "./session/provider/provider-catalog-session.js";
 import { WorkspaceFilesSession } from "./session/files/workspace-files-session.js";
+import { ArtifactsSession } from "./session/artifacts/artifacts-session.js";
+import type { ArtifactStore } from "./artifact-store.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
 import { ProjectConfigSession } from "./session/project-config/project-config-session.js";
 import { DaemonSession, type DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
@@ -459,6 +464,7 @@ export interface SessionOptions {
   workspaceRegistry: WorkspaceRegistry;
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
+  artifactStore?: ArtifactStore;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -779,6 +785,7 @@ export class Session {
   private readonly scheduleSession: ScheduleSession;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
+  private readonly artifactsSession: ArtifactsSession;
   private readonly agentConfigSession: AgentConfigSession;
   private readonly projectConfigSession: ProjectConfigSession;
   private readonly daemonSession: DaemonSession;
@@ -812,6 +819,7 @@ export class Session {
       workspaceRegistry,
       directorySync,
       workspaceLabelService,
+      artifactStore,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -881,6 +889,7 @@ export class Session {
       paseoHome,
       logger: this.sessionLogger,
     });
+    this.artifactsSession = this.createArtifactsSession(artifactStore);
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry;
@@ -1238,9 +1247,15 @@ export class Session {
     }
   }
 
-  /** A socket going away must not strand the transfers it started. */
+  /** Fans a publish-driven invalidation out to whichever sockets have listed artifacts. */
+  publishArtifactChanged(projectId: string): void {
+    this.artifactsSession.broadcastChanged(projectId);
+  }
+
+  /** A socket going away must not strand the transfers it started, in either subsystem. */
   cancelWorkspaceTransfersForSource(source: object): void {
     this.workspaceFilesSession.cancelTransfersForSource(source);
+    this.artifactsSession.cancelTransfersForSource(source);
   }
 
   clearAgentTimelineSubscription(source: object): void {
@@ -1271,6 +1286,28 @@ export class Session {
     return source ? this.supportsForSource(capability, source) : this.supports(capability);
   }
 
+  private supportsArtifactToolDetail(source?: object): boolean {
+    return source
+      ? this.supportsForSource(CLIENT_CAPS.artifactToolDetail, source)
+      : this.supports(CLIENT_CAPS.artifactToolDetail);
+  }
+
+  private providerSubagentMessageForSource(
+    message: SessionOutboundMessage,
+    legacyMessage: SessionOutboundMessage,
+    source?: object,
+  ): SessionOutboundMessage {
+    return this.supportsArtifactToolDetail(source) ? message : legacyMessage;
+  }
+
+  /** The stream event as a connection can parse it, given what it advertised. */
+  private artifactCompatibleStreamEvent(
+    event: Extract<SessionOutboundMessage, { type: "agent_stream" }>["payload"]["event"],
+    supportsArtifactToolDetail: boolean,
+  ): Extract<SessionOutboundMessage, { type: "agent_stream" }>["payload"]["event"] {
+    return supportsArtifactToolDetail ? event : downgradeArtifactStreamEvent(event);
+  }
+
   private forwardAgentStream(
     event: Extract<AgentManagerEvent, { type: "agent_stream" }>,
     serializedEvent: Extract<SessionOutboundMessage, { type: "agent_stream" }>["payload"]["event"],
@@ -1288,10 +1325,16 @@ export class Session {
         },
       });
     }
-    const message: SessionOutboundMessage = {
+    const buildMessage = (source?: object): SessionOutboundMessage => ({
       type: "agent_stream",
-      payload: this.buildAgentStreamPayload(event, serializedEvent),
-    };
+      payload: this.buildAgentStreamPayload(
+        event,
+        this.artifactCompatibleStreamEvent(
+          serializedEvent,
+          this.supportsArtifactToolDetail(source),
+        ),
+      ),
+    });
     for (const subscription of this.timelineSubscriptions.values()) {
       const source = subscription.owner.source;
       if (!subscription.agentIds.has(event.agentId)) continue;
@@ -1306,7 +1349,7 @@ export class Session {
         !this.supportsTimelineItem(serializedEvent.item, source)
       )
         continue;
-      subscription.owner.emit(message);
+      subscription.owner.emit(buildMessage(source));
     }
     // COMPAT(ownedSubscriptions): added in v0.8.0, remove implicit timeline delivery after 2027-03-09.
     for (const [source, { capabilities }] of this.clientSources) {
@@ -1321,14 +1364,14 @@ export class Session {
         (subscription) =>
           subscription.owner.source === source && subscription.agentIds.has(event.agentId),
       );
-      if (!alreadyDelivered) this.onMessageToSource?.(source, message);
+      if (!alreadyDelivered) this.onMessageToSource?.(source, buildMessage(source));
     }
     if (
       this.clientSources.size === 0 &&
       !this.supports(CLIENT_CAPS.selectiveAgentTimeline) &&
       this.timelineSubscriptions.size === 0
     )
-      this.emit(message);
+      this.emit(buildMessage());
   }
 
   supports(capability: ClientCapability): boolean {
@@ -1854,6 +1897,7 @@ export class Session {
       };
     }
 
+    const legacyArtifactMessage = downgradeArtifactSubagentUpdate(message);
     const delivered = new Set<object>();
     for (const subscription of this.eventSubscriptions.values()) {
       if (!subscription.events.has("agent.provider_subagents.update")) continue;
@@ -1862,7 +1906,13 @@ export class Session {
         !this.supportsSubagentTimelineItem(update.row.item, subscription.owner.source)
       )
         continue;
-      subscription.owner.emit(message);
+      subscription.owner.emit(
+        this.providerSubagentMessageForSource(
+          message,
+          legacyArtifactMessage,
+          subscription.owner.source,
+        ),
+      );
       delivered.add(subscription.owner.source);
     }
     if (this.clientSources.size === 0 || !this.onMessageToSource) {
@@ -1870,7 +1920,7 @@ export class Session {
         this.supports(CLIENT_CAPS.providerSubagents) &&
         (update.type !== "timeline" || this.supportsSubagentTimelineItem(update.row.item))
       ) {
-        this.emit(message);
+        this.emit(this.providerSubagentMessageForSource(message, legacyArtifactMessage));
       }
       return;
     }
@@ -1883,7 +1933,10 @@ export class Session {
         continue;
       if (update.type === "timeline" && !this.supportsSubagentTimelineItem(update.row.item, source))
         continue;
-      this.onMessageToSource(source, message);
+      this.onMessageToSource(
+        source,
+        this.providerSubagentMessageForSource(message, legacyArtifactMessage, source),
+      );
     }
   }
 
@@ -2273,37 +2326,47 @@ export class Session {
     return undefined;
   }
 
-  private async dispatchInboundMessage(msg: SessionInboundMessage, source?: object): Promise<void> {
-    const promise =
-      this.dispatchSubscriptionMessage(msg, source) ??
-      this.dispatchVoiceAndControlMessage(msg) ??
-      this.dispatchAgentRewindMessage(msg, source) ??
-      this.dispatchAgentRelationshipMessage(msg) ??
-      this.dispatchAgentTimelineMessage(msg, source) ??
-      this.dispatchHubExecutionMessage(msg) ??
-      this.dispatchCreationMessage(msg, source) ??
-      this.dispatchAgentLifecycleMessage(msg) ??
-      this.dispatchAgentConfigMessage(msg) ??
-      this.dispatchCheckoutMessage(msg) ??
-      this.dispatchWorkspaceLifecycleMessage(msg) ??
-      this.dispatchWorkspaceFileMessage(msg, source) ??
-      this.dispatchProviderMessage(msg) ??
-      this.dispatchOrchestrationSkillsMessage(msg) ??
-      this.dispatchPluginDirectoryMessage(msg) ??
-      this.dispatchPluginMessage(msg) ??
-      this.dispatchTerminalMessage(msg) ??
-      this.dispatchScheduleMessage(msg) ??
-      this.dispatchMiscMessage(msg);
-    if (promise) await promise;
-  }
+  /**
+   * Ordered until one claims the message. A list rather than a `??` chain: the chain's
+   * branch count is the whole budget for one function, so every new domain pushed it over the
+   * complexity ceiling and had to be smuggled into an unrelated dispatcher.
+   */
+  private readonly inboundDispatchers: ReadonlyArray<
+    (msg: SessionInboundMessage, source?: object) => Promise<void> | undefined
+  > = [
+    (msg, source) => this.dispatchSubscriptionMessage(msg, source),
+    (msg) => this.dispatchVoiceAndControlMessage(msg),
+    (msg, source) => this.dispatchAgentRewindMessage(msg, source),
+    (msg) => this.dispatchAgentRelationshipMessage(msg),
+    (msg, source) => this.dispatchAgentTimelineMessage(msg, source),
+    (msg) => this.dispatchHubExecutionMessage(msg),
+    (msg, source) => this.dispatchCreationMessage(msg, source),
+    (msg) => this.dispatchAgentLifecycleMessage(msg),
+    (msg) => this.dispatchAgentConfigMessage(msg),
+    (msg) => this.dispatchCheckoutMessage(msg),
+    (msg) => this.dispatchWorkspaceStateMessage(msg),
+    (msg) => this.dispatchWorkspaceLabelMessage(msg),
+    (msg) => this.dispatchWorkspaceSetupMessage(msg),
+    (msg) => this.dispatchWorkspaceAndProjectMessage(msg),
+    (msg, source) => this.dispatchWorkspaceFileMessage(msg, source),
+    (msg, source) => this.dispatchArtifactMessage(msg, source),
+    (msg) => this.dispatchProviderMessage(msg),
+    (msg) => this.dispatchOrchestrationSkillsMessage(msg),
+    (msg) => this.dispatchPluginDirectoryMessage(msg),
+    (msg) => this.dispatchPluginMessage(msg),
+    (msg) => this.dispatchTerminalMessage(msg),
+    (msg) => this.dispatchScheduleMessage(msg),
+    (msg) => this.dispatchMiscMessage(msg),
+  ];
 
-  private dispatchWorkspaceLifecycleMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    return (
-      this.dispatchWorkspaceStateMessage(msg) ??
-      this.dispatchWorkspaceLabelMessage(msg) ??
-      this.dispatchWorkspaceSetupMessage(msg) ??
-      this.dispatchWorkspaceAndProjectMessage(msg)
-    );
+  private async dispatchInboundMessage(msg: SessionInboundMessage, source?: object): Promise<void> {
+    for (const dispatch of this.inboundDispatchers) {
+      const promise = dispatch(msg, source);
+      if (promise) {
+        await promise;
+        return;
+      }
+    }
   }
 
   private dispatchOrchestrationSkillsMessage(
@@ -2933,6 +2996,44 @@ export class Session {
     }
   }
 
+  private createArtifactsSession(artifactStore: ArtifactStore | undefined): ArtifactsSession {
+    return new ArtifactsSession(
+      {
+        emit: (msg, source) => this.emitForSource(msg, source),
+        emitBinary: (frame, source) => this.emitBinaryForFileTransfer(frame, source),
+        hasBinaryChannel: () => this.onBinaryMessage !== null,
+      },
+      artifactStore ?? null,
+      this.sessionLogger,
+    );
+  }
+
+  private dispatchArtifactMessage(
+    msg: SessionInboundMessage,
+    source?: object,
+  ): Promise<void> | undefined {
+    switch (msg.type) {
+      case "artifact.list.request":
+        return this.artifactsSession.handleListRequest(msg, source);
+      case "artifact.entry.download.request":
+        if (this.workspaceFilesSession.hasTransfer(msg.requestId)) {
+          // Both subsystems see every ack and cancel, so one id cannot name two transfers.
+          this.sessionLogger.error(
+            { requestId: msg.requestId },
+            "Refused an artifact download reusing a workspace transfer id",
+          );
+          return undefined;
+        }
+        return this.artifactsSession.handleEntryDownloadRequest(msg, source);
+      case "artifact.delete.request":
+        return this.artifactsSession.handleDeleteRequest(msg, source);
+      case "artifact.pin.set.request":
+        return this.artifactsSession.handlePinSetRequest(msg, source);
+      default:
+        return undefined;
+    }
+  }
+
   private dispatchWorkspaceFileMessage(
     msg: SessionInboundMessage,
     source?: object,
@@ -2955,14 +3056,25 @@ export class Session {
       case "fs.entry.delete.request":
         return this.workspaceFilesSession.handleFileEntryDeleteRequest(msg);
       case "fs.entry.download.request":
+        if (this.artifactsSession.hasTransfer(msg.requestId)) {
+          this.sessionLogger.error(
+            { requestId: msg.requestId },
+            "Refused a workspace download reusing an artifact transfer id",
+          );
+          return undefined;
+        }
         return this.workspaceFilesSession.handleEntryDownloadRequest(msg, source);
       case "fs.entry.upload.request":
         return this.workspaceFilesSession.handleEntryUploadRequest(msg, source);
       case "fs.transfer.ack":
+        // requestIds are unique per session and both subsystems ignore ids they do not own,
+        // so flow control does not need to know which kind of transfer it is pacing.
         this.workspaceFilesSession.handleFileTransferAck(msg);
+        this.artifactsSession.handleFileTransferAck(msg);
         return undefined;
       case "fs.transfer.cancel":
         this.workspaceFilesSession.handleFileTransferCancel(msg);
+        this.artifactsSession.handleFileTransferCancel(msg);
         return undefined;
       case "project_icon_request":
         return this.workspaceFilesSession.handleProjectIconRequest(msg);
@@ -4755,7 +4867,16 @@ export class Session {
       this.emitForSource(
         {
           type: "agent_stream",
-          payload: { agentId, event, timestamp: row.timestamp, seq: row.seq, epoch },
+          payload: {
+            agentId,
+            event: this.artifactCompatibleStreamEvent(
+              event,
+              this.supportsArtifactToolDetail(source),
+            ),
+            timestamp: row.timestamp,
+            seq: row.seq,
+            epoch,
+          },
         },
         source,
       );
@@ -7649,6 +7770,7 @@ export class Session {
       const entries = selectedTimeline.entries.filter((entry) =>
         this.supportsTimelineItem(entry.item, source),
       );
+      const supportsArtifactToolDetail = this.supportsArtifactToolDetail(source);
 
       this.emitForSource(
         {
@@ -7672,7 +7794,9 @@ export class Session {
             entries: entries.map((entry) => {
               const payloadEntry = {
                 provider: snapshot.provider,
-                item: entry.item,
+                item: supportsArtifactToolDetail
+                  ? entry.item
+                  : downgradeArtifactToolDetail(entry.item),
                 timestamp: entry.timestamp,
                 seqStart: entry.seqStart,
                 seqEnd: entry.seqEnd,
@@ -7905,6 +8029,7 @@ export class Session {
         },
       );
       const rows = timeline.rows.filter((row) => this.supportsTimelineItem(row.item, source));
+      const supportsArtifactToolDetail = this.supportsArtifactToolDetail(source);
       this.emitForSource(
         {
           type: "agent.provider_subagents.timeline.get.response",
@@ -7928,7 +8053,9 @@ export class Session {
             hasNewer: supportsProjection && timeline.hasNewer,
             rows: supportsProjection
               ? rows.map((row) => ({
-                  item: row.item,
+                  item: supportsArtifactToolDetail
+                    ? row.item
+                    : downgradeArtifactToolDetail(row.item),
                   timestamp: row.timestamp,
                   seq: row.seqEnd,
                   seqStart: row.seqStart,
@@ -8447,6 +8574,8 @@ export class Session {
     this.checkoutSession.cleanup();
 
     this.workspaceGitObserver.dispose();
+    this.workspaceFilesSession.dispose();
+    this.artifactsSession.dispose();
   }
 }
 
