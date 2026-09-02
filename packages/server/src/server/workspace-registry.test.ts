@@ -15,6 +15,71 @@ import {
   resolveWorkspaceName,
 } from "./workspace-registry.js";
 
+describe("project removal cascades", () => {
+  let tmpDir: string;
+  let registry: FileBackedProjectRegistry;
+
+  beforeEach(async () => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "project-cascade-"));
+    registry = new FileBackedProjectRegistry(
+      path.join(tmpDir, "projects", "projects.json"),
+      createTestLogger(),
+    );
+    await registry.initialize();
+    await registry.upsert(
+      createPersistedProjectRecord({
+        projectId: "prj_a",
+        rootPath: "/tmp/repo",
+        kind: "git",
+        displayName: "repo",
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      }),
+    );
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("a failing cascade leaves the project record in place to retry from", async () => {
+    let attempts = 0;
+    registry.subscribeToPendingRemoval(() => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("cascade crashed");
+    });
+
+    await expect(registry.remove("prj_a")).rejects.toThrow("cascade crashed");
+    // Still there, which is the whole point: without it nothing would know to retry, and
+    // whatever the cascade owns would be orphaned with no event left to drive cleanup.
+    expect(await registry.get("prj_a")).not.toBeNull();
+
+    await registry.remove("prj_a");
+    expect(attempts).toBe(2);
+    expect(await registry.get("prj_a")).toBeNull();
+  });
+
+  test("the cascade runs before the record is removed", async () => {
+    const seen: Array<string | null> = [];
+    registry.subscribeToPendingRemoval(async (projectId) => {
+      seen.push((await registry.get(projectId))?.projectId ?? null);
+    });
+
+    await registry.remove("prj_a");
+    expect(seen).toEqual(["prj_a"]);
+  });
+
+  test("removing an absent project runs no cascade", async () => {
+    let attempts = 0;
+    registry.subscribeToPendingRemoval(() => {
+      attempts += 1;
+    });
+
+    await registry.remove("prj_missing");
+    expect(attempts).toBe(0);
+  });
+});
+
 describe("resolveWorkspaceName", () => {
   test("prefers the user-set title over the derived display name", () => {
     expect(
