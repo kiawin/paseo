@@ -1,12 +1,13 @@
 import { Text } from "react-native";
-import { forwardRef, useMemo, type ComponentProps } from "react";
+import { forwardRef, useCallback, useMemo, type ComponentProps } from "react";
 import type {
   CodeBlockRendererProps,
   LinkRendererProps,
   MarkdownRenderers,
 } from "react-native-enriched-markdown";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { useFileLink } from "@/assistant-file-links";
+import { useAssistantLinkContextMenu, useFileLink } from "@/assistant-file-links";
+import { suppressNativeContextMenu } from "@/components/ui/context-menu";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
 import type { Theme } from "@/styles/theme";
@@ -28,13 +29,26 @@ function WebCodeBlock({ code, language }: CodeBlockRendererProps) {
 }
 
 function WebLink({ link, anchorProps, children }: LinkRendererProps) {
-  const { tooltipPath, onHoverIn } = useFileLink(markdownLinkSource(link.url, link.sourceType));
+  const { tooltipPath, externalUrl, onHoverIn } = useFileLink(
+    markdownLinkSource(link.url, link.sourceType),
+  );
+  const openLinkMenu = useAssistantLinkContextMenu();
+  const handleContextMenu = useCallback(
+    (event: unknown) => {
+      if (!externalUrl || !openLinkMenu) {
+        return;
+      }
+      suppressNativeContextMenu(event);
+      openLinkMenu(externalUrl, event);
+    },
+    [externalUrl, openLinkMenu],
+  );
   const anchorStyle = useMemo(
     () => ({ ...anchorProps.style, overflowWrap: "anywhere" as const }),
     [anchorProps.style],
   );
   const anchor = (
-    <a {...anchorProps} style={anchorStyle}>
+    <a {...anchorProps} onContextMenu={handleContextMenu} style={anchorStyle}>
       {children}
     </a>
   );
