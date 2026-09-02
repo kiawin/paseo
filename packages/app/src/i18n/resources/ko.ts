@@ -298,6 +298,9 @@ export const ko: TranslationResources = {
     },
     actions: {
       copyCode: "코드 복사",
+      copyLink: "링크 복사",
+      openLinkInBrowser: "브라우저에서 열기",
+      openLinkInPaseo: "Paseo 브라우저에서 열기",
       copyTurn: "턴 복사",
       copyMessage: "메시지 복사",
       forkMenu: "여기에서 채팅 분기",
@@ -2053,6 +2056,15 @@ export const ko: TranslationResources = {
         description: "실행 중인 스크립트의 URL을 열 위치",
         options: {
           ask: "물어보기",
+          inApp: "Paseo에서",
+          external: "외부 브라우저",
+        },
+      },
+      agentLinks: {
+        label: "에이전트 링크",
+        description: "에이전트 메시지의 링크를 열 위치",
+        accessibilityLabel: "에이전트 링크를 열 위치 선택({{value}})",
+        options: {
           inApp: "Paseo에서",
           external: "외부 브라우저",
         },
