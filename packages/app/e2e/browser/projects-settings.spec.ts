@@ -11,7 +11,12 @@ import {
   clickSaveProjectSettings,
   commitPaseoConfig,
   corruptPaseoConfig,
+  chooseWorktreeLocation,
   editWorktreeSetup,
+  expectWorktreeLocation,
+  expectWorktreeLocationError,
+  expectWorktreeLocationPreview,
+  fillCustomWorktreeRoot,
   expectEmptyScriptList,
   expectProjectHostContextHidden,
   expectNoEditableTarget,
@@ -221,6 +226,52 @@ test.describe("Projects settings", () => {
       await client.close().catch(() => undefined);
       await repo.cleanup().catch(() => undefined);
     }
+  });
+
+  test("user changes the worktree location and sees where worktrees will go", async ({
+    page,
+    editableProject,
+  }) => {
+    await openProjects(page);
+    await openProjectSettings(page, editableProject.name);
+
+    // Absent means managed, so a project that has never set one still reads as
+    // Managed rather than empty.
+    await expectWorktreeLocation(page, "Managed");
+    await expectWorktreeLocationPreview(page, "worktrees");
+
+    await chooseWorktreeLocation(page, "Sibling");
+    await expectWorktreeLocation(page, "Sibling");
+    await expectWorktreeLocationPreview(page, `${path.basename(editableProject.path)}-worktrees`);
+
+    await chooseWorktreeLocation(page, "Nested");
+    await expectWorktreeLocationPreview(page, ".worktrees");
+
+    // Machine-local, so it must survive a round trip without the Save button
+    // that owns the paseo.json half of this screen.
+    await returnToProjectsList(page);
+    await openProjectSettings(page, editableProject.name);
+    await expectWorktreeLocation(page, "Nested");
+
+    await chooseWorktreeLocation(page, "Managed");
+    await expectWorktreeLocation(page, "Managed");
+  });
+
+  test("a custom worktree root inside the repository is rejected", async ({
+    page,
+    editableProject,
+  }) => {
+    await openProjects(page);
+    await openProjectSettings(page, editableProject.name);
+
+    await chooseWorktreeLocation(page, "Custom");
+    // Inside the repo is what Nested already expresses, and Nested also writes
+    // the git exclude, so the daemon refuses this rather than silently aliasing.
+    await fillCustomWorktreeRoot(page, path.join(editableProject.path, "wt"));
+    await expectWorktreeLocationError(page, /Nested/i);
+
+    await fillCustomWorktreeRoot(page, "relative/path");
+    await expectWorktreeLocationError(page, /absolute/i);
   });
 
   test("user edits worktree setup from the projects page", async ({ page, editableProject }) => {

@@ -104,8 +104,11 @@ export function WorktreeLocationSection({
   const queryClient = useQueryClient();
   const [customRoot, setCustomRoot] = useState(location?.mode === "custom" ? location.root : "");
   const [error, setError] = useState<string | null>(null);
+  // Choosing Custom persists nothing until there is a path, so the selection
+  // has to live here or the path input would never appear.
+  const [pendingCustom, setPendingCustom] = useState(location?.mode === "custom");
 
-  const mode = modeOf(location);
+  const mode: Mode = pendingCustom ? "custom" : modeOf(location);
 
   const mutation = useMutation({
     mutationFn: (next: WorktreeLocation | null) =>
@@ -126,14 +129,15 @@ export function WorktreeLocationSection({
 
   const handleModeChange = useCallback(
     (next: Mode) => {
+      setError(null);
       if (next === "custom") {
-        // Nothing to persist until there is a path; the input is revealed first.
-        setError(null);
+        setPendingCustom(true);
+        // Reveal the input first; there is nothing to persist without a path.
         if (customRoot.trim().length === 0) return;
         mutation.mutate({ mode: "custom", root: customRoot.trim() });
         return;
       }
-      setError(null);
+      setPendingCustom(false);
       mutation.mutate(next === "managed" ? null : { mode: next });
     },
     [customRoot, mutation],

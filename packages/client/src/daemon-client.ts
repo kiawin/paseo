@@ -2430,15 +2430,21 @@ export class DaemonClient {
     });
   }
 
+  /**
+   * `removeWorktreeDirectory` only affects worktrees cut outside Paseo's managed
+   * root, which archive leaves on disk by default. Managed worktrees always
+   * remove their directory and ignore it.
+   */
   async archiveWorkspace(
     workspaceId: string,
-    requestId?: string,
+    options?: { removeWorktreeDirectory?: boolean; requestId?: string },
   ): Promise<ArchiveWorkspacePayload> {
     return this.sendCorrelatedSessionRequest({
-      requestId,
+      requestId: options?.requestId,
       message: {
         type: "archive_workspace_request",
         workspaceId,
+        ...(options?.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : {}),
       },
       responseType: "archive_workspace_response",
     });
