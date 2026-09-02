@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { execFileSync, execSync, spawnSync } from "child_process";
 import {
   existsSync,
@@ -3770,9 +3770,18 @@ const x = 1;
 
   describe("isPaseoWorktreePath", () => {
     it("matches worktrees under the default PASEO_HOME", () => {
-      const defaultHome = process.env.PASEO_HOME;
-      expect(defaultHome).toBeTruthy();
-      expect(isPaseoWorktreePath(join(defaultHome!, "worktrees", "project", "feature"))).toBe(true);
+      // This is the one case that reads the ambient home instead of an explicit
+      // option, so the home has to be pinned: CI leaves PASEO_HOME unset, and
+      // reading it would assert against whatever the developer's shell exports.
+      const defaultHome = process.platform === "win32" ? "C:\\paseo-default" : "/tmp/paseo-default";
+      vi.stubEnv("PASEO_HOME", defaultHome);
+      try {
+        expect(isPaseoWorktreePath(join(defaultHome, "worktrees", "project", "feature"))).toBe(
+          true,
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     // The path is only Paseo's if it is under the base root this daemon actually
