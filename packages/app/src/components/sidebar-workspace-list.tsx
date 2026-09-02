@@ -137,7 +137,7 @@ import {
   type SidebarProjectIconTarget,
 } from "@/utils/sidebar-project-row-model";
 import { redirectIfArchivingActiveWorkspace } from "@/utils/sidebar-workspace-archive-redirect";
-import { openExternalUrl } from "@/utils/open-external-url";
+import { useForgeLinkOpener } from "@/git/forge-link";
 import { useWorkspaceArchive } from "@/workspace/use-workspace-archive";
 import {
   getCurrentProjectRemoveReadiness,
@@ -303,12 +303,13 @@ export function PrBadge({ hint, style }: { hint: PrHint; style?: StyleProp<ViewS
     event.stopPropagation();
   }, []);
 
+  const openForgeLink = useForgeLinkOpener();
   const handlePress = useCallback(
     (event: GestureResponderEvent) => {
       event.stopPropagation();
-      void openExternalUrl(hint.url);
+      openForgeLink(hint.url);
     },
-    [hint.url],
+    [hint.url, openForgeLink],
   );
 
   const handleHoverIn = useCallback(() => setIsHovered(true), []);

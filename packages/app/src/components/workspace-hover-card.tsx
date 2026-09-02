@@ -25,7 +25,7 @@ import { Pressable } from "react-native";
 import type { GestureResponderEvent } from "react-native";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
 import type { PrHint } from "@/git/use-pr-status-query";
-import { openExternalUrl } from "@/utils/open-external-url";
+import { useForgeLinkOpener } from "@/git/forge-link";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
 import { PrBadge } from "@/components/sidebar-workspace-list";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -322,9 +322,10 @@ function ChecksSummaryPressable({
     t("workspace.git.pr.sections.checks"),
     t,
   );
+  const openForgeLink = useForgeLinkOpener();
   const handlePress = useCallback(() => {
-    void openExternalUrl(buildForgeChecksUrl(forge, url) ?? url);
-  }, [forge, url]);
+    openForgeLink(buildForgeChecksUrl(forge, url) ?? url);
+  }, [forge, openForgeLink, url]);
 
   const renderChildren = useCallback(
     ({ hovered }: { pressed: boolean; hovered?: boolean }) => (
