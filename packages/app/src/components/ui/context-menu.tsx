@@ -63,6 +63,43 @@ export function useContextMenu() {
   return useMenuContext("useContextMenu");
 }
 
+/**
+ * Opens the surrounding menu anchored to the point of a gesture, given the right-click or
+ * long-press event that produced it. `ContextMenuTrigger` is one caller; a trigger shape that
+ * cannot be a wrapper element — an inline link inside a paragraph — is the other.
+ *
+ * Returns false when the event carries no usable coordinates, in which case nothing opened.
+ */
+export function useContextMenuAnchorAtEvent(): (event: unknown) => boolean {
+  const ctx = useMenuContext("useContextMenuAnchorAtEvent");
+  return useCallback(
+    (event: unknown) => {
+      const point = coerceEventPoint(event);
+      if (!point) return false;
+
+      const statusBarHeight = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
+      ctx.setAnchorRect({
+        x: point.pageX,
+        y: point.pageY + statusBarHeight,
+        width: 0,
+        height: 0,
+      });
+      ctx.setOpen(true);
+      return true;
+    },
+    [ctx],
+  );
+}
+
+/** Suppresses the platform's own context menu so ours can take the gesture. */
+export function suppressNativeContextMenu(event: unknown): void {
+  if (typeof event !== "object" || event === null) return;
+  const preventDefault = Reflect.get(event, "preventDefault");
+  const stopPropagation = Reflect.get(event, "stopPropagation");
+  if (isCallable(preventDefault)) preventDefault.call(event);
+  if (isCallable(stopPropagation)) stopPropagation.call(event);
+}
+
 function isCallable(fn: unknown): fn is (...args: unknown[]) => void {
   return typeof fn === "function";
 }
@@ -124,25 +161,16 @@ export function ContextMenuTrigger({
   }
 >): ReactElement {
   const ctx = useMenuContext("ContextMenuTrigger");
+  const anchorAtEvent = useContextMenuAnchorAtEvent();
 
   const shouldEnableOnThisPlatform = enabled && (isWeb ? enabledOnWeb : enabledOnMobile);
 
   const openAtEvent = useCallback(
     (event: unknown) => {
       if (!shouldEnableOnThisPlatform || disabled) return;
-      const point = coerceEventPoint(event);
-      if (!point) return;
-
-      const statusBarHeight = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
-      ctx.setAnchorRect({
-        x: point.pageX,
-        y: point.pageY + statusBarHeight,
-        width: 0,
-        height: 0,
-      });
-      ctx.setOpen(true);
+      anchorAtEvent(event);
     },
-    [ctx, disabled, shouldEnableOnThisPlatform],
+    [anchorAtEvent, disabled, shouldEnableOnThisPlatform],
   );
 
   const handleRef = useCallback(
@@ -169,12 +197,7 @@ export function ContextMenuTrigger({
   const handleContextMenu = useCallback(
     (event: unknown) => {
       if (isNative) return;
-      if (typeof event === "object" && event !== null) {
-        const preventDefault = Reflect.get(event, "preventDefault");
-        const stopPropagation = Reflect.get(event, "stopPropagation");
-        if (isCallable(preventDefault)) preventDefault.call(event);
-        if (isCallable(stopPropagation)) stopPropagation.call(event);
-      }
+      suppressNativeContextMenu(event);
       onContextMenu?.(event);
       openAtEvent(event);
     },
