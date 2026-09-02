@@ -1837,6 +1837,21 @@ export const ko: TranslationResources = {
       tooltip: "워크스페이스 파일 탐색",
       chooseFile: "파일 선택",
     },
+    artifacts: {
+      linkMissing: "이 산출물에는 문서도 링크도 없습니다.",
+      label: "산출물",
+      subtitle: "에이전트가 게시함",
+      tooltip: "이 프로젝트에서 에이전트가 게시한 문서",
+      emptyTitle: "이 프로젝트에 산출물이 없습니다",
+      emptyDescription: "에이전트는 publish_artifact로 게시합니다.",
+      loadFailed: "산출물을 불러오지 못했습니다",
+      hostTooOld: "산출물을 보려면 호스트를 업데이트하세요.",
+      openOn: "{{host}}에서 열기",
+      deleteTitle: "산출물을 삭제할까요?",
+      deleteMessage: '"{{title}}"을(를) 삭제할까요? 이 작업은 취소할 수 없습니다.',
+      deleteConfirm: "삭제",
+      deleteFailed: "산출물을 삭제하지 못했습니다",
+    },
     pullRequest: {
       label: "풀 리퀘스트",
       subtitle: "풀 리퀘스트 세부 정보",
@@ -1857,6 +1872,7 @@ export const ko: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "{{host}}에서 열기",
     error: "오류",
     empty: "추가 세부 정보가 없습니다",
     subAgentActivity: "서브에이전트 활동",
@@ -2037,7 +2053,7 @@ export const ko: TranslationResources = {
       },
       agentLinks: {
         label: "에이전트 링크",
-        description: "에이전트 메시지의 링크를 열 위치",
+        description: "에이전트가 게시한 링크를 열 위치",
         accessibilityLabel: "에이전트 링크를 열 위치 선택({{value}})",
         options: {
           inApp: "Paseo에서",
