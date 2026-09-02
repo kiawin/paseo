@@ -50,6 +50,22 @@ Connecting creates no timeline or event demand. Client subscriptions own their n
 release it on unsubscribe, and restore it after reconnect. Raw message observers inspect traffic
 without requesting streams. Application caches and which agents are visible remain caller-owned.
 
+## New union members are gated on what the client advertises
+
+A new optional field is safe. A new member of a union or enum the daemon sends is not: a shipped
+client's validator rejects the whole message carrying it, so one unknown timeline item fails a
+whole page load rather than rendering one row plainly.
+
+The client declares what it understands in `hello.capabilities`
+(`packages/protocol/src/client-capabilities.ts`); the daemon rewrites or drops the variant for
+connections that didn't. Add the capability in the same change as the variant, advertise it from
+`packages/client/src/daemon-client.ts`, and apply the downgrade on every path that reaches a
+client — a timeline item leaves through five. Rewrite to a variant old clients already know when
+one carries the meaning (`artifactToolDetail` maps an artifact tool detail onto `plain_text`);
+drop the item only when nothing does (`timelineNotifications`).
+
+Cover both directions in `packages/server/src/server/wire-compat.test.ts`.
+
 ## Every shim is tagged and dated
 
 A shim that exists for old-app or old-daemon support carries a comment naming it, the version it arrived in, and when it can go:
