@@ -60,6 +60,9 @@ $PASEO_HOME/
 │   ├── workspace-labels.json            # Shared host-local label catalog
 │   ├── workspace-labels.transaction.json # Recoverable catalog/assignment compound commit
 │   └── icons/                           # Host-local custom project icon images
+├── artifacts/
+│   ├── index.json                        # Metadata for every project's artifacts
+│   └── {projectId}/{artifactId}.html     # One document per artifact; see artifacts.md
 ├── runtime/
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap

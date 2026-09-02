@@ -292,6 +292,16 @@ export type ToolCallDetail =
       text: string;
     }
   | {
+      /**
+       * A document the agent published to a URL of its own. Only Claude Code has such a tool
+       * today, but the variant carries no vendor: the renderer derives its label from the
+       * URL's host, so any provider that grows one maps onto it.
+       */
+      type: "artifact";
+      url: string;
+      title?: string;
+    }
+  | {
       type: "unknown";
       input: unknown;
       output: unknown;
