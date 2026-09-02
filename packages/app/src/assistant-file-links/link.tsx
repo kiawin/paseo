@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { Platform, Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { isNative, isWeb } from "@/constants/platform";
@@ -8,6 +8,8 @@ import { AssistantLinkPressProvider, type AssistantLinkPress } from "./link-pres
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { markdownCopyDataSet } from "@/assistant-selection-copy/markup";
+import { suppressNativeContextMenu } from "@/components/ui/context-menu";
+import { useAssistantLinkContextMenu } from "./link-context-menu";
 import { useAssistantFileLinkResolverContext } from "./provider";
 import type { AssistantFileLinkSource } from "./resolver";
 import { useFileLink } from "./use-file-link";
@@ -30,9 +32,32 @@ export function AssistantMarkdownLink({
   monoSurface,
   children,
 }: AssistantMarkdownLinkProps) {
-  const { target, onHoverIn, onPress } = useFileLink(source);
+  const { target, externalUrl, onHoverIn, onPress } = useFileLink(source);
   const { configRef } = useAssistantFileLinkResolverContext();
   const workspaceRoot = configRef.current.workspaceRoot;
+  const openLinkMenu = useAssistantLinkContextMenu();
+  // Only external links have a destination to choose. A file link's menu would be a
+  // different menu, and it does not exist yet.
+  const menuUrl = externalUrl;
+  const handleContextMenu = useCallback(
+    (event: unknown) => {
+      if (!menuUrl || !openLinkMenu) {
+        return;
+      }
+      suppressNativeContextMenu(event);
+      openLinkMenu(menuUrl, event);
+    },
+    [menuUrl, openLinkMenu],
+  );
+  const handleLongPress = useCallback(
+    (event: unknown) => {
+      if (!menuUrl || !openLinkMenu) {
+        return;
+      }
+      openLinkMenu(menuUrl, event);
+    },
+    [menuUrl, openLinkMenu],
+  );
   const tooltipPath = useMemo(
     () => (target ? formatInlinePathTargetForTooltip(target, workspaceRoot) : null),
     [target, workspaceRoot],
@@ -62,6 +87,10 @@ export function AssistantMarkdownLink({
         accessibilityRole="link"
         monoSurface={monoSurface}
         onPress={onPress}
+        // Android only. On iOS the long press belongs to the paragraph UITextView's
+        // selection handles (PR #2808), and taking it here would cost selection-copy
+        // to buy a menu. iOS gets the destination from the setting instead.
+        onLongPress={Platform.OS === "android" ? handleLongPress : undefined}
         style={style}
       >
         {children}
@@ -85,6 +114,7 @@ export function AssistantMarkdownLink({
       title={source.title}
       onClickCapture={preventAnchorNavigation}
       onAuxClickCapture={preventAnchorNavigation}
+      onContextMenu={handleContextMenu}
       style={LINK_ANCHOR_STYLE}
     >
       <MarkdownLinkText
