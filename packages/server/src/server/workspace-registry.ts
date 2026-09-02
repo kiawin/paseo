@@ -175,6 +175,7 @@ export class FileBackedProjectRegistry
       project: PersistedProjectRecord | null;
     }) => void | Promise<void>
   >();
+  private readonly pendingRemovalListeners = new Set<(projectId: string) => void | Promise<void>>();
 
   constructor(
     filePath: string,
@@ -284,7 +285,25 @@ export class FileBackedProjectRegistry
     await this.notifyMutation({ kind: "archive", projectId, project });
   }
 
+  /**
+   * Runs before a project record is removed, and may refuse the removal by throwing.
+   *
+   * `subscribeToMutations` fires after the commit and swallows listener failures, which is right
+   * for publication but wrong for a cascade: a crash partway through leaves the project already
+   * gone, so nothing retries and whatever it owned is orphaned for good. Cascading from here
+   * makes the project record its own tombstone — the removal only completes once the cascade
+   * has, and until then the user's next delete runs it again.
+   */
+  subscribeToPendingRemoval(listener: (projectId: string) => void | Promise<void>): () => void {
+    this.pendingRemovalListeners.add(listener);
+    return () => this.pendingRemovalListeners.delete(listener);
+  }
+
   override async remove(projectId: string): Promise<void> {
+    if (!(await this.get(projectId))) return;
+    for (const listener of this.pendingRemovalListeners) {
+      await listener(projectId);
+    }
     const project = await this.removeIfPresent(projectId);
     if (!project) return;
     await this.notifyMutation({ kind: "remove", projectId, project: null });

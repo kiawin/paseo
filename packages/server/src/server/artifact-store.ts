@@ -338,17 +338,25 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
   }
 
   /**
-   * Cascade for project removal. Idempotent and retryable by construction: it re-reads the
-   * index each call and treats an already-absent record or file as success, because project
-   * removal commits before its listeners run and can be retried after a partial failure.
+   * Cascade for project removal. Idempotent and retryable by construction: it re-reads the index
+   * each call and treats an already-absent record or file as success.
+   *
+   * The index mutation is one commit rather than one per record, so a publish cannot interleave
+   * and leave its record behind while its file is taken by the directory removal below. A
+   * publish landing after the commit keeps both, which is consistent — and the project record
+   * only goes once this has returned, so the next attempt collects it.
    */
   async deleteProject(projectId: string): Promise<void> {
-    const records = await this.listForProject(projectId);
-    for (const record of records) {
-      await this.remove(record.artifactId);
+    const removed = await this.mutateCache<PersistedArtifactRecord[]>((records) => {
+      const victims = [...records.values()].filter((record) => record.projectId === projectId);
+      for (const victim of victims) records.delete(victim.artifactId);
+      return victims;
+    });
+    for (const record of removed) {
+      await this.unlinkContent(record);
     }
     await fs.rm(path.join(this.root, projectId), { recursive: true, force: true });
-    if (records.length > 0) this.notifyChanged(projectId);
+    if (removed.length > 0) this.notifyChanged(projectId);
   }
 
   /**

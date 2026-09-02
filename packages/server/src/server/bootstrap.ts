@@ -564,6 +564,27 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
   return initialConfig;
 }
 
+/**
+ * Removes a project's artifacts when the project goes.
+ *
+ * Wired twice, on purpose, and idempotent both times. Before the commit the project record is
+ * the tombstone: a crash partway through leaves it in place, so the user's next delete retries
+ * the cascade instead of orphaning what it did not reach. After the commit sweeps anything a
+ * publish landed while the first pass was running.
+ */
+function subscribeArtifactCascade(
+  projectRegistry: FileBackedProjectRegistry,
+  artifactStore: ArtifactStore,
+): void {
+  projectRegistry.subscribeToPendingRemoval?.(async (projectId) => {
+    await artifactStore.deleteProject(projectId);
+  });
+  projectRegistry.subscribeToMutations?.(async (mutation) => {
+    if (mutation.kind !== "remove") return;
+    await artifactStore.deleteProject(mutation.projectId);
+  });
+}
+
 export async function createPaseoDaemon(
   config: PaseoDaemonConfig,
   rootLogger: Logger,
@@ -945,12 +966,7 @@ export async function createPaseoDaemon(
   });
   await workspaceLabelService.initialize();
   await artifactStore.initialize();
-  // Project removal commits before its listeners run and reports their failures only to the log,
-  // so the cascade is written to be idempotent and safe to retry from a later removal.
-  projectRegistry.subscribeToMutations?.(async (mutation) => {
-    if (mutation.kind !== "remove") return;
-    await artifactStore.deleteProject(mutation.projectId);
-  });
+  subscribeArtifactCascade(projectRegistry, artifactStore);
   logger.info({ elapsed: elapsed() }, "Workspace registries bootstrapped");
   const teardownArchivedWorkspaceRuntime = (workspaceId: string): void => {
     scriptRuntimeStore.removeForWorkspace(workspaceId);
