@@ -22,7 +22,7 @@ import type {
   WorkspaceRegistry,
 } from "./workspace-registry.js";
 import { createRealpathAwarePathMatcher } from "../utils/path.js";
-import { KeyedLock, pathLockKey } from "../utils/keyed-lock.js";
+import { withWorkspaceBackingDirectory } from "./worktree/backing-directory.js";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
 
 export type ActiveWorkspaceRef = Pick<
@@ -429,9 +429,10 @@ async function maybeRemoveDirectory(
 
   // The reference check and the removal have to be one step. Between them a new
   // workspace can start referencing this directory, and for managed placement
-  // the removal is forced and recursive. Serializing on the backing path keeps
-  // concurrent archives of the same directory from interleaving.
-  return worktreeRemovalLock.run(pathLockKey(backing.path), async () => {
+  // the removal is forced and recursive. The lock is shared with provisioning,
+  // so a workspace being registered against this directory either lands before
+  // the check and stops the removal, or waits and finds the directory gone.
+  return withWorkspaceBackingDirectory(backing.path, async () => {
     const remainingActive = await dependencies.listActiveWorkspaces();
     if (
       !(await isDirectoryUnreferenced(
@@ -481,9 +482,6 @@ async function maybeRemoveDirectory(
     }
   });
 }
-
-/** Serializes removal per backing directory. See maybeRemoveDirectory. */
-const worktreeRemovalLock = new KeyedLock();
 
 function uniqueFilesystemPaths(paths: string[]): string[] {
   const unique: string[] = [];

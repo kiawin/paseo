@@ -718,3 +718,46 @@ test.each(["missing", "archived"] as const)(
     expect(await projectRegistry.list()).toEqual(previousProject ? [previousProject] : []);
   },
 );
+
+// Archive decides a backing directory is unreferenced and then removes it.
+// Provisioning writes the record that would have made it referenced. These
+// cover the interleaving of those two, which the shared backing-directory lock
+// is what resolves.
+
+function worktreeInput(repo: string, worktree: string) {
+  return {
+    sourceCwd: repo,
+    repoRoot: repo,
+    cwd: worktree,
+    worktreeRoot: worktree,
+    branch: "feat-x",
+    baseBranch: "main",
+    title: null,
+  };
+}
+
+test("worktree provisioning refuses to register a record for a directory archive already removed", async () => {
+  const repo = path.join(tmpDir, "repo");
+  const worktree = path.join(tmpDir, "repo-worktrees", "feat-x");
+  gitRoots.add(repo);
+  mkdirSync(repo, { recursive: true });
+
+  // The worktree was created and then removed by a concurrent archive before
+  // provisioning reached the registry write.
+  await expect(
+    provisioning.createWorkspaceForWorktree(worktreeInput(repo, worktree)),
+  ).rejects.toThrow(WorkspaceProvisioningError);
+
+  expect(await workspaceRegistry.list()).toHaveLength(0);
+});
+
+test("directory provisioning registers a record Paseo does not own without checking the directory", async () => {
+  const missing = path.join(tmpDir, "not-created-yet");
+
+  // Archive never removes a directory Paseo does not own, so the presence check
+  // does not apply and must not turn this into a failure.
+  const workspace = await provisioning.createWorkspaceForDirectory(missing);
+
+  expect(workspace.isPaseoOwnedWorktree).toBe(false);
+  expect(await workspaceRegistry.list()).toHaveLength(1);
+});

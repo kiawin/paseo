@@ -116,6 +116,19 @@ absent — a daemon predating it strips unknown keys on re-parse — the policy
 falls back to the worktree's path, which can only ever select `managed` for a
 path inside Paseo's own root.
 
+Archive decides a directory is unreferenced by listing the active workspaces,
+then removes it. Provisioning writes the record that would have made it
+referenced. Both take the same lock on the backing directory
+(`packages/server/src/server/worktree/backing-directory.ts`), so one of two
+orderings always holds: provisioning registers first and archive declines, or
+archive finishes and provisioning finds the directory gone and refuses to
+register a record pointing at nothing. A workspace can share a worktree with
+its siblings, so "create a workspace on a directory that already exists" is
+ordinary traffic, not a corner case.
+
+The lock is in-process. It orders work inside one daemon and says nothing about
+two daemons sharing a `PASEO_HOME`.
+
 Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/agent/agent-manager.ts`):
 
 1. Snapshot the current session into the registry
