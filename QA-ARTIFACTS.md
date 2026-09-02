@@ -22,6 +22,12 @@ npm --workspace @getpaseo/app run test:e2e -- e2e/browser/artifacts-qa-evidence.
 | 07  | `07-compact-viewer.png`                        | Full-screen viewer on compact                                                                                                                                                                                 |
 | 08  | `08-main-pane-launcher-excludes-artifacts.png` | Artifacts absent from the main pane's `+` menu — `supportedHosts: ["explorer"]`, same as Files and Changes                                                                                                    |
 
+The four-tab header found a real bug and it is fixed in this branch. Adding Artifacts made
+`Changes │ Files │ PR │ Artifacts` possible, and four labels did not fit the overlay header at
+phone width: the last tab landed past the right edge and the close button was pushed outside the
+viewport, leaving no way to dismiss the overlay by tapping. The row now scrolls, as the desktop
+rail already did. Shot 09 is the fixed state; the assertion is on geometry, not appearance.
+
 Layout: no shift observed between empty, loading and populated states — the list is a plain
 scroll of fixed-height rows and the viewer's chrome is one optional bar. Row meta drops the size
 segment for a link-only artifact rather than rendering `0 B`.
@@ -63,7 +69,21 @@ npx vitest run --project unit src/i18n src/utils src/workspace-tabs src/stores/p
 ```
 npm run test:e2e -- e2e/browser/artifacts-pane.spec.ts e2e/browser/artifacts-qa-evidence.spec.ts
 
-  8 passed (48.9s)
+  9 passed
+```
+
+Relay, against a real local Elixir relay and a packaged daemon. Requires the sibling
+`paseo-relay` checkout (`mise install && mix local.hex --force && mix deps.get` there once) and
+`npm run build:server && npm run build:daemon-web-ui` first. `PASEO_RELAY_CHECKOUT` is needed
+when running from a git worktree, since the helper resolves the sibling relative to the main
+checkout.
+
+```
+PASEO_RELAY_CHECKOUT=../../../paseo-relay npx playwright test --project=relay-deployment
+
+  ✓ relay-artifact-preview.real.spec.ts — an artifact renders over a relay …
+  ✓ relay-deployment-reconnect.real.spec.ts — a streaming chat recovers …
+  2 passed (31.1s)
 ```
 
 ```
@@ -105,9 +125,6 @@ native path is the existing `FileHtmlPreview.native`, reused unchanged.
 
 ## Gaps, stated
 
-- **The four-tab compact header is uncovered.** The fixture repo has no pull request, so the
-  overlay shows three tabs. `Changes │ Files │ PR #42 │ Artifacts` at 390 px is the crowding case
-  and it has not been seen.
 - **`ToolCallDetailsContent`'s artifact branch has no render test.** A browser test needed two
   changes to the shared vitest config to bundle `react-native-gesture-handler` and
   `hoist-non-react-statics`; that was the wrong trade for one presentational component, so it was
@@ -117,5 +134,10 @@ native path is the existing `FileHtmlPreview.native`, reused unchanged.
   `CLAUDE_CODE_ARTIFACT=1` (#3561) and the only local sample is an `action: "list"` call, so the
   parser scrapes the first `http(s)` URL out of the result text. End-to-end capture from a live
   Claude run has not been exercised.
-- **No relay run.** `docs/qa.md` asks for a rendered artifact over a relay on mobile, which is
-  the case the HTTP route cannot serve and the reason for the transport choice. Not done.
+- **The compact tab row's scroll is unverified on a device.** It is a horizontal ScrollView
+  inside a panel whose ancestor owns a horizontal swipe-to-close gesture. On web there is no
+  contest; on native the two are expected to compose the usual way, but that has not been run.
+- **The relay run seeds `$PASEO_HOME` directly.** Publishing is agent-only and the registries
+  read their files at boot, so the project, workspace and artifact are written before the daemon
+  starts. The transport, the store read and the render are all real; the artifact's creation is
+  not.
