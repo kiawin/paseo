@@ -26,7 +26,7 @@ export const es: TranslationResources = {
       loading: "Cargando...",
       starting: "A partir de...",
       copied: "Copiado",
-      copiedLabel: "Copiado{{label}}",
+      copiedLabel: "Copiado {{label}}",
       downloadComplete: "Descarga completa",
       downloadFailed: "Descarga fallida",
       uploadComplete: "Subida completada",
@@ -39,7 +39,7 @@ export const es: TranslationResources = {
       daemonUnavailable: "Daemonno disponible",
       daemonClientUnavailable: "ClienteDaemonno disponible",
       daemonClientDisconnected: "El clienteDaemonestá desconectado",
-      noFileFound: "No se encontró ningún archivo para{{token}}",
+      noFileFound: "No se encontró ningún archivo para {{token}}",
       unexpectedDictationError: "Se produjo un error inesperado al manejar el dictado.",
     },
     connectionStatus: {
@@ -97,7 +97,7 @@ export const es: TranslationResources = {
     input: {
       accessibilityLabel: "Agente de mensajes...",
       terminalAccessibilityLabel: "Terminal prompt",
-      focusHint: "{{shortcut}}para enfocar",
+      focusHint: "{{shortcut}} para enfocar",
       addAttachment: "Agregar archivo adjunto",
       interruptAgent: "agente de interrupción",
       queueMessage: "mensaje de cola",
@@ -128,7 +128,7 @@ export const es: TranslationResources = {
       addImage: "Agregar imagen",
       pasteImage: "Pegar imagen",
       addFile: "Upload file",
-      addIssueOrPr: "Agregar problema oPR",
+      addIssueOrPr: "Agregar problema o PR",
       addIssueOrPr_mr: "Agregar problema o MR",
       dropImagesHere: "Suelta imágenes aquí",
       dropFilesHere: "Drop files here",
@@ -165,7 +165,7 @@ export const es: TranslationResources = {
       noResults: "No se encontraron resultados.",
       searchPlaceholder: "Problemas de búsqueda y relaciones públicas...",
       searchPlaceholder_mr: "Problemas de búsqueda y MRs...",
-      title: "Adjuntar problema oPR",
+      title: "Adjuntar problema o PR",
       title_mr: "Adjuntar problema o MR",
     },
   },
@@ -228,14 +228,14 @@ export const es: TranslationResources = {
     unavailable: {
       selectedHost: "Anfitrión seleccionado",
       unknownHost:
-        "No se puede abrir este agente porque{{serverLabel}}no está configurado en este dispositivo.",
+        "No se puede abrir este agente porque {{serverLabel}} no está configurado en este dispositivo.",
       addHost:
         "Agregue el host en Configuración o abra un agente en un servidor configurado para continuar.",
-      preparingSession: "Preparando sesión{{serverLabel}}...",
-      connecting: "Conectando a{{serverLabel}}...",
+      preparingSession: "Preparando sesión {{serverLabel}}...",
+      connecting: "Conectando a {{serverLabel}}...",
       showSoon: "Le mostraremos a este agente en un momento.",
       showWhenOnline: "Le mostraremos a este agente una vez que el anfitrión esté en línea.",
-      reconnectingTo: "Reconectándose a{{serverLabel}}...",
+      reconnectingTo: "Reconectándose a {{serverLabel}}...",
       showAgainWhenReachable:
         "Le mostraremos a este agente nuevamente tan pronto como podamos comunicarnos con el anfitrión.",
     },
@@ -275,7 +275,7 @@ export const es: TranslationResources = {
     },
     badges: {
       archived: "Archivado",
-      pending: "{{count}}pendiente",
+      pending: "{{count}} pendiente",
       attention: "Atención",
     },
     archiveSheet: {
@@ -356,7 +356,7 @@ export const es: TranslationResources = {
       loading: "Compactando...",
       auto: "Contexto compactado automáticamente",
       manual: "Contexto compactado manualmente",
-      withTokens: "Contexto compactado (tokens{{tokens}}K)",
+      withTokens: "Contexto compactado ({{tokens}}K tokens)",
       completed: "Contexto compactado",
     },
   },
@@ -371,7 +371,7 @@ export const es: TranslationResources = {
       noProviders: "No hay proveedores importables habilitados.",
       loading: "Cargando sesiones recientes...",
       failedAll: "No se pudieron cargar las sesiones recientes.",
-      failedProviders: "No se pudieron cargar sesiones para{{providers}}.",
+      failedProviders: "No se pudieron cargar sesiones para {{providers}}.",
       failedImport: "No se pudo importar la sesión seleccionada.",
     },
     actions: {
@@ -384,7 +384,7 @@ export const es: TranslationResources = {
     empty: {
       noRecent: "No hay sesiones recientes para importar.",
       alreadyImported: "Todas las sesiones recientes ya están importadas.",
-      noProviderSessions: "No se encontraron sesiones{{provider}}.",
+      noProviderSessions: "No se encontraron sesiones {{provider}}.",
     },
     row: {
       importing: "Importador...",
@@ -394,8 +394,8 @@ export const es: TranslationResources = {
     route: {
       loading: "Cargando espacio de trabajo",
       connecting: "Conectando",
-      hostOffline: "{{hostName}}está desconectado",
-      cannotReachHost: "No se puede alcanzar{{hostName}}",
+      hostOffline: "{{hostName}} está desconectado",
+      cannotReachHost: "No se puede alcanzar {{hostName}}",
       hostStatus: "Estado deHost:{{status}}",
       needsHostUpgrade: "Actualiza tu host para restaurar este espacio de trabajo",
       manageHost: "Administrar host",
@@ -532,14 +532,14 @@ export const es: TranslationResources = {
         title: "El navegador es solo para escritorio",
         subtitle: "Abra este espacio de trabajo en Electron para usar el navegador integrado.",
       },
-      session: "Sesión de navegador{{browserId}}",
+      session: "Sesión de navegador {{browserId}}",
       controls: {
         back: "Atrás",
         forward: "Adelante",
         stopLoading: "dejar de cargar",
         refresh: "Refrescar",
-        browserUrl: "NavegadorURL",
-        enterUrl: "IngreseURL",
+        browserUrl: "Navegador URL",
+        enterUrl: "Ingrese URL",
         openDevTools: "Abrir herramientas de desarrollo del navegador",
         cancelSelector: "Cancelar selector de elementos",
         annotateElement: "Anotar elemento",
@@ -562,8 +562,8 @@ export const es: TranslationResources = {
       },
       errors: {
         failedToLoad: "No se pudo cargar la página",
-        invalidUrl: "Navegador no válidoURL",
-        unsupportedProtocol: "Navegador bloqueado no compatibleURL:{{protocol}}",
+        invalidUrl: "Navegador no válido URL",
+        unsupportedProtocol: "Navegador bloqueado no compatible URL:{{protocol}}",
       },
     },
     terminal: {
@@ -585,12 +585,12 @@ export const es: TranslationResources = {
         workspace: "Workspace",
       },
       switcher: {
-        trigger: "Cambiar pestañas ({{count}}abierto)",
+        trigger: "Cambiar pestañas ({{count}} abierto)",
         title: "Cambiar pestaña",
         searchPlaceholder: "Pestañas de búsqueda",
       },
       menu: {
-        openFor: "Menú abierto para{{label}}",
+        openFor: "Menú abierto para {{label}}",
         copyResumeCommand: "Copiar comando de reanudación",
         copyAgentId: "Copiar ID del agente",
         copyTerminalId: "Copiar ID del terminal",
@@ -669,16 +669,16 @@ export const es: TranslationResources = {
         closeTabsRightTitle: "¿Cerrar pestañas a la derecha?",
         closeOtherTabsTitle: "¿Cerrar otras pestañas?",
         bulk: {
-          all: "Esto archivará los agentes{{agents}}, cerrará los terminales{{terminals}}y cerrará las pestañas{{tabs}}. Cualquier proceso en ejecución en una terminal cerrada se detendrá inmediatamente.",
+          all: "Esto archivará los agentes {{agents}}, cerrará los terminales {{terminals}} y cerrará las pestañas {{tabs}}. Cualquier proceso en ejecución en una terminal cerrada se detendrá inmediatamente.",
           agentsAndTerminals:
-            "Esto archivará los agentes{{agents}}y cerrará los terminales{{terminals}}. Cualquier proceso en ejecución en una terminal cerrada se detendrá inmediatamente.",
+            "Esto archivará los agentes {{agents}} y cerrará los terminales {{terminals}}. Cualquier proceso en ejecución en una terminal cerrada se detendrá inmediatamente.",
           terminalsAndTabs:
-            "Esto cerrará los terminales{{terminals}}y cerrará las pestañas{{tabs}}. Cualquier proceso en ejecución en una terminal cerrada se detendrá inmediatamente.",
-          agentsAndTabs: "Esto archivará los agentes{{agents}}y cerrará las pestañas{{tabs}}.",
+            "Esto cerrará los terminales {{terminals}} y cerrará las pestañas {{tabs}}. Cualquier proceso en ejecución en una terminal cerrada se detendrá inmediatamente.",
+          agentsAndTabs: "Esto archivará los agentes {{agents}} y cerrará las pestañas {{tabs}}.",
           terminals:
-            "Esto cerrará los terminales{{terminals}}. Cualquier proceso en ejecución en una terminal cerrada se detendrá inmediatamente.",
-          tabs: "Esto cerrará las pestañas{{tabs}}.",
-          agents: "Esto archivará los agentes{{agents}}.",
+            "Esto cerrará los terminales {{terminals}}. Cualquier proceso en ejecución en una terminal cerrada se detendrá inmediatamente.",
+          tabs: "Esto cerrará las pestañas {{tabs}}.",
+          agents: "Esto archivará los agentes {{agents}}.",
         },
       },
     },
@@ -716,13 +716,13 @@ export const es: TranslationResources = {
       accessibility: {
         trigger: "GuionesWorkspace",
         openService: "Ver servicio {{scriptName}}",
-        viewTerminal: "Ver terminal{{scriptName}}",
-        runScript: "Ejecute el script{{scriptName}}",
-        stopScript: "Detener{{scriptName}}",
-        restartScript: "Reiniciar{{scriptName}}",
-        copyUrl: "Copiar URL de{{scriptName}}",
+        viewTerminal: "Ver terminal {{scriptName}}",
+        runScript: "Ejecute el script {{scriptName}}",
+        stopScript: "Detener {{scriptName}}",
+        restartScript: "Reiniciar {{scriptName}}",
+        copyUrl: "Copiar URL de {{scriptName}}",
         chooseUrl: "Elegir URL para {{scriptName}}",
-        script: "Guión{{scriptName}}",
+        script: "Guión {{scriptName}}",
       },
       routes: {
         public: "Proxy inverso",
@@ -730,9 +730,9 @@ export const es: TranslationResources = {
         direct: "Directa",
       },
       states: {
-        exitCode: "salir de{{code}}",
-        startFailed: "No se pudo iniciar{{scriptName}}",
-        stopFailed: "No se pudo detener{{scriptName}}",
+        exitCode: "salir de {{code}}",
+        startFailed: "No se pudo iniciar {{scriptName}}",
+        stopFailed: "No se pudo detener {{scriptName}}",
       },
     },
     tree: {
@@ -763,11 +763,11 @@ export const es: TranslationResources = {
           pending: "Tirando y empujando...",
           success: "Tirado y empujado",
         },
-        viewPr: "VerPR",
+        viewPr: "Ver PR",
         createPr: {
-          label: "CrearPR",
-          pending: "CreandoPR...",
-          success: "PRcreado",
+          label: "Crear PR",
+          pending: "Creando PR...",
+          success: "PR creado",
           label_mr: "Crear MR",
           pending_mr: "Creando MR...",
           success_mr: "MR creado",
@@ -778,7 +778,7 @@ export const es: TranslationResources = {
           success: "Fusionado",
         },
         mergeFromBase: {
-          label: "Actualización desde{{baseRef}}",
+          label: "Actualización desde {{baseRef}}",
           pending: "Actualizando...",
           success: "Actualizado",
         },
@@ -835,7 +835,7 @@ export const es: TranslationResources = {
           createPrNoForge:
             "Crear {{noun}} no está disponible en este momento porque {{brand}} no está conectado",
           createPrNoCommits:
-            "CrearPRno está disponible porque esta rama aún no tiene nuevas confirmaciones",
+            "Crear PR no está disponible porque esta rama aún no tiene nuevas confirmaciones",
           mergeNoBase:
             "La combinación no está disponible porque no pudimos determinar la rama base",
           mergeDirty:
@@ -847,25 +847,25 @@ export const es: TranslationResources = {
           updateDirty:
             "La actualización no está disponible mientras tenga cambios locales, así que confírmelos o guárdelos primero",
           updateCurrent:
-            "La actualización no está disponible porque esta rama ya está actualizada con{{baseRef}}",
+            "La actualización no está disponible porque esta rama ya está actualizada con {{baseRef}}",
           mergePrNoGithub:
-            "FusionarPRno está disponible en este momento porqueGitHubno está conectado",
+            "Fusionar PR no está disponible en este momento porque GitHub no está conectado",
           archiveNotWorktree:
-            "El archivo no está disponible aquí porque este espacio de trabajo no se creó como un árbol de trabajoPaseo",
+            "El archivo no está disponible aquí porque este espacio de trabajo no se creó como un árbol de trabajo Paseo",
           mergePrNoForge:
             "Fusionar {{noun}} no está disponible en este momento porque {{brand}} no está conectado",
           mergePrMissing:
-            "FusionarPRno está disponible porque aún no hay una solicitud de extracción",
+            "Fusionar PR no está disponible porque aún no hay una solicitud de extracción",
           mergePrDraft:
-            "FusionarPRno está disponible porque la solicitud de extracción aún es un borrador",
+            "Fusionar PR no está disponible porque la solicitud de extracción aún es un borrador",
           mergePrMerged:
-            "FusionarPRno está disponible porque la solicitud de extracción ya está fusionada",
+            "Fusionar PR no está disponible porque la solicitud de extracción ya está fusionada",
           mergePrClosed:
-            "FusionarPRno está disponible porque la solicitud de extracción está cerrada",
+            "Fusionar PR no está disponible porque la solicitud de extracción está cerrada",
           mergePrConflicts:
-            "FusionarPRno está disponible porque la solicitud de extracción tiene conflictos",
+            "Fusionar PR no está disponible porque la solicitud de extracción tiene conflictos",
           mergePrQueue:
-            "FusionarPRno está disponible aquí porque este repositorio utiliza una cola de fusión",
+            "Fusionar PR no está disponible aquí porque este repositorio utiliza una cola de fusión",
           mergePrNotReady:
             "Fusionar {{noun}} no está disponible hasta que {{brand}} informe que {{noun}} está listo para fusionarse",
           autoMergeCannotDisable:
@@ -876,8 +876,8 @@ export const es: TranslationResources = {
           failedPull: "No se pudo tirar",
           failedPush: "No se pudo empujar",
           failedPullAndPush: "No se pudo tirar y empujar",
-          failedCreatePr: "No se pudo crearPR",
-          failedMergePr: "No se pudo fusionarPR",
+          failedCreatePr: "No se pudo crear PR",
+          failedMergePr: "No se pudo fusionar PR",
           failedEnableAutoMerge: "No se pudo habilitar la combinación automática",
           failedDisableAutoMerge: "No se pudo deshabilitar la combinación automática",
           baseRefUnavailable: "Referencia base no disponible",
@@ -890,12 +890,12 @@ export const es: TranslationResources = {
           cancel: "Cancelar",
           uncommittedChanges: "Cambios no confirmados",
           uncommittedChangesWithDiff: "Cambios no confirmados ({{diffStat}})",
-          addedLine: "Línea añadida{{count}}",
-          addedLines: "{{count}}agregó líneas",
-          deletedLine: "Línea eliminada de{{count}}",
-          deletedLines: "{{count}}líneas eliminadas",
-          unpushedCommit: "Confirmación no enviada de{{count}}",
-          unpushedCommits: "Confirmaciones no enviadas de{{count}}",
+          addedLine: "Línea añadida {{count}}",
+          addedLines: "{{count}} agregó líneas",
+          deletedLine: "Línea eliminada de {{count}}",
+          deletedLines: "{{count}} líneas eliminadas",
+          unpushedCommit: "Confirmación no enviada de {{count}}",
+          unpushedCommits: "Confirmaciones no enviadas de {{count}}",
         },
       },
       diff: {
@@ -928,7 +928,7 @@ export const es: TranslationResources = {
         emptyUncommitted: "Sin cambios no confirmados",
         seeUncommittedChanges: "Ver cambios no confirmados",
         seeCommittedChanges: "Ver cambios confirmados",
-        emptyAgainstBase: "Sin cambios frente a{{baseRef}}",
+        emptyAgainstBase: "Sin cambios frente a {{baseRef}}",
         checkingRepository: "Comprobando repositorio...",
         notRepository: "No es un repositorio de git",
         diffMode: "modo diferencial",
@@ -953,7 +953,7 @@ export const es: TranslationResources = {
       openInEditor: {
         open: "Abierto",
         chooseEditor: "Elige editor",
-        openIn: "Abrir espacio de trabajo en{{target}}",
+        openIn: "Abrir espacio de trabajo en {{target}}",
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "No se pudo abrir el espacio de trabajo",
       },
@@ -1210,7 +1210,7 @@ export const es: TranslationResources = {
         newWorkspace: "Nuevo espacio de trabajo",
         showMore: "Mostrar más",
         showLess: "Mostrar menos",
-        createWorkspaceFor: "Crea un nuevo espacio de trabajo para{{projectName}}",
+        createWorkspaceFor: "Crea un nuevo espacio de trabajo para {{projectName}}",
         copyPath: "Copiar ruta",
         copyBranchName: "Copiar nombre de sucursal",
         rename: "Cambiar nombre del espacio de trabajo",
@@ -1298,7 +1298,7 @@ export const es: TranslationResources = {
       close: "Cerrar ventana",
     },
     quitting: {
-      title: "Saliendo dePaseo...",
+      title: "Saliendo de Paseo...",
       detail: "Deteniendo el demonio local.",
     },
     daemon: {
@@ -1308,11 +1308,11 @@ export const es: TranslationResources = {
         builtInOnly: "Aquí solo se muestra el demonio de escritorio integrado.",
         running: "correr",
         notRunning: "no corriendo",
-        pid: "PID{{pid}}",
+        pid: "PID {{pid}}",
       },
       management: {
         title: "Administrar demonio incorporado",
-        hint: "Deje quePaseoinicie y detenga el demonio incorporado",
+        hint: "Deje que Paseo inicie y detenga el demonio incorporado",
         pauseTitle: "Pausar el demonio incorporado",
         pauseMessage:
           "Esto detendrá el demonio incorporado inmediatamente. Se detendrán los agentes en ejecución y los terminales conectados al demonio integrado.",
@@ -1320,12 +1320,12 @@ export const es: TranslationResources = {
         registrationFailed:
           "Built-in daemon started, but Paseo could not save the localhost connection. Toggle daemon management off and on again, or add localhost manually.",
         pausedStopFailed:
-          "La gestión del demonio integrado se pausó, peroPaseono pudo detener el demonio.",
+          "La gestión del demonio integrado se pausó, pero Paseo no pudo detener el demonio.",
         updateFailed: "No se puede actualizar la gestión de demonios integrada.",
       },
       keepRunning: {
         title: "Mantener el demonio en ejecución después de salir",
-        hint: "Daemonsigue ejecutándose cuando sales dePaseo",
+        hint: "Daemonsigue ejecutándose cuando sales de Paseo",
       },
       logs: {
         title: "Archivo de registro",
@@ -1383,7 +1383,7 @@ export const es: TranslationResources = {
         installingAction: "Instalando...",
         installAndRestart: "Instalar y reiniciar",
         installingDescription: "Instalando y reiniciando...",
-        versionReady: "{{version}}está listo para instalar.",
+        versionReady: "{{version}} está listo para instalar.",
         newVersionReady: "Una nueva versión está lista para instalar.",
         restartWarning:
           "La actualización de la aplicación dejará de ejecutar agentes y cerrará sesiones de terminal.",
@@ -1395,7 +1395,7 @@ export const es: TranslationResources = {
     },
     rosetta: {
       title: "Descargue la compilaciónApple Silicon",
-      runningIntel: "Estás ejecutando la compilaciónInteldePaseoenRosettaenApple Silicon.",
+      runningIntel: "Estás ejecutando la compilaciónIntelde Paseo enRosettaenApple Silicon.",
       highCpu:
         "Esto provoca un uso elevado de la CPU. Descargue la compilaciónApple Siliconpara solucionarlo.",
       download: "Descargar",
@@ -1442,7 +1442,7 @@ export const es: TranslationResources = {
         microphone: "El estado del micrófono aún no se ha comprobado.",
       },
       testNotification: {
-        title: "Prueba de notificaciónPaseo",
+        title: "Prueba de notificación Paseo",
         body: "Si puede ver esto, las notificaciones de escritorio funcionan.",
         notDelivered:
           "La notificación no fue entregada. Verifique Configuración del sistema> Notificaciones.",
@@ -1451,8 +1451,8 @@ export const es: TranslationResources = {
     },
     integrations: {
       cli: {
-        statusFailed: "No se puede verificar el estado de instalación deCLI.",
-        installFailed: "No se puede instalar elPaseoCLI.",
+        statusFailed: "No se puede verificar el estado de instalación de CLI.",
+        installFailed: "No se puede instalar el Paseo CLI.",
       },
     },
   },
@@ -1464,7 +1464,7 @@ export const es: TranslationResources = {
   startup: {
     errorTitle: "algo salió mal",
     errorDescription:
-      "El servidor local no pudo iniciarse. Si esto continúa sucediendo, informe el problema enGitHube incluya los registros a continuación.",
+      "El servidor local no pudo iniciarse. Si esto continúa sucediendo, informe el problema en GitHub e incluya los registros a continuación.",
     logs: {
       loading: "Cargando registros de demonio...",
       unavailable: "No hay registros de demonios disponibles.",
@@ -1479,11 +1479,11 @@ export const es: TranslationResources = {
       },
       importSession: {
         title: "Importar sesión",
-        description: "Incorporar sesionesCLIexternas recientes",
+        description: "Incorporar sesiones CLI externas recientes",
       },
       setupProviders: {
         title: "Proveedores de configuración",
-        description: "ConfigurarClaude Code,Codexy más",
+        description: "Configurar Claude Code,Codex y más",
       },
       pairDevice: {
         title: "Emparejar dispositivo",
@@ -1552,7 +1552,7 @@ export const es: TranslationResources = {
     },
   },
   onboarding: {
-    title: "Bienvenido aPaseo",
+    title: "Bienvenido a Paseo",
     subtitle: "Conecte su computadora para comenzar",
     actions: {
       settings: "Ajustes",
@@ -1584,7 +1584,7 @@ export const es: TranslationResources = {
     noMatchesForQuery: "Ningún modelo coincide con «{{query}}»",
     searchAllPlaceholder: "Buscar en todos los modelos...",
     searchPlaceholder: "Buscar modelos...",
-    openProviderSettings: "Abrir configuración de{{provider}}",
+    openProviderSettings: "Abrir configuración de {{provider}}",
   },
   providerCatalog: {
     title: "Agregar proveedor",
@@ -1596,7 +1596,7 @@ export const es: TranslationResources = {
       installed: "Instalado",
       cancel: "Cancelar",
       installInstructions: "Instrucciones de instalación",
-      installInstructionsFor: "Instrucciones de instalación de{{provider}}",
+      installInstructionsFor: "Instrucciones de instalación de {{provider}}",
     },
     errors: {
       unableToInstall: "No se puede instalar el proveedor",
@@ -1640,7 +1640,7 @@ export const es: TranslationResources = {
     },
     direct: {
       title: "Conexión directa",
-      helper: "Ingrese la dirección de un servidorPaseo.",
+      helper: "Ingrese la dirección de un servidor Paseo.",
       fields: {
         host: "Host",
         port: "Puerto",
@@ -1668,7 +1668,7 @@ export const es: TranslationResources = {
         invalidPort: "El puerto debe estar entre 1 y 65535",
         invalidConnection: "Conexión no válida",
         failedTitle: "La conexión falló",
-        failedToConnect: "No pudimos conectarnos a{{endpoint}}.",
+        failedToConnect: "No pudimos conectarnos a {{endpoint}}.",
         noAdditionalDetails: "{{detail}}(no se proporcionan detalles adicionales)",
         timedOut: "Se agotó el tiempo de conexión. Verifique el host/porty su red.",
         refused: "Conexión rechazada. ¿El servidor se está ejecutando en esta dirección?",
@@ -1748,7 +1748,7 @@ export const es: TranslationResources = {
         "Sin relé, conéctese directamente por TCP, Tailscale u otra VPN. No se crea ningún código QR.",
       updateRequired: "Actualice el host para habilitar el relé desde Paseo Desktop.",
       unavailable: "Oferta de maridaje no disponible.",
-      hint: "Escanee este códigoQRconPaseoen su teléfono o copie el enlace a continuación.",
+      hint: "Escanee este códigoQRcon Paseo en su teléfono o copie el enlace a continuación.",
       securityWarning:
         "Trata este enlace de emparejamiento como una contraseña. Cualquiera que lo tenga puede acceder a este daemon.",
       qrUnavailable: "CódigoQRno disponible.",
@@ -1781,9 +1781,9 @@ export const es: TranslationResources = {
     empty: "No hay cambios para mostrar",
   },
   serviceUrl: {
-    title: "Servicio abiertoURL",
-    message: "¿Abrir{{url}}?",
-    inPaseo: "EnPaseo",
+    title: "Servicio abierto URL",
+    message: "¿Abrir {{url}}?",
+    inPaseo: "En Paseo",
     externalBrowser: "Navegador externo",
     dontAskAgain: "no vuelvas a preguntar",
   },
@@ -1793,7 +1793,7 @@ export const es: TranslationResources = {
     cancelled: "La descarga fue cancelada.",
     failed: "No se pudo descargar el archivo.",
     shareFile: "compartir archivo",
-    shareFileNamed: "Compartir{{fileName}}",
+    shareFileNamed: "Compartir {{fileName}}",
   },
   uploads: {
     failed: "No se pudo subir el archivo.",
@@ -1812,7 +1812,7 @@ export const es: TranslationResources = {
     pillLabelReadyToReview: "{{count}} para revisar",
     detachAction: "Separar {{label}}",
     detachTooltip: "Separar subagente",
-    archiveAction: "Archivo{{label}}",
+    archiveAction: "Archivo {{label}}",
     archiveTooltip: "Subagente de archivo",
     archiveFinishedAction: "Archivar subagentes finalizados",
     archiveFinishedRetry: "Reintentar ({{failed}}/{{total}})",
@@ -1936,9 +1936,9 @@ export const es: TranslationResources = {
   contextWindow: {
     title: "ventana contextual",
     used: "{{percentage}}% utilizado",
-    tokens: "Fichas{{used}}/{{max}}",
-    sessionCost: "Costo de la sesión{{cost}}",
-    accessibility: "Ventana de contexto{{percentage}}% utilizada",
+    tokens: "Fichas {{used}}/{{max}}",
+    sessionCost: "Costo de la sesión {{cost}}",
+    accessibility: "Ventana de contexto {{percentage}}% utilizada",
   },
   review: {
     comment: {
@@ -1969,10 +1969,10 @@ export const es: TranslationResources = {
     enableBuiltInDaemon: "Activar el demonio integrado",
     projects: "Proyectos",
     projectList: {
-      hostLoadFailed: "No se pudieron cargar proyectos desde el host{{hostName}}:{{message}}",
-      editProject: "Editar{{projectName}}",
+      hostLoadFailed: "No se pudieron cargar proyectos desde el host {{hostName}}:{{message}}",
+      editProject: "Editar {{projectName}}",
     },
-    groupInfo: "Acerca de{{title}}",
+    groupInfo: "Acerca de {{title}}",
     sections: {
       general: "General",
       appearance: "Apariencia",
@@ -2069,7 +2069,7 @@ export const es: TranslationResources = {
         description: "Dónde abrir URL desde scripts en ejecución",
         options: {
           ask: "Preguntar",
-          inApp: "EnPaseo",
+          inApp: "En Paseo",
           external: "Navegador externo",
         },
       },
@@ -2163,10 +2163,10 @@ export const es: TranslationResources = {
         label: "Actualizaciones de aplicaciones",
         readyToInstall: "Listo para instalar:{{version}}",
         installTitle: "Instalar actualización de escritorio",
-        installMessage: "Esto actualizaPaseoen esta computadora.",
+        installMessage: "Esto actualiza Paseo en esta computadora.",
         installConfirm: "Instalar actualización",
         update: "Actualizar",
-        updateTo: "Actualización a{{version}}",
+        updateTo: "Actualización a {{version}}",
         installing: "Instalando...",
         check: "Controlar",
         checking: "De cheques...",
@@ -2301,8 +2301,8 @@ export const es: TranslationResources = {
     integrations: {
       title: "Integraciones",
       docs: {
-        cli: "DocumentosCLI",
-        openCli: "Abrir la documentación deCLI",
+        cli: "Documentos CLI",
+        openCli: "Abrir la documentación de CLI",
       },
       commandLine: {
         title: "línea de comando",
@@ -2371,7 +2371,7 @@ export const es: TranslationResources = {
       connections: {
         title: "Conexiones",
         removeTitle: "Quitar conexión",
-        removeMessage: "¿Quitar{{name}}? Esto no se puede deshacer.",
+        removeMessage: "¿Quitar {{name}}? Esto no se puede deshacer.",
         removeAction: "Eliminar",
         removeErrorTitle: "Error",
         removeErrorMessage: "No se puede eliminar la conexión",
@@ -2386,13 +2386,13 @@ export const es: TranslationResources = {
         ...en.settings.host.skills,
         sectionTitle: "Habilidades de orquestación",
         title: "Habilidades de orquestación",
-        description: "Enseñe a sus agentes a orquestar a través delCLI",
+        description: "Enseñe a sus agentes a orquestar a través del CLI",
         updateAvailable: "Actualización disponible",
-        updateTitle: "¿Actualizar las habilidades dePaseo?",
+        updateTitle: "¿Actualizar las habilidades de Paseo?",
         updateFallback: "Sincronice las habilidades incluidas con su máquina.",
-        uninstallTitle: "¿Desinstalar las habilidadesPaseo?",
+        uninstallTitle: "¿Desinstalar las habilidades Paseo?",
         uninstallMessage:
-          "Elimina todas las habilidades de orquestaciónPaseode ~/.agents, ~/.claude, ~/.codex.",
+          "Elimina todas las habilidades de orquestación Paseo de ~/.agents, ~/.claude, ~/.codex.",
         choose: "Elegir habilidades",
         chooseAll: "Todas las habilidades",
         chooseAllHint:
@@ -2429,9 +2429,9 @@ export const es: TranslationResources = {
         title: "Orquestación",
         unavailable: "Conéctese a este host para administrar la orquestación",
         enableTools: {
-          title: "Habilitar herramientasPaseo",
+          title: "Habilitar herramientas Paseo",
           hint: "Los agentes podrán gestionar árboles de trabajo, agentes y horarios.",
-          accessibilityLabel: "Inyectar herramientasPaseo",
+          accessibilityLabel: "Inyectar herramientas Paseo",
         },
         systemPrompt: {
           title: "Aviso del sistema",
@@ -2523,22 +2523,22 @@ export const es: TranslationResources = {
           title: "Reiniciar demonio",
           hint: "Reinicia el proceso del demonio. La aplicación se volverá a conectar automáticamente",
           confirm: "Reiniciar",
-          confirmTitle: "Reiniciar{{name}}",
+          confirmTitle: "Reiniciar {{name}}",
           confirmMessage:
             "Esto reiniciará el demonio. Los agentes que se ejecutan en él seguirán funcionando; la aplicación se volverá a conectar automáticamente.",
           restarting: "Reiniciando...",
           unableToReconnectTitle: "No se puede volver a conectar",
           unableToReconnectMessage:
-            "{{name}}no volvió a conectarse. Por favor verifique que se haya reiniciado.",
+            "{{name}} no volvió a conectarse. Por favor verifique que se haya reiniciado.",
           unavailableTitle: "Hostno disponible",
           unavailableMessage:
             "Este host no está conectado. Espere a que se conecte antes de reiniciar.",
           offlineTitle: "Hostfuera de línea",
           offlineMessage:
-            "Este anfitrión está desconectado.Paseose vuelve a conectar automáticamente; espere hasta que vuelva a estar en línea antes de reiniciar.",
+            "Este anfitrión está desconectado.Paseo se vuelve a conectar automáticamente; espere hasta que vuelva a estar en línea antes de reiniciar.",
           requestFailedTitle: "Error",
           requestFailedMessage:
-            "No se pudo enviar la solicitud de reinicio.Paseose vuelve a conectar automáticamente; inténtelo nuevamente una vez que el host se muestre en línea.",
+            "No se pudo enviar la solicitud de reinicio.Paseo se vuelve a conectar automáticamente; inténtelo nuevamente una vez que el host se muestre en línea.",
           dialogFailedMessage:
             "No se puede abrir el cuadro de diálogo de confirmación de reinicio.",
         },
@@ -2575,7 +2575,7 @@ export const es: TranslationResources = {
           hint: "Elimina este host y sus conexiones guardadas de este dispositivo",
           localHint: "Removes localhost from this device and stops the built-in daemon",
           localConfirmTitle: "Remove localhost connection and stop daemon?",
-          confirmMessage: "¿Quitar{{name}}? Esto eliminará sus conexiones guardadas.",
+          confirmMessage: "¿Quitar {{name}}? Esto eliminará sus conexiones guardadas.",
           localConfirmMessage:
             "This will remove the localhost connection, turn off built-in daemon management, and stop the managed daemon. Remote hosts remain connected.",
           errorTitle: "Error",
@@ -2587,8 +2587,8 @@ export const es: TranslationResources = {
     providers: {
       title: "Proveedores",
       addProvider: "Agregar proveedor",
-      providerDetails: "Detalles del proveedor{{name}}",
-      enableProvider: "Habilitar{{name}}",
+      providerDetails: "Detalles del proveedor {{name}}",
+      enableProvider: "Habilitar {{name}}",
       unavailable: "Conéctese a este host para ver proveedores",
       loading: "Cargando...",
       addErrorTitle: "Unable to add provider",
@@ -2621,7 +2621,7 @@ export const es: TranslationResources = {
         add: "Agregar",
         adding: "Añadiendo...",
         failedToSave: "No se pudo guardar el modelo",
-        removeModel: "Quitar{{id}}",
+        removeModel: "Quitar {{id}}",
         searchPlaceholder: "Buscar modelos",
         loading: "Cargando modelos...",
         retry: "Rever",
@@ -2630,7 +2630,7 @@ export const es: TranslationResources = {
         noneDetected: "No se detectaron modelos",
         discovered: "descubierto",
         custom: "Modelos personalizados",
-        updated: "{{time}}actualizado",
+        updated: "{{time}} actualizado",
       },
       diagnostic: {
         title: "Diagnóstico",
@@ -2716,10 +2716,10 @@ export const es: TranslationResources = {
         info: "Servicios de larga duración y comandos únicos que puede iniciar desde cualquier agente en este proyecto",
         empty: "Aún no hay guiones.",
         untitled: "Guión sin título",
-        port: "puerto{{port}}",
+        port: "puerto {{port}}",
         menuAccessibility: "Abrir menú de script",
         removeTitle: "¿Quitar guión?",
-        removeMessage: "¿Quitar{{name}}?",
+        removeMessage: "¿Quitar {{name}}?",
         removeFallbackName: "este guión",
         name: "Nombre",
         command: "Dominio",
@@ -2728,9 +2728,9 @@ export const es: TranslationResources = {
         nameRequired: "El nombre es obligatorio",
         commandRequired: "Se requiere comando",
         newScript: "Nuevo guión",
-        editScript: "Editar{{name}}",
+        editScript: "Editar {{name}}",
         runAsService: "Ejecutar como servicio",
-        serviceHint: "Paseosupervisa el proceso y asigna un puerto vía $PASEO_PORT",
+        serviceHint: "Paseo supervisa el proceso y asigna un puerto vía $PASEO_PORT",
         actions: {
           add: "Agregar guión",
           edit: "Editar",
@@ -2739,7 +2739,7 @@ export const es: TranslationResources = {
       },
       metadata: {
         title: "Generación de metadatos",
-        info: "Instrucciones específicas del proyecto inyectadas en los mensajes de IA quePaseoutiliza para generar metadatos; úselas para hacer cumplir las convenciones de su equipo, como la denominación de ramas, el estilo de confirmación o el formatoPR.",
+        info: "Instrucciones específicas del proyecto inyectadas en los mensajes de IA que Paseo utiliza para generar metadatos; úselas para hacer cumplir las convenciones de su equipo, como la denominación de ramas, el estilo de confirmación o el formato PR.",
         branchName: "Nombres de sucursales",
         branchNamePlaceholder: "Prefijo ramas con feat/ o fix/, mb/ para ramas personales",
         commitMessage: "Confirmar mensajes",

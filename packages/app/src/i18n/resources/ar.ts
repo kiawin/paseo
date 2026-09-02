@@ -1274,7 +1274,7 @@ export const ar: TranslationResources = {
         builtInOnly: "يتم عرض البرنامج الخفي لسطح المكتب المدمج فقط هنا",
         running: "جري",
         notRunning: "لا يعمل",
-        pid: "PID{{pid}}",
+        pid: "PID {{pid}}",
       },
       management: {
         title: "إدارة البرنامج الخفي المدمج",
@@ -1409,7 +1409,7 @@ export const ar: TranslationResources = {
     integrations: {
       cli: {
         statusFailed: "غير قادر على التحقق من حالة تثبيت CLI.",
-        installFailed: "غير قادر على تثبيت PaseoCLI.",
+        installFailed: "غير قادر على تثبيت Paseo CLI.",
       },
     },
   },

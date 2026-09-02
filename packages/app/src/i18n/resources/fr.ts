@@ -26,7 +26,7 @@ export const fr: TranslationResources = {
       loading: "Chargement...",
       starting: "Départ...",
       copied: "Copié",
-      copiedLabel: "{{label}}copié",
+      copiedLabel: "{{label}} copié",
       downloadComplete: "Téléchargement terminé",
       downloadFailed: "Le téléchargement a échoué",
       uploadComplete: "Téléversement terminé",
@@ -39,7 +39,7 @@ export const fr: TranslationResources = {
       daemonUnavailable: "Daemonindisponible",
       daemonClientUnavailable: "ClientDaemonindisponible",
       daemonClientDisconnected: "Le clientDaemonest déconnecté",
-      noFileFound: "Aucun fichier trouvé pour{{token}}",
+      noFileFound: "Aucun fichier trouvé pour {{token}}",
       unexpectedDictationError:
         "Une erreur inattendue s'est produite lors du traitement de la dictée.",
     },
@@ -99,7 +99,7 @@ export const fr: TranslationResources = {
     input: {
       accessibilityLabel: "Agent de messagerie...",
       terminalAccessibilityLabel: "Terminal prompt",
-      focusHint: "{{shortcut}}pour se concentrer",
+      focusHint: "{{shortcut}} pour se concentrer",
       addAttachment: "Ajouter une pièce jointe",
       interruptAgent: "Agent d'interruption",
       queueMessage: "Message de file d'attente",
@@ -130,7 +130,7 @@ export const fr: TranslationResources = {
       addImage: "Ajouter une image",
       pasteImage: "Coller une image",
       addFile: "Upload file",
-      addIssueOrPr: "Ajouter un problème ouPR",
+      addIssueOrPr: "Ajouter un problème ou PR",
       addIssueOrPr_mr: "Ajouter un problème ou MR",
       dropImagesHere: "Déposez des images ici",
       dropFilesHere: "Drop files here",
@@ -167,7 +167,7 @@ export const fr: TranslationResources = {
       noResults: "Aucun résultat trouvé.",
       searchPlaceholder: "Problèmes de recherche et PR...",
       searchPlaceholder_mr: "Problèmes de recherche et MR...",
-      title: "Joindre le problème ouPR",
+      title: "Joindre le problème ou PR",
       title_mr: "Joindre le problème ou MR",
     },
   },
@@ -230,14 +230,14 @@ export const fr: TranslationResources = {
     unavailable: {
       selectedHost: "Hôte sélectionné",
       unknownHost:
-        "Impossible d'ouvrir cet agent car{{serverLabel}}n'est pas configuré sur ce périphérique.",
+        "Impossible d'ouvrir cet agent car {{serverLabel}} n'est pas configuré sur ce périphérique.",
       addHost:
         "Ajoutez l'hôte dans Paramètres ou ouvrez un agent sur un serveur configuré pour continuer.",
-      preparingSession: "Préparation de la séance{{serverLabel}}...",
-      connecting: "Connexion à{{serverLabel}}...",
+      preparingSession: "Préparation de la séance {{serverLabel}}...",
+      connecting: "Connexion à {{serverLabel}}...",
       showSoon: "Nous montrerons cet agent dans un instant.",
       showWhenOnline: "Nous afficherons cet agent une fois que l'hôte sera en ligne.",
-      reconnectingTo: "Reconnexion à{{serverLabel}}...",
+      reconnectingTo: "Reconnexion à {{serverLabel}}...",
       showAgainWhenReachable: "Nous afficherons à nouveau cet agent dès que l'hôte sera joignable.",
     },
     archived: {
@@ -276,7 +276,7 @@ export const fr: TranslationResources = {
     },
     badges: {
       archived: "Archivé",
-      pending: "{{count}}en attente",
+      pending: "{{count}} en attente",
       attention: "Attention",
     },
     archiveSheet: {
@@ -357,7 +357,7 @@ export const fr: TranslationResources = {
       loading: "Compactage...",
       auto: "Contexte automatiquement compacté",
       manual: "Contexte compacté manuellement",
-      withTokens: "Contexte compacté (jetons{{tokens}}K)",
+      withTokens: "Contexte compacté ({{tokens}}K jetons)",
       completed: "Contexte compacté",
     },
   },
@@ -372,7 +372,7 @@ export const fr: TranslationResources = {
       noProviders: "Aucun fournisseur importable n'est activé.",
       loading: "Chargement des sessions récentes...",
       failedAll: "Impossible de charger les sessions récentes.",
-      failedProviders: "Impossible de charger les sessions pour{{providers}}.",
+      failedProviders: "Impossible de charger les sessions pour {{providers}}.",
       failedImport: "Impossible d'importer la session sélectionnée.",
     },
     actions: {
@@ -385,7 +385,7 @@ export const fr: TranslationResources = {
     empty: {
       noRecent: "Aucune session récente à importer.",
       alreadyImported: "Toutes les sessions récentes sont déjà importées.",
-      noProviderSessions: "Aucune session{{provider}}trouvée.",
+      noProviderSessions: "Aucune session {{provider}} trouvée.",
     },
     row: {
       importing: "Importation...",
@@ -395,8 +395,8 @@ export const fr: TranslationResources = {
     route: {
       loading: "Chargement de l'espace de travail",
       connecting: "De liaison",
-      hostOffline: "{{hostName}}est hors ligne",
-      cannotReachHost: "Impossible d'atteindre{{hostName}}",
+      hostOffline: "{{hostName}} est hors ligne",
+      cannotReachHost: "Impossible d'atteindre {{hostName}}",
       hostStatus: "StatutHost:{{status}}",
       needsHostUpgrade: "Mettez à jour votre hôte pour restaurer cet espace de travail",
       manageHost: "Gérer l'hôte",
@@ -532,14 +532,14 @@ export const fr: TranslationResources = {
         title: "Le navigateur est réservé au bureau",
         subtitle: "Ouvrez cet espace de travail dans Electron pour utiliser le navigateur intégré.",
       },
-      session: "Session de navigateur{{browserId}}",
+      session: "Session de navigateur {{browserId}}",
       controls: {
         back: "Dos",
         forward: "Avant",
         stopLoading: "Arrêter le chargement",
         refresh: "Rafraîchir",
-        browserUrl: "NavigateurURL",
-        enterUrl: "EntrezURL",
+        browserUrl: "Navigateur URL",
+        enterUrl: "Entrez URL",
         openDevTools: "Outils de développement du navigateur ouvert",
         cancelSelector: "Annuler le sélecteur d'élément",
         annotateElement: "Annoter l'élément",
@@ -562,8 +562,8 @@ export const fr: TranslationResources = {
       },
       errors: {
         failedToLoad: "Échec du chargement de la page",
-        invalidUrl: "NavigateurURLinvalide",
-        unsupportedProtocol: "Navigateur non pris en charge bloquéURL:{{protocol}}",
+        invalidUrl: "Navigateur URL invalide",
+        unsupportedProtocol: "Navigateur non pris en charge bloqué URL:{{protocol}}",
       },
     },
     terminal: {
@@ -585,12 +585,12 @@ export const fr: TranslationResources = {
         workspace: "Workspace",
       },
       switcher: {
-        trigger: "Changer d'onglet ({{count}}ouvert)",
+        trigger: "Changer d'onglet ({{count}} ouvert)",
         title: "Changer d'onglet",
         searchPlaceholder: "Onglets de recherche",
       },
       menu: {
-        openFor: "Ouvrir le menu pour{{label}}",
+        openFor: "Ouvrir le menu pour {{label}}",
         copyResumeCommand: "Copier la commande de reprise",
         copyAgentId: "Copier l'identifiant de l'agent",
         copyTerminalId: "Copier l'identifiant du terminal",
@@ -669,16 +669,16 @@ export const fr: TranslationResources = {
         closeTabsRightTitle: "Fermer les onglets à droite?",
         closeOtherTabsTitle: "Fermer les autres onglets?",
         bulk: {
-          all: "Cela archivera les agents{{agents}}, fermera les terminaux{{terminals}}et fermera les onglets{{tabs}}. Tout processus en cours d’exécution dans un terminal fermé sera immédiatement arrêté.",
+          all: "Cela archivera les agents {{agents}}, fermera les terminaux {{terminals}} et fermera les onglets {{tabs}}. Tout processus en cours d’exécution dans un terminal fermé sera immédiatement arrêté.",
           agentsAndTerminals:
-            "Cela archivera les agents{{agents}}et fermera les terminaux{{terminals}}. Tout processus en cours d’exécution dans un terminal fermé sera immédiatement arrêté.",
+            "Cela archivera les agents {{agents}} et fermera les terminaux {{terminals}}. Tout processus en cours d’exécution dans un terminal fermé sera immédiatement arrêté.",
           terminalsAndTabs:
-            "Cela fermera le(s) terminal(s){{terminals}}et fermera le(s) onglet(s){{tabs}}. Tout processus en cours d’exécution dans un terminal fermé sera immédiatement arrêté.",
-          agentsAndTabs: "Cela archivera les agents{{agents}}et fermera les onglets{{tabs}}.",
+            "Cela fermera le(s) terminal(s){{terminals}} et fermera le(s) onglet(s){{tabs}}. Tout processus en cours d’exécution dans un terminal fermé sera immédiatement arrêté.",
+          agentsAndTabs: "Cela archivera les agents {{agents}} et fermera les onglets {{tabs}}.",
           terminals:
             "Cela fermera le(s) terminal(s){{terminals}}. Tout processus en cours d’exécution dans un terminal fermé sera immédiatement arrêté.",
-          tabs: "Cela fermera les onglets{{tabs}}.",
-          agents: "Cela archivera les agents{{agents}}.",
+          tabs: "Cela fermera les onglets {{tabs}}.",
+          agents: "Cela archivera les agents {{agents}}.",
         },
       },
     },
@@ -716,13 +716,13 @@ export const fr: TranslationResources = {
       accessibility: {
         trigger: "ScriptsWorkspace",
         openService: "Voir le service {{scriptName}}",
-        viewTerminal: "Voir le terminal{{scriptName}}",
-        runScript: "Exécuter le script{{scriptName}}",
-        stopScript: "Arrêter{{scriptName}}",
-        restartScript: "Redémarrer{{scriptName}}",
-        copyUrl: "Copier l'URL de{{scriptName}}",
+        viewTerminal: "Voir le terminal {{scriptName}}",
+        runScript: "Exécuter le script {{scriptName}}",
+        stopScript: "Arrêter {{scriptName}}",
+        restartScript: "Redémarrer {{scriptName}}",
+        copyUrl: "Copier l'URL de {{scriptName}}",
         chooseUrl: "Choisir l’URL pour {{scriptName}}",
-        script: "Script{{scriptName}}",
+        script: "Script {{scriptName}}",
       },
       routes: {
         public: "Proxy inverse",
@@ -730,9 +730,9 @@ export const fr: TranslationResources = {
         direct: "Directe",
       },
       states: {
-        exitCode: "quitter{{code}}",
-        startFailed: "Échec du démarrage de{{scriptName}}",
-        stopFailed: "Échec de l'arrêt de{{scriptName}}",
+        exitCode: "quitter {{code}}",
+        startFailed: "Échec du démarrage de {{scriptName}}",
+        stopFailed: "Échec de l'arrêt de {{scriptName}}",
       },
     },
     tree: {
@@ -763,11 +763,11 @@ export const fr: TranslationResources = {
           pending: "Tirer et pousser...",
           success: "Tiré et poussé",
         },
-        viewPr: "VoirPR",
+        viewPr: "Voir PR",
         createPr: {
-          label: "CréerPR",
-          pending: "Création dePR...",
-          success: "PRcréé",
+          label: "Créer PR",
+          pending: "Création de PR...",
+          success: "PR créé",
           label_mr: "Créer MR",
           pending_mr: "Création de MR...",
           success_mr: "MR créé",
@@ -778,7 +778,7 @@ export const fr: TranslationResources = {
           success: "Fusionné",
         },
         mergeFromBase: {
-          label: "Mise à jour de{{baseRef}}",
+          label: "Mise à jour de {{baseRef}}",
           pending: "Mise à jour...",
           success: "Mis à jour",
         },
@@ -835,7 +835,7 @@ export const fr: TranslationResources = {
           createPrNoForge:
             "Créer {{noun}} n'est pas disponible pour le moment car {{brand}} n'est pas connecté",
           createPrNoCommits:
-            "CréerPRn'est pas disponible car cette branche n'a pas encore de nouveaux commits",
+            "Créer PR n'est pas disponible car cette branche n'a pas encore de nouveaux commits",
           mergeNoBase:
             "La fusion n'est pas disponible car nous n'avons pas pu déterminer la branche de base",
           mergeDirty:
@@ -847,24 +847,24 @@ export const fr: TranslationResources = {
           updateDirty:
             "La mise à jour n'est pas disponible tant que vous avez des modifications locales, alors validez-les ou cachez-les d'abord",
           updateCurrent:
-            "La mise à jour n'est pas disponible car cette branche est déjà à jour avec{{baseRef}}",
+            "La mise à jour n'est pas disponible car cette branche est déjà à jour avec {{baseRef}}",
           mergePrNoGithub:
-            "La fusionPRn'est pas disponible pour le moment carGitHubn'est pas connecté",
+            "La fusion PR n'est pas disponible pour le moment car GitHub n'est pas connecté",
           archiveNotWorktree:
-            "L'archive n'est pas disponible ici car cet espace de travail n'a pas été créé en tant qu'arbre de travailPaseo",
+            "L'archive n'est pas disponible ici car cet espace de travail n'a pas été créé en tant qu'arbre de travail Paseo",
           mergePrNoForge:
             "La fusion {{noun}} n'est pas disponible pour le moment car {{brand}} n'est pas connecté",
           mergePrMissing:
-            "La fusionPRn'est pas disponible car il n'y a pas encore de demande d'extraction",
+            "La fusion PR n'est pas disponible car il n'y a pas encore de demande d'extraction",
           mergePrDraft:
-            "La fusionPRn'est pas disponible car la demande d'extraction est encore un brouillon",
+            "La fusion PR n'est pas disponible car la demande d'extraction est encore un brouillon",
           mergePrMerged:
-            "La fusionPRn'est pas disponible car la demande d'extraction est déjà fusionnée",
-          mergePrClosed: "La fusionPRn'est pas disponible car la demande d'extraction est fermée",
+            "La fusion PR n'est pas disponible car la demande d'extraction est déjà fusionnée",
+          mergePrClosed: "La fusion PR n'est pas disponible car la demande d'extraction est fermée",
           mergePrConflicts:
-            "La fusionPRn'est pas disponible car la demande d'extraction présente des conflits",
+            "La fusion PR n'est pas disponible car la demande d'extraction présente des conflits",
           mergePrQueue:
-            "MergePRn'est pas disponible ici car ce référentiel utilise une file d'attente de fusion",
+            "Merge PR n'est pas disponible ici car ce référentiel utilise une file d'attente de fusion",
           mergePrNotReady:
             "La fusion {{noun}} n'est pas disponible jusqu'à ce que {{brand}} signale que {{noun}} est prête à fusionner",
           autoMergeCannotDisable:
@@ -875,8 +875,8 @@ export const fr: TranslationResources = {
           failedPull: "Échec de l'extraction",
           failedPush: "Échec de la poussée",
           failedPullAndPush: "Impossible de tirer et de pousser",
-          failedCreatePr: "Échec de la création dePR",
-          failedMergePr: "Échec de la fusion dePR",
+          failedCreatePr: "Échec de la création de PR",
+          failedMergePr: "Échec de la fusion de PR",
           failedEnableAutoMerge: "Échec de l'activation de la fusion automatique",
           failedDisableAutoMerge: "Échec de la désactivation de la fusion automatique",
           baseRefUnavailable: "Réf de base indisponible",
@@ -889,12 +889,12 @@ export const fr: TranslationResources = {
           cancel: "Annuler",
           uncommittedChanges: "Modifications non validées",
           uncommittedChangesWithDiff: "Modifications non validées ({{diffStat}})",
-          addedLine: "Ligne ajoutée{{count}}",
-          addedLines: "{{count}}lignes ajoutées",
-          deletedLine: "Ligne supprimée{{count}}",
-          deletedLines: "{{count}}lignes supprimées",
-          unpushedCommit: "Validation non poussée{{count}}",
-          unpushedCommits: "Validations non poussées{{count}}",
+          addedLine: "Ligne ajoutée {{count}}",
+          addedLines: "{{count}} lignes ajoutées",
+          deletedLine: "Ligne supprimée {{count}}",
+          deletedLines: "{{count}} lignes supprimées",
+          unpushedCommit: "Validation non poussée {{count}}",
+          unpushedCommits: "Validations non poussées {{count}}",
         },
       },
       diff: {
@@ -927,7 +927,7 @@ export const fr: TranslationResources = {
         emptyUncommitted: "Aucune modification non validée",
         seeUncommittedChanges: "Voir les modifications non validées",
         seeCommittedChanges: "Voir les modifications validées",
-        emptyAgainstBase: "Aucun changement par rapport à{{baseRef}}",
+        emptyAgainstBase: "Aucun changement par rapport à {{baseRef}}",
         checkingRepository: "Vérification du référentiel...",
         notRepository: "Pas un dépôt git",
         diffMode: "Mode différentiel",
@@ -952,7 +952,7 @@ export const fr: TranslationResources = {
       openInEditor: {
         open: "Ouvrir",
         chooseEditor: "Choisir l'éditeur",
-        openIn: "Espace de travail ouvert dans{{target}}",
+        openIn: "Espace de travail ouvert dans {{target}}",
         openFileIn: "Open {{fileName}} in {{target}}",
         failedOpen: "Échec de l'ouverture de l'espace de travail",
       },
@@ -1210,7 +1210,7 @@ export const fr: TranslationResources = {
         newWorkspace: "Nouvel espace de travail",
         showMore: "Afficher plus",
         showLess: "Afficher moins",
-        createWorkspaceFor: "Créer un nouvel espace de travail pour{{projectName}}",
+        createWorkspaceFor: "Créer un nouvel espace de travail pour {{projectName}}",
         copyPath: "Copier le chemin",
         copyBranchName: "Copier le nom de la branche",
         rename: "Renommer l'espace de travail",
@@ -1298,7 +1298,7 @@ export const fr: TranslationResources = {
       close: "Fermer la fenêtre",
     },
     quitting: {
-      title: "QuitterPaseo...",
+      title: "Quitter Paseo...",
       detail: "Arrêt du démon local.",
     },
     daemon: {
@@ -1308,11 +1308,11 @@ export const fr: TranslationResources = {
         builtInOnly: "Seul le démon de bureau intégré est affiché ici",
         running: "en cours d'exécution",
         notRunning: "ne fonctionne pas",
-        pid: "PID{{pid}}",
+        pid: "PID {{pid}}",
       },
       management: {
         title: "Gérer le démon intégré",
-        hint: "LaissezPaseodémarrer et arrêter le démon intégré",
+        hint: "Laissez Paseo démarrer et arrêter le démon intégré",
         pauseTitle: "Suspendre le démon intégré",
         pauseMessage:
           "Cela arrêtera immédiatement le démon intégré. Les agents en cours d'exécution et les terminaux connectés au démon intégré seront arrêtés.",
@@ -1320,12 +1320,12 @@ export const fr: TranslationResources = {
         registrationFailed:
           "Built-in daemon started, but Paseo could not save the localhost connection. Toggle daemon management off and on again, or add localhost manually.",
         pausedStopFailed:
-          "La gestion du démon intégré a été suspendue, maisPaseon'a ​​pas pu arrêter le démon.",
+          "La gestion du démon intégré a été suspendue, mais Paseo n'a ​​pas pu arrêter le démon.",
         updateFailed: "Impossible de mettre à jour la gestion des démons intégrés.",
       },
       keepRunning: {
         title: "Laisser le démon fonctionner après avoir quitté",
-        hint: "Daemoncontinue de fonctionner lorsque vous quittezPaseo",
+        hint: "Daemoncontinue de fonctionner lorsque vous quittez Paseo",
       },
       logs: {
         title: "Fichier journal",
@@ -1383,7 +1383,7 @@ export const fr: TranslationResources = {
         installingAction: "Installation...",
         installAndRestart: "Installer et redémarrer",
         installingDescription: "Installation et redémarrage...",
-        versionReady: "{{version}}est prêt à être installé.",
+        versionReady: "{{version}} est prêt à être installé.",
         newVersionReady: "Une nouvelle version est prête à être installée.",
         restartWarning:
           "La mise à niveau de l'application arrêtera l'exécution des agents et fermera les sessions de terminal.",
@@ -1395,7 +1395,7 @@ export const fr: TranslationResources = {
     },
     rosetta: {
       title: "Téléchargez la versionApple Silicon",
-      runningIntel: "Vous exécutez la versionInteldePaseosousRosettasurApple Silicon.",
+      runningIntel: "Vous exécutez la versionIntelde Paseo sousRosettasurApple Silicon.",
       highCpu:
         "Cela entraîne une utilisation élevée du processeur. Téléchargez la versionApple Siliconpour le réparer.",
       download: "Télécharger",
@@ -1445,7 +1445,7 @@ export const fr: TranslationResources = {
         microphone: "L'état du microphone n'a pas encore été vérifié.",
       },
       testNotification: {
-        title: "Test de notificationPaseo",
+        title: "Test de notification Paseo",
         body: "Si vous pouvez voir cela, les notifications sur le bureau fonctionnent.",
         notDelivered:
           "La notification n'a pas été délivrée. Vérifiez Paramètres système > Notifications.",
@@ -1454,8 +1454,8 @@ export const fr: TranslationResources = {
     },
     integrations: {
       cli: {
-        statusFailed: "Impossible de vérifier l'état de l'installation deCLI.",
-        installFailed: "Impossible d'installer lePaseoCLI.",
+        statusFailed: "Impossible de vérifier l'état de l'installation de CLI.",
+        installFailed: "Impossible d'installer le Paseo CLI.",
       },
     },
   },
@@ -1467,7 +1467,7 @@ export const fr: TranslationResources = {
   startup: {
     errorTitle: "Quelque chose s'est mal passé",
     errorDescription:
-      "Le serveur local n'a pas pu démarrer. Si cela continue, veuillez signaler le problème surGitHubet inclure les journaux ci-dessous.",
+      "Le serveur local n'a pas pu démarrer. Si cela continue, veuillez signaler le problème sur GitHub et inclure les journaux ci-dessous.",
     logs: {
       loading: "Chargement des journaux du démon...",
       unavailable: "Aucun journal de démon disponible.",
@@ -1482,11 +1482,11 @@ export const fr: TranslationResources = {
       },
       importSession: {
         title: "Session d'importation",
-        description: "Apportez des sessionsCLIexternes récentes",
+        description: "Apportez des sessions CLI externes récentes",
       },
       setupProviders: {
         title: "Fournisseurs d'installation",
-        description: "ConfigurezClaude Code,Codexet plus",
+        description: "Configurez Claude Code,Codex et plus",
       },
       pairDevice: {
         title: "Associer un appareil",
@@ -1556,7 +1556,7 @@ export const fr: TranslationResources = {
     },
   },
   onboarding: {
-    title: "Bienvenue surPaseo",
+    title: "Bienvenue sur Paseo",
     subtitle: "Connectez votre ordinateur pour commencer",
     actions: {
       settings: "Paramètres",
@@ -1588,7 +1588,7 @@ export const fr: TranslationResources = {
     noMatchesForQuery: "Aucun modèle ne correspond à « {{query}} »",
     searchAllPlaceholder: "Rechercher dans tous les modèles...",
     searchPlaceholder: "Rechercher des modèles...",
-    openProviderSettings: "Ouvrir les paramètres{{provider}}",
+    openProviderSettings: "Ouvrir les paramètres {{provider}}",
   },
   providerCatalog: {
     title: "Ajouter un fournisseur",
@@ -1600,7 +1600,7 @@ export const fr: TranslationResources = {
       installed: "Installé",
       cancel: "Annuler",
       installInstructions: "Instructions d'installation",
-      installInstructionsFor: "Instructions d'installation{{provider}}",
+      installInstructionsFor: "Instructions d'installation {{provider}}",
     },
     errors: {
       unableToInstall: "Impossible d'installer le fournisseur",
@@ -1644,7 +1644,7 @@ export const fr: TranslationResources = {
     },
     direct: {
       title: "Connexion directe",
-      helper: "Saisissez l'adresse d'un serveurPaseo.",
+      helper: "Saisissez l'adresse d'un serveur Paseo.",
       fields: {
         host: "Host",
         port: "Port",
@@ -1672,7 +1672,7 @@ export const fr: TranslationResources = {
         invalidPort: "Le port doit être compris entre 1 et 65535",
         invalidConnection: "Connexion invalide",
         failedTitle: "La connexion a échoué",
-        failedToConnect: "Nous n'avons pas réussi à nous connecter à{{endpoint}}.",
+        failedToConnect: "Nous n'avons pas réussi à nous connecter à {{endpoint}}.",
         noAdditionalDetails: "{{detail}}(aucun détail supplémentaire fourni)",
         timedOut: "La connexion a expiré. Vérifiez l'hôte/portet votre réseau.",
         refused: "Connexion rejetée. Le serveur fonctionne-t-il à cette adresse?",
@@ -1752,7 +1752,7 @@ export const fr: TranslationResources = {
         "Sans relais, connectez-vous directement via TCP, Tailscale ou un autre VPN. Aucun code QR n’est créé.",
       updateRequired: "Mettez à jour l’hôte pour activer le relais depuis Paseo Desktop.",
       unavailable: "Offre de jumelage indisponible.",
-      hint: "Scannez ce codeQRavecPaseosur votre téléphone ou copiez le lien ci-dessous.",
+      hint: "Scannez ce codeQRavec Paseo sur votre téléphone ou copiez le lien ci-dessous.",
       securityWarning:
         "Traitez ce lien d’association comme un mot de passe. Toute personne qui le possède peut accéder à ce daemon.",
       qrUnavailable: "CodeQRindisponible.",
@@ -1785,9 +1785,9 @@ export const fr: TranslationResources = {
     empty: "Aucun changement à afficher",
   },
   serviceUrl: {
-    title: "Service ouvertURL",
-    message: "Ouvrir{{url}}?",
-    inPaseo: "DansPaseo",
+    title: "Service ouvert URL",
+    message: "Ouvrir {{url}}?",
+    inPaseo: "Dans Paseo",
     externalBrowser: "Navigateur externe",
     dontAskAgain: "Ne demande plus",
   },
@@ -1797,7 +1797,7 @@ export const fr: TranslationResources = {
     cancelled: "Le téléchargement a été annulé.",
     failed: "Échec du téléchargement du fichier.",
     shareFile: "Partager un fichier",
-    shareFileNamed: "Partager{{fileName}}",
+    shareFileNamed: "Partager {{fileName}}",
   },
   uploads: {
     failed: "Échec du téléversement du fichier.",
@@ -1816,7 +1816,7 @@ export const fr: TranslationResources = {
     pillLabelReadyToReview: "{{count}} à relire",
     detachAction: "Detacher {{label}}",
     detachTooltip: "Detacher le sous-agent",
-    archiveAction: "Archiver{{label}}",
+    archiveAction: "Archiver {{label}}",
     archiveTooltip: "Sous-agent d'archivage",
     archiveFinishedAction: "Archiver les sous-agents terminés",
     archiveFinishedRetry: "Réessayer ({{failed}}/{{total}})",
@@ -1941,9 +1941,9 @@ export const fr: TranslationResources = {
   contextWindow: {
     title: "Fenêtre contextuelle",
     used: "{{percentage}}% utilisé",
-    tokens: "Jetons{{used}}/{{max}}",
-    sessionCost: "Coût de la séance{{cost}}",
-    accessibility: "Fenêtre contextuelle{{percentage}}% utilisé",
+    tokens: "Jetons {{used}}/{{max}}",
+    sessionCost: "Coût de la séance {{cost}}",
+    accessibility: "Fenêtre contextuelle {{percentage}}% utilisé",
   },
   review: {
     comment: {
@@ -1974,10 +1974,10 @@ export const fr: TranslationResources = {
     enableBuiltInDaemon: "Activer le démon intégré",
     projects: "Projets",
     projectList: {
-      hostLoadFailed: "Impossible de charger les projets depuis l'hôte{{hostName}}:{{message}}",
-      editProject: "Modifier{{projectName}}",
+      hostLoadFailed: "Impossible de charger les projets depuis l'hôte {{hostName}}:{{message}}",
+      editProject: "Modifier {{projectName}}",
     },
-    groupInfo: "À propos de{{title}}",
+    groupInfo: "À propos de {{title}}",
     sections: {
       general: "Général",
       appearance: "Apparence",
@@ -2073,7 +2073,7 @@ export const fr: TranslationResources = {
         description: "Où ouvrir les URL à partir de scripts en cours d'exécution",
         options: {
           ask: "Demander",
-          inApp: "DansPaseo",
+          inApp: "Dans Paseo",
           external: "Navigateur externe",
         },
       },
@@ -2167,10 +2167,10 @@ export const fr: TranslationResources = {
         label: "Mises à jour de l'application",
         readyToInstall: "Prêt à installer:{{version}}",
         installTitle: "Installer la mise à jour du bureau",
-        installMessage: "Cela met à jourPaseosur cet ordinateur",
+        installMessage: "Cela met à jour Paseo sur cet ordinateur",
         installConfirm: "Installer la mise à jour",
         update: "Mise à jour",
-        updateTo: "Mise à jour vers{{version}}",
+        updateTo: "Mise à jour vers {{version}}",
         installing: "Installation...",
         check: "Vérifier",
         checking: "Vérification...",
@@ -2306,8 +2306,8 @@ export const fr: TranslationResources = {
     integrations: {
       title: "Intégrations",
       docs: {
-        cli: "DocumentsCLI",
-        openCli: "Ouvrir la documentationCLI",
+        cli: "Documents CLI",
+        openCli: "Ouvrir la documentation CLI",
       },
       commandLine: {
         title: "Ligne de commande",
@@ -2376,7 +2376,7 @@ export const fr: TranslationResources = {
       connections: {
         title: "Relations",
         removeTitle: "Supprimer la connexion",
-        removeMessage: "Supprimer{{name}}? Cela ne peut pas être annulé.",
+        removeMessage: "Supprimer {{name}}? Cela ne peut pas être annulé.",
         removeAction: "Retirer",
         removeErrorTitle: "Erreur",
         removeErrorMessage: "Impossible de supprimer la connexion",
@@ -2391,13 +2391,13 @@ export const fr: TranslationResources = {
         ...en.settings.host.skills,
         sectionTitle: "Compétences en orchestration",
         title: "Compétences en orchestration",
-        description: "Apprenez à vos agents à orchestrer via leCLI",
+        description: "Apprenez à vos agents à orchestrer via le CLI",
         updateAvailable: "Mise à jour disponible",
-        updateTitle: "Mettre à jour les compétencesPaseo?",
+        updateTitle: "Mettre à jour les compétences Paseo?",
         updateFallback: "Synchronisez les compétences regroupées sur votre machine.",
-        uninstallTitle: "Désinstaller les compétencesPaseo?",
+        uninstallTitle: "Désinstaller les compétences Paseo?",
         uninstallMessage:
-          "Supprime toutes les compétences d'orchestrationPaseode ~/.agents, ~/.claude, ~/.codex.",
+          "Supprime toutes les compétences d'orchestration Paseo de ~/.agents, ~/.claude, ~/.codex.",
         choose: "Choisir les compétences",
         chooseAll: "Toutes les compétences",
         chooseAllHint:
@@ -2435,9 +2435,9 @@ export const fr: TranslationResources = {
         title: "Orchestration",
         unavailable: "Connectez-vous à cet hôte pour gérer l'orchestration",
         enableTools: {
-          title: "Activer les outilsPaseo",
+          title: "Activer les outils Paseo",
           hint: "Les agents pourront gérer les arbres de travail, les agents et les horaires",
-          accessibilityLabel: "Injecter les outilsPaseo",
+          accessibilityLabel: "Injecter les outils Paseo",
         },
         systemPrompt: {
           title: "Invite système",
@@ -2531,22 +2531,22 @@ export const fr: TranslationResources = {
           title: "Redémarrer le démon",
           hint: "Redémarre le processus démon. L'application se reconnectera automatiquement",
           confirm: "Redémarrer",
-          confirmTitle: "Redémarrer{{name}}",
+          confirmTitle: "Redémarrer {{name}}",
           confirmMessage:
             "Cela redémarrera le démon. Les agents qui s'y exécutent continueront à fonctionner; l'application se reconnectera automatiquement.",
           restarting: "Redémarrage...",
           unableToReconnectTitle: "Impossible de se reconnecter",
           unableToReconnectMessage:
-            "{{name}}n'est pas revenu en ligne. Veuillez vérifier qu'il a redémarré.",
+            "{{name}} n'est pas revenu en ligne. Veuillez vérifier qu'il a redémarré.",
           unavailableTitle: "Hostindisponible",
           unavailableMessage:
             "Cet hôte n'est pas connecté. Attendez qu'il soit en ligne avant de redémarrer.",
           offlineTitle: "Hosthors ligne",
           offlineMessage:
-            "Cet hôte est hors ligne.Paseose reconnecte automatiquement: attendez qu'il soit de nouveau en ligne avant de redémarrer.",
+            "Cet hôte est hors ligne.Paseo se reconnecte automatiquement: attendez qu'il soit de nouveau en ligne avant de redémarrer.",
           requestFailedTitle: "Erreur",
           requestFailedMessage:
-            "Échec de l'envoi de la demande de redémarrage.Paseose reconnecte automatiquement - réessayez une fois que l'hôte apparaît comme en ligne.",
+            "Échec de l'envoi de la demande de redémarrage.Paseo se reconnecte automatiquement - réessayez une fois que l'hôte apparaît comme en ligne.",
           dialogFailedMessage:
             "Impossible d'ouvrir la boîte de dialogue de confirmation de redémarrage.",
         },
@@ -2583,7 +2583,7 @@ export const fr: TranslationResources = {
           hint: "Supprime cet hôte et ses connexions enregistrées de cet appareil",
           localHint: "Removes localhost from this device and stops the built-in daemon",
           localConfirmTitle: "Remove localhost connection and stop daemon?",
-          confirmMessage: "Supprimer{{name}}? Cela supprimera ses connexions enregistrées.",
+          confirmMessage: "Supprimer {{name}}? Cela supprimera ses connexions enregistrées.",
           localConfirmMessage:
             "This will remove the localhost connection, turn off built-in daemon management, and stop the managed daemon. Remote hosts remain connected.",
           errorTitle: "Erreur",
@@ -2595,8 +2595,8 @@ export const fr: TranslationResources = {
     providers: {
       title: "Fournisseurs",
       addProvider: "Ajouter un fournisseur",
-      providerDetails: "Détails du fournisseur{{name}}",
-      enableProvider: "Activer{{name}}",
+      providerDetails: "Détails du fournisseur {{name}}",
+      enableProvider: "Activer {{name}}",
       unavailable: "Connectez-vous à cet hôte pour voir les fournisseurs",
       loading: "Chargement...",
       addErrorTitle: "Unable to add provider",
@@ -2629,7 +2629,7 @@ export const fr: TranslationResources = {
         add: "Ajouter",
         adding: "Ajout...",
         failedToSave: "Échec de l'enregistrement du modèle",
-        removeModel: "Supprimer{{id}}",
+        removeModel: "Supprimer {{id}}",
         searchPlaceholder: "Rechercher des modèles",
         loading: "Chargement des modèles...",
         retry: "Réessayer",
@@ -2638,7 +2638,7 @@ export const fr: TranslationResources = {
         noneDetected: "Aucun modèle détecté",
         discovered: "Découvert",
         custom: "Modèles personnalisés",
-        updated: "{{time}}mis à jour",
+        updated: "{{time}} mis à jour",
       },
       diagnostic: {
         title: "Diagnostique",
@@ -2724,10 +2724,10 @@ export const fr: TranslationResources = {
         info: "Services de longue durée et commandes ponctuelles que vous pouvez lancer à partir de n'importe quel agent de ce projet",
         empty: "Pas encore de scripts.",
         untitled: "Script sans titre",
-        port: "port{{port}}",
+        port: "port {{port}}",
         menuAccessibility: "Ouvrir le menu des scripts",
         removeTitle: "Supprimer le script?",
-        removeMessage: "Supprimer{{name}}?",
+        removeMessage: "Supprimer {{name}}?",
         removeFallbackName: "ce scénario",
         name: "Nom",
         command: "Commande",
@@ -2736,9 +2736,9 @@ export const fr: TranslationResources = {
         nameRequired: "Le nom est requis",
         commandRequired: "La commande est requise",
         newScript: "Nouveau scénario",
-        editScript: "Modifier{{name}}",
+        editScript: "Modifier {{name}}",
         runAsService: "Exécuter en tant que service",
-        serviceHint: "Paseosupervise le processus et attribue un port via $PASEO_PORT",
+        serviceHint: "Paseo supervise le processus et attribue un port via $PASEO_PORT",
         actions: {
           add: "Ajouter un script",
           edit: "Modifier",
@@ -2747,7 +2747,7 @@ export const fr: TranslationResources = {
       },
       metadata: {
         title: "Génération de métadonnées",
-        info: "Instructions spécifiques au projet injectées dans les invites de l'IA quePaseoutilise pour générer des métadonnées: utilisez-les pour appliquer les conventions de votre équipe telles que la dénomination des branches, le style de validation ou le formatPR.",
+        info: "Instructions spécifiques au projet injectées dans les invites de l'IA que Paseo utilise pour générer des métadonnées: utilisez-les pour appliquer les conventions de votre équipe telles que la dénomination des branches, le style de validation ou le format PR.",
         branchName: "Noms des succursales",
         branchNamePlaceholder:
           "Préfixez les branches avec feat/ ou fix/, mb/ pour les branches personnelles",
