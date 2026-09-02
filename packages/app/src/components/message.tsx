@@ -2800,6 +2800,8 @@ const LUCIDE_CHEVRON_NUDGE_LEFT: ViewStyle = { marginLeft: -4 };
  * in and leaves a half-rendered row, so the card is bounded by whole lines instead.
  */
 const COLLAPSED_PREVIEW_LINES = 3;
+/** Rows stack fast on a phone, so the teaser is shorter there. */
+const COMPACT_COLLAPSED_PREVIEW_LINES = 2;
 
 function resolveDetailContent(input: {
   renderDetails?: (options: { isPreview: boolean }) => ReactNode;
@@ -3488,16 +3490,19 @@ export const ToolCall = memo(function ToolCall({
   }, [onInlineDetailsExpandedChange]);
 
   // Render inline details for desktop
+  const previewLineCount = isMobile ? COMPACT_COLLAPSED_PREVIEW_LINES : COLLAPSED_PREVIEW_LINES;
   const renderDetails = useCallback(
     ({ isPreview }: { isPreview: boolean }) => {
-      if (!shouldRenderInline) return null;
+      // Compact keeps the expanded view in the sheet but still shows the teaser inline: the
+      // preview is what makes a trace row readable without opening anything.
+      if (!isPreview && !shouldRenderInline) return null;
       return (
         <ToolCallDetailsContent
           toolName={toolName}
           detail={effectiveDetail}
           errorText={presentation.errorText}
           maxHeight={maxDetailHeight}
-          previewLines={isPreview ? COLLAPSED_PREVIEW_LINES : undefined}
+          previewLines={isPreview ? previewLineCount : undefined}
           showLoadingSkeleton={presentation.isLoadingDetails}
         />
       );
@@ -3505,6 +3510,7 @@ export const ToolCall = memo(function ToolCall({
     [
       shouldRenderInline,
       toolName,
+      previewLineCount,
       effectiveDetail,
       presentation.errorText,
       presentation.isLoadingDetails,
@@ -3536,7 +3542,12 @@ export const ToolCall = memo(function ToolCall({
       isExpanded={shouldRenderInline && isExpanded}
       onToggle={canOpenDetails ? handleToggle : undefined}
       onOpenFile={handleOpenFile}
-      renderDetails={presentation.canOpenDetails && shouldRenderInline ? renderDetails : undefined}
+      renderDetails={
+        presentation.canOpenDetails &&
+        (shouldRenderInline || showsCollapsedPreview(effectiveDetail, isTraceTranscript))
+          ? renderDetails
+          : undefined
+      }
       isLoading={status === "running" || status === "executing"}
       isError={status === "failed"}
       hasErrored={hasToolCallErrored(effectiveDetail, status)}

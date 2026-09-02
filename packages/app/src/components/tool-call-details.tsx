@@ -184,6 +184,19 @@ function ShellDetailSection({ command, output, ds, previewLines }: ShellDetailPr
   const fullOutput = (output ?? "").replace(/^\n+/, "");
   const commandOutput = takeLines(fullOutput, previewLines).text;
   const hasOutput = commandOutput.length > 0;
+  // A preview on a phone is a teaser for the sheet behind it, so it clips and ellipsises rather
+  // than handing the reader a sideways scroller to fight inside the transcript list.
+  const isCompactPreview = isCompact && previewLines !== undefined;
+  const body = (
+    <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
+      <ShellStreams
+        command={normalizedCommand}
+        output={hasOutput ? commandOutput : null}
+        isCompact={isCompact}
+        clip={isCompactPreview}
+      />
+    </View>
+  );
   return (
     <View style={ds.sectionFillStyle}>
       <View style={ds.codeBlockFillStyle}>
@@ -192,21 +205,20 @@ function ShellDetailSection({ command, output, ds, previewLines }: ShellDetailPr
           contentContainerStyle={styles.codeVerticalContent}
           nestedScrollEnabled
           showsVerticalScrollIndicator
+          scrollEnabled={!isCompactPreview}
         >
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            showsHorizontalScrollIndicator
-            contentContainerStyle={styles.codeHorizontalContent}
-          >
-            <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
-              <ShellStreams
-                command={normalizedCommand}
-                output={hasOutput ? commandOutput : null}
-                isCompact={isCompact}
-              />
-            </View>
-          </ScrollView>
+          {isCompactPreview ? (
+            <View style={styles.codeHorizontalClip}>{body}</View>
+          ) : (
+            <ScrollView
+              horizontal
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator
+              contentContainerStyle={styles.codeHorizontalContent}
+            >
+              {body}
+            </ScrollView>
+          )}
         </ScrollView>
       </View>
     </View>
@@ -224,18 +236,47 @@ function ShellStreamRow({ label, text }: { label: string; text: string }) {
   );
 }
 
+/**
+ * One `Text` per line, because `numberOfLines` truncates a block as a whole — a single Text
+ * holding newlines would drop whole trailing lines instead of ellipsising each one.
+ */
+function ClippedLines({ text, prompt }: { text: string; prompt?: boolean }) {
+  return (
+    <>
+      {text.split("\n").map((line, index) => (
+        // Lines have no identity of their own here, and the list is re-clamped on every render.
+        // eslint-disable-next-line react/no-array-index-key
+        <Text key={index} numberOfLines={1} ellipsizeMode="tail" style={styles.scrollText}>
+          {prompt && index === 0 ? <Text style={styles.shellPrompt}>$ </Text> : null}
+          {line}
+        </Text>
+      ))}
+    </>
+  );
+}
+
 function ShellStreams({
   command,
   output,
   isCompact,
+  clip = false,
 }: {
   command: string;
   output: string | null;
   isCompact: boolean;
+  clip?: boolean;
 }) {
   const { t } = useTranslation();
 
   if (isCompact) {
+    if (clip) {
+      return (
+        <>
+          <ClippedLines text={command} prompt />
+          {output === null ? null : <ClippedLines text={output} />}
+        </>
+      );
+    }
     return (
       <Text selectable style={styles.scrollText}>
         <Text style={styles.shellPrompt}>$ </Text>
@@ -478,9 +519,10 @@ function SubAgentDetailSection({
 interface EditDetailProps {
   diffLines: DiffLine[] | undefined;
   ds: DetailStyles;
+  previewLines?: number;
 }
 
-function EditDetailSection({ diffLines, ds }: EditDetailProps) {
+function EditDetailSection({ diffLines, ds, previewLines }: EditDetailProps) {
   // Two columns need width, so this follows the form factor rather than a user preference.
   const isCompact = useIsCompactFormFactor();
 
@@ -493,6 +535,7 @@ function EditDetailSection({ diffLines, ds }: EditDetailProps) {
             maxHeight={ds.resolvedMaxHeight}
             fillAvailableHeight={ds.shouldFill}
             split={!isCompact}
+            clipHorizontally={isCompact && previewLines !== undefined}
           />
         </View>
       ) : null}
@@ -823,7 +866,9 @@ function buildDetailSections(
     ];
   }
   if (detail.type === "edit") {
-    return [<EditDetailSection key="edit" diffLines={diffLines} ds={ds} />];
+    return [
+      <EditDetailSection key="edit" diffLines={diffLines} ds={ds} previewLines={previewLines} />,
+    ];
   }
   if (detail.type === "write") {
     return [
@@ -914,6 +959,7 @@ export function ToolCallDetailsContent({
   previewLines,
 }: ToolCallDetailsContentProps) {
   const { t } = useTranslation();
+  const isCompactLayout = useIsCompactFormFactor();
   const resolvedMaxHeight = fillAvailableHeight ? undefined : (maxHeight ?? 300);
   const ds = useDetailStyles(detail, resolvedMaxHeight, fillAvailableHeight);
   const allDiffLines = useDiffLines(detail);
@@ -930,6 +976,9 @@ export function ToolCallDetailsContent({
     t,
     previewLines,
   );
+  // Compact routes the whole row to the sheet on tap, so the pill would be a second affordance
+  // for a gesture the row already has.
+  const showExpandPill = !isCompactLayout && exceedsPreview(detail, allDiffLines, previewLines);
 
   if (errorText) {
     sections.push(<ErrorSection key="error" errorText={errorText} ds={ds} />);
@@ -945,7 +994,7 @@ export function ToolCallDetailsContent({
   return (
     <View style={ds.fullBleedContainerStyle}>
       {sections}
-      {exceedsPreview(detail, allDiffLines, previewLines) ? (
+      {showExpandPill ? (
         <View style={styles.expandPill} pointerEvents="none">
           <Text style={styles.expandPillText}>{t("toolCallDetails.clickToExpand")}</Text>
         </View>
@@ -1070,6 +1119,9 @@ const styles = StyleSheet.create((theme) => {
     codeVerticalContent: {
       flexGrow: 1,
       paddingBottom: insets.extraBottom,
+    },
+    codeHorizontalClip: {
+      overflow: "hidden" as const,
     },
     codeHorizontalContent: {
       paddingRight: insets.extraRight,

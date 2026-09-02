@@ -21,6 +21,12 @@ interface DiffViewerProps {
   fillAvailableHeight?: boolean;
   /** Render removals and their replacements as two aligned columns. Needs width; see the caller. */
   split?: boolean;
+  /**
+   * Clip long lines at the edge instead of scrolling them. A preview that has to be scrolled
+   * sideways to be read is not a preview, and on touch the sideways scroller fights the list it
+   * sits in.
+   */
+  clipHorizontally?: boolean;
 }
 
 function DiffLineRow({ line }: { line: DiffLine }) {
@@ -162,6 +168,7 @@ export function DiffViewer({
   emptyLabel,
   fillAvailableHeight = false,
   split = false,
+  clipHorizontally = false,
 }: DiffViewerProps) {
   const { t } = useTranslation();
   const [scrollViewWidth, setScrollViewWidth] = React.useState(0);
@@ -225,7 +232,11 @@ export function DiffViewer({
     </View>
   );
 
-  const horizontalScroll = (
+  const horizontalScroll = clipHorizontally ? (
+    <View style={styles.horizontalClip} onLayout={handleInnerLayout}>
+      {lines}
+    </View>
+  ) : (
     <ScrollView
       horizontal
       nestedScrollEnabled
@@ -267,6 +278,11 @@ const styles = StyleSheet.create((theme) => {
     horizontalContent: {
       flexDirection: "column" as const,
       paddingRight: insets.extraRight,
+    },
+    horizontalClip: {
+      flexDirection: "column" as const,
+      paddingRight: insets.extraRight,
+      overflow: "hidden" as const,
     },
     linesContainer: {
       alignSelf: "flex-start",
