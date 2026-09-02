@@ -6926,6 +6926,12 @@ export class Session {
       {
         paseoHome: this.paseoHome,
         worktreesRoot: this.worktreesRoot,
+        // Every worktree-creating entry point funnels through here — the New
+        // Workspace screen, workspace.create, the legacy create_agent worktree
+        // options, the CLI and MCP. Resolving the location once at this seam is
+        // what keeps the project's choice from being honoured on only the paths
+        // that happened to pass it down.
+        resolveWorktreeLocation: (repoRoot) => this.resolveWorktreeLocationForRepoRoot(repoRoot),
         createPaseoWorktree: (workflowInput, serviceOptions) =>
           this.createPaseoWorktree(workflowInput, serviceOptions),
         warmWorkspaceGitData: (workspace) => this.warmWorkspaceGitDataForWorkspace(workspace),

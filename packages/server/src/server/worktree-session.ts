@@ -616,6 +616,8 @@ export async function createPaseoWorktreeWorkflow(
       runSetup: false,
       paseoHome: input.paseoHome ?? dependencies.paseoHome,
       worktreesRoot: input.worktreesRoot ?? dependencies.worktreesRoot,
+      resolveWorktreeLocation:
+        input.resolveWorktreeLocation ?? dependencies.resolveWorktreeLocation,
     },
     options?.resolveDefaultBranch
       ? { resolveDefaultBranch: options.resolveDefaultBranch }

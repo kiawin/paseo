@@ -132,7 +132,12 @@ export function reconcileWorkspacePlacement(input: {
   if (input.workspace.branch !== observed.branch) fields.branch = observed.branch;
   if (input.workspace.worktreeRoot !== observed.worktreeRoot)
     fields.worktreeRoot = observed.worktreeRoot;
-  if (input.workspace.isPaseoOwnedWorktree !== observed.isPaseoOwnedWorktree)
+  // Creation-time provenance, so reconcile may confirm it but never withdraw it.
+  // `observed` derives this from path shape, which only recognises Paseo's
+  // private root — so every worktree cut into a sibling, nested or custom
+  // holder would otherwise be downgraded to false on the next reconcile, and
+  // with it lose auto-archive, teardown, and any route to removal.
+  if (!input.workspace.isPaseoOwnedWorktree && observed.isPaseoOwnedWorktree)
     fields.isPaseoOwnedWorktree = observed.isPaseoOwnedWorktree;
   if (input.workspace.mainRepoRoot !== observed.mainRepoRoot)
     fields.mainRepoRoot = observed.mainRepoRoot;
