@@ -23,6 +23,7 @@ import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { extensionFromPath, highlightToKeyedLines } from "@/utils/highlight-cache";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { diffPreviewIsClamped, selectDiffPreviewLines } from "@/utils/diff-preview";
 import { HighlightedLines } from "./highlighted-content";
 import { DiffViewer } from "./diff-viewer";
 import { getCodeInsets } from "./code-insets";
@@ -819,7 +820,7 @@ function exceedsPreview(
       takeLines((detail.output ?? "").replace(/^\n+/, ""), previewLines).truncated
     );
   }
-  return (diffLines?.length ?? 0) > previewLines;
+  return diffLines !== undefined && diffPreviewIsClamped(diffLines, previewLines);
 }
 
 function buildDetailSections(
@@ -963,10 +964,10 @@ export function ToolCallDetailsContent({
   const resolvedMaxHeight = fillAvailableHeight ? undefined : (maxHeight ?? 300);
   const ds = useDetailStyles(detail, resolvedMaxHeight, fillAvailableHeight);
   const allDiffLines = useDiffLines(detail);
-  const diffLines = useMemo(
-    () => (previewLines === undefined ? allDiffLines : allDiffLines?.slice(0, previewLines)),
-    [allDiffLines, previewLines],
-  );
+  const diffLines = useMemo(() => {
+    if (previewLines === undefined || allDiffLines === undefined) return allDiffLines;
+    return selectDiffPreviewLines(allDiffLines, previewLines);
+  }, [allDiffLines, previewLines]);
 
   const sections: ReactNode[] = buildDetailSections(
     toolName,
