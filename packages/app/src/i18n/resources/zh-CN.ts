@@ -351,6 +351,9 @@ export const zhCN: TranslationResources = {
     actions: {
       copyQuote: "复制引用",
       copyCode: "复制代码",
+      copyLink: "复制链接",
+      openLinkInBrowser: "在浏览器中打开",
+      openLinkInPaseo: "在 Paseo 浏览器中打开",
       copyTurn: "复制回合",
       copyMessage: "复制消息",
       forkMenu: "分叉消息",
@@ -2520,6 +2523,15 @@ export const zhCN: TranslationResources = {
       serviceUrls: {
         options: {
           ask: "询问",
+          inApp: "在 Paseo 中",
+          external: "外部浏览器",
+        },
+      },
+      agentLinks: {
+        label: "Agent 链接",
+        description: "Agent 消息中的链接打开位置",
+        accessibilityLabel: "选择 Agent 链接的打开位置（{{value}}）",
+        options: {
           inApp: "在 Paseo 中",
           external: "外部浏览器",
         },

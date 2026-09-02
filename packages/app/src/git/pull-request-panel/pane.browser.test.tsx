@@ -1,6 +1,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { within } from "@testing-library/dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "@/i18n/i18next";
@@ -22,11 +23,14 @@ const silentToasts: ToastApi = {
   error: () => {},
 };
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
 afterEach(() => {
   act(() => root?.unmount());
+  queryClient.clear();
   container?.remove();
   root = null;
   container = null;
@@ -66,11 +70,13 @@ const NO_INSETS = { top: 0, right: 0, bottom: 0, left: 0 };
 function renderPane(data: PrPaneData, insets = NO_INSETS) {
   act(() =>
     root?.render(
-      <SafeAreaInsetsContext.Provider value={insets}>
-        <ToastApiProvider api={silentToasts}>
-          <PullRequestPane serverId="server-1" cwd="/repo" data={data} activityLoading={false} />
-        </ToastApiProvider>
-      </SafeAreaInsetsContext.Provider>,
+      <QueryClientProvider client={queryClient}>
+        <SafeAreaInsetsContext.Provider value={insets}>
+          <ToastApiProvider api={silentToasts}>
+            <PullRequestPane serverId="server-1" cwd="/repo" data={data} activityLoading={false} />
+          </ToastApiProvider>
+        </SafeAreaInsetsContext.Provider>
+      </QueryClientProvider>,
     ),
   );
 }
