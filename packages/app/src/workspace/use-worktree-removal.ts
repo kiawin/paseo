@@ -17,11 +17,13 @@ export function useWorktreeRemoval(input: {
   client: Pick<DaemonClient, "removeWorkspaceWorktree"> | null;
   t: TFunction;
   toast: ToastLike;
+  /** Re-inspects recovery state, so a removed directory stops being offered. */
+  onRemoved?: () => void;
 }): {
   isRemovingWorktree: boolean;
   removeWorktree: (target: { workspaceId: string; worktreePath: string }) => void;
 } {
-  const { client, t, toast } = input;
+  const { client, t, toast, onRemoved } = input;
   const [isRemovingWorktree, setIsRemovingWorktree] = useState(false);
 
   const removeWorktree = useCallback(
@@ -37,6 +39,9 @@ export function useWorktreeRemoval(input: {
             t,
           });
           toast.show(outcome.message, { variant: outcome.variant });
+          // The directory is gone, so the screen must stop offering to remove it
+          // and stop printing the path as though it were still there.
+          if (outcome.variant === "success") onRemoved?.();
         } catch (error) {
           toast.show(
             error instanceof Error
@@ -49,7 +54,7 @@ export function useWorktreeRemoval(input: {
         }
       })();
     },
-    [client, t, toast],
+    [client, onRemoved, t, toast],
   );
 
   return { isRemovingWorktree, removeWorktree };

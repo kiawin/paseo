@@ -3728,7 +3728,12 @@ function WorkspaceScreenContent({
 
   const containerStyle = [styles.container, styles.containerWorkspaceBackground];
 
-  const { isRemovingWorktree, removeWorktree } = useWorktreeRemoval({ client, t, toast });
+  const { isRemovingWorktree, removeWorktree } = useWorktreeRemoval({
+    client,
+    t,
+    toast,
+    onRemoved: workspaceRecovery.retryInspection,
+  });
   const workspaceScreenGate = renderWorkspaceRouteGate({
     state: workspaceRouteState,
     actions: {

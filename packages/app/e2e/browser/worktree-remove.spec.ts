@@ -113,6 +113,11 @@ test.describe("Worktree removal from history", () => {
       .toBe(false);
     // Removed through git, so the repository must not still list it.
     expect(gitWorktreeList(tempRepo.path)).not.toContain(seeded.worktree.workspaceDirectory);
+
+    // The directory is gone, so the screen must stop offering to remove it and
+    // stop printing the path as though it were still there.
+    await expect(remove).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByTestId("workspace-recovery-worktree-path")).toHaveCount(0);
   });
 
   test("git refusing a dirty worktree surfaces the refusal and keeps the directory", async ({
