@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { getPaseoWorktreesRoot, isPaseoOwnedWorktreeCwd } from "../../utils/worktree.js";
 import {
   archiveByScope,
@@ -48,6 +49,7 @@ export interface CreatePaseoWorktreeCommandDependencies<
 > {
   paseoHome?: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   createPaseoWorktreeWorkflow?: CreatePaseoWorktreeWorkflow<Result>;
 }
 
@@ -84,6 +86,8 @@ export async function createPaseoWorktreeCommand<Result extends CreatePaseoWorkt
       runSetup: false,
       paseoHome: input.paseoHome ?? dependencies.paseoHome,
       worktreesRoot: input.worktreesRoot ?? dependencies.worktreesRoot,
+      resolveWorktreeLocation:
+        input.resolveWorktreeLocation ?? dependencies.resolveWorktreeLocation,
     });
     return { ok: true, createdWorktree };
   } catch (error) {

@@ -4,9 +4,11 @@ import {
   constants as fsConstants,
   existsSync,
   mkdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "fs";
 import { copyFile, rm, stat } from "fs/promises";
 import { join, basename, dirname, isAbsolute, resolve, sep } from "path";
@@ -214,6 +216,8 @@ export interface CreateWorktreeOptions {
   runSetup: boolean;
   paseoHome?: string;
   worktreesRoot?: string;
+  /** Absent or null means managed, which is the pre-existing layout. */
+  location?: WorktreeLocation | null;
 }
 
 export class BranchAlreadyCheckedOutError extends Error {
@@ -938,6 +942,44 @@ export function describeCustomWorktreeRootRejection(
   }
 }
 
+const NESTED_WORKTREES_EXCLUDE_ENTRY = ".worktrees/";
+
+/**
+ * Keeps a nested holder out of git's untracked listing.
+ *
+ * Writes to the git common dir's info/exclude, never .gitignore: the choice is
+ * machine-local and .gitignore is committed. Resolving the common dir matters —
+ * a bare repo or a linked worktree has no <repoRoot>/.git directory.
+ *
+ * This is a correctness prerequisite, not tidiness. The workspace file watcher
+ * builds its ignore set from `--exclude-standard`, so until the entry exists the
+ * main workspace's recursive watcher descends into an entire second checkout.
+ */
+async function excludeNestedWorktreesFromGit(cwd: string): Promise<void> {
+  try {
+    const commonDir = await getGitCommonDir(cwd);
+    const excludePath = join(commonDir, "info", "exclude");
+    const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+    const alreadyExcluded = existing
+      .split(/\r?\n/)
+      .some((line) => line.trim() === NESTED_WORKTREES_EXCLUDE_ENTRY);
+    if (alreadyExcluded) {
+      return;
+    }
+
+    mkdirSync(dirname(excludePath), { recursive: true });
+    const separator = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
+    writeFileSync(
+      excludePath,
+      `${existing}${separator}${NESTED_WORKTREES_EXCLUDE_ENTRY}\n`,
+      "utf8",
+    );
+  } catch {
+    // Best effort. A missing exclude makes the holder show as untracked and
+    // costs watcher work; it must not block creating the worktree.
+  }
+}
+
 export interface WorktreeHolderDirInput {
   /** A path inside the repository. Used to derive the repo root when one is not supplied. */
   cwd: string;
@@ -1155,12 +1197,22 @@ export async function listPaseoWorktrees({
   cwd,
   paseoHome,
   worktreesRoot,
+  location,
 }: {
   cwd: string;
   paseoHome?: string;
   worktreesRoot?: string;
+  location?: WorktreeLocation | null;
 }): Promise<PaseoWorktreeInfo[]> {
-  const projectWorktreesRoot = await getPaseoWorktreesRoot(cwd, paseoHome, worktreesRoot);
+  // Filtering against the managed root would match nothing for a project whose
+  // worktrees are cut elsewhere, so they would vanish from list RPCs and from
+  // branch and archive selection.
+  const projectWorktreesRoot = await resolveWorktreeHolderDir({
+    cwd,
+    location,
+    paseoHome,
+    worktreesBaseRoot: worktreesRoot,
+  });
   const entries = await readWorktreeList(cwd);
 
   return entries
@@ -1485,9 +1537,19 @@ export const createWorktree = async ({
   runSetup,
   paseoHome,
   worktreesRoot,
+  location,
 }: CreateWorktreeOptions): Promise<WorktreeConfig> => {
   const sourcePlan = await resolveWorktreeSourcePlan({ cwd, source, desiredSlug: worktreeSlug });
-  let worktreePath = join(await getPaseoWorktreesRoot(cwd, paseoHome, worktreesRoot), worktreeSlug);
+  const holderDir = await resolveWorktreeHolderDir({
+    cwd,
+    location,
+    paseoHome,
+    worktreesBaseRoot: worktreesRoot,
+  });
+  if (location?.mode === "nested") {
+    await excludeNestedWorktreesFromGit(cwd);
+  }
+  let worktreePath = join(holderDir, worktreeSlug);
   mkdirSync(dirname(worktreePath), { recursive: true });
 
   // Also handle worktree path collision

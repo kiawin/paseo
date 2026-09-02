@@ -1665,6 +1665,9 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the
         // feature gate and legacy fallback after 2027-01-17 once the supported
         // daemon floor is >= v0.2.0.
+        // COMPAT(projectWorktreeLocation): added in v0.8.0, remove gate after 2027-09-02.
+        // Advertised only now that creation, listing and recovery honour it.
+        projectWorktreeLocation: true,
         checkoutForgeSetAutoMerge: true,
         // COMPAT(checkoutGithubSetAutoMerge): added in v0.1.75 and retained as
         // the fallback for checkoutForgeSetAutoMerge. Stop advertising it after

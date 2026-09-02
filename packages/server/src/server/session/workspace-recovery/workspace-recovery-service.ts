@@ -1,3 +1,4 @@
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { basename } from "node:path";
 
 import { createRealpathAwarePathMatcher } from "../../../utils/path.js";
@@ -61,6 +62,7 @@ type UnavailableRecoveryState = Extract<WorkspaceRecoveryState, { kind: "unavail
 export function createWorkspaceRecoveryService(deps: {
   paseoHome: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   getWorkspace: (workspaceId: string) => Promise<PersistedWorkspaceRecord | null>;
   getProject: (projectId: string) => Promise<PersistedProjectRecord | null>;
   isDirectory: (path: string) => Promise<boolean>;
@@ -193,6 +195,9 @@ export function createWorkspaceRecoveryService(deps: {
         runSetup: false,
         paseoHome: deps.paseoHome,
         worktreesRoot: deps.worktreesRoot,
+        // Without this a non-managed worktree is restored under the managed
+        // root, and the divergence check below then rejects the restore.
+        location: (await deps.resolveWorktreeLocation?.(sourceRepoRoot)) ?? null,
       });
       recreatedWorktreePath = result.worktreePath;
     } catch (error) {

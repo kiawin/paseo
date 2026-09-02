@@ -16,6 +16,7 @@ import {
 import type { ChangeRequestCheckoutSource, FirstAgentContext } from "@getpaseo/protocol/messages";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 
 export interface CreateWorktreeCoreInput {
   cwd: string;
@@ -29,6 +30,12 @@ export interface CreateWorktreeCoreInput {
   paseoHome?: string;
   worktreesRoot?: string;
   runSetup?: boolean;
+  /**
+   * Resolves where this project cuts worktrees. Injected rather than looked up
+   * by each caller because some entry points (MCP create_agent, for one) only
+   * have a cwd and no projectId.
+   */
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
 }
 
 export interface CreateWorktreeCoreDeps {
@@ -123,6 +130,7 @@ async function createWorktreeCoreWithPriority(
       runSetup: input.runSetup ?? true,
       paseoHome: input.paseoHome,
       worktreesRoot: input.worktreesRoot,
+      location: (await input.resolveWorktreeLocation?.(repoRoot)) ?? null,
     }),
     intent,
     repoRoot,

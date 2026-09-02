@@ -3,21 +3,23 @@ import {
   createWorktree as createWorktreePrimitive,
   deriveWorktreeProjectHash,
   deletePaseoWorktree,
+  listPaseoWorktrees,
   classifyWorktreeRemovalRefusal,
   getPaseoWorktreesRoot,
   resolveCustomWorktreeRoot,
   resolveWorktreeHolderDir,
   isPaseoOwnedWorktreeCwd,
-  listPaseoWorktrees,
   listRepoWorktrees,
   mapWorkspaceCwdToWorktree,
   slugify,
   type CreateWorktreeOptions,
   type WorktreeConfig,
 } from "./worktree";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { execFileSync } from "child_process";
 import {
   mkdtempSync,
+  readFileSync,
   mkdirSync,
   rmSync,
   existsSync,
@@ -717,5 +719,94 @@ describe("git-validated worktree deletion", () => {
       classifyWorktreeRemovalRefusal(new Error("fatal: cannot remove a locked working tree;")),
     ).toBe("locked");
     expect(classifyWorktreeRemovalRefusal(new Error("some other failure"))).toBe("unknown");
+  });
+});
+
+describe("creating and listing worktrees per location mode", () => {
+  let tempDir: string;
+  let repoDir: string;
+  let paseoHome: string;
+
+  beforeEach(() => {
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-location-create-")));
+    repoDir = join(tempDir, "test-repo");
+    paseoHome = join(tempDir, "paseo-home");
+    mkdirSync(repoDir, { recursive: true });
+    execFileSync("git", ["init", "-b", "main"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "file.txt"), "hello\n");
+    execFileSync("git", ["add", "."], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "initial"], {
+      cwd: repoDir,
+    });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function create(slug: string, branch: string, location: WorktreeLocation | null) {
+    return createWorktreePrimitive({
+      cwd: repoDir,
+      worktreeSlug: slug,
+      source: { kind: "branch-off", baseBranch: "main", branchName: branch },
+      runSetup: false,
+      paseoHome,
+      ...(location ? { location } : {}),
+    });
+  }
+
+  it("creates under the holder each mode resolves to", async () => {
+    const managed = await create("m", "m-branch", { mode: "managed" });
+    expect(managed.worktreePath.startsWith(join(paseoHome, "worktrees"))).toBe(true);
+
+    const sibling = await create("s", "s-branch", { mode: "sibling" });
+    expect(sibling.worktreePath).toBe(join(tempDir, "test-repo-worktrees", "s"));
+
+    const nested = await create("n", "n-branch", { mode: "nested" });
+    expect(nested.worktreePath).toBe(join(repoDir, ".worktrees", "n"));
+
+    const customRoot = join(tempDir, "custom-holder");
+    const custom = await create("c", "c-branch", { mode: "custom", root: customRoot });
+    expect(custom.worktreePath).toBe(join(customRoot, "c"));
+  });
+
+  // Not tidiness: the workspace watcher builds its ignore set from
+  // --exclude-standard, so without this the main workspace's recursive watcher
+  // descends into an entire second checkout.
+  it("excludes the nested holder from git, idempotently", async () => {
+    await create("n1", "n1-branch", { mode: "nested" });
+
+    const excludePath = join(repoDir, ".git", "info", "exclude");
+    const contents = readFileSync(excludePath, "utf8");
+    expect(contents).toContain(".worktrees/");
+    expect(
+      execFileSync("git", ["status", "--porcelain"], { cwd: repoDir }).toString(),
+    ).not.toContain(".worktrees");
+
+    await create("n2", "n2-branch", { mode: "nested" });
+    const after = readFileSync(excludePath, "utf8");
+    expect(after.split("\n").filter((line) => line.trim() === ".worktrees/")).toHaveLength(1);
+  });
+
+  it("does not write the exclude for other modes", async () => {
+    await create("s", "s-branch", { mode: "sibling" });
+    const excludePath = join(repoDir, ".git", "info", "exclude");
+    const contents = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+    expect(contents).not.toContain(".worktrees/");
+  });
+
+  // Listing filtered against the managed root would match nothing here, so the
+  // worktree would vanish from list RPCs and from archive-by-branch selection.
+  it("lists worktrees from the project's own holder", async () => {
+    const location: WorktreeLocation = { mode: "sibling" };
+    const created = await create("listed", "listed-branch", location);
+
+    const listed = await listPaseoWorktrees({ cwd: repoDir, paseoHome, location });
+    expect(listed.map((entry) => entry.path)).toContain(created.worktreePath);
+
+    const listedAsManaged = await listPaseoWorktrees({ cwd: repoDir, paseoHome });
+    expect(listedAsManaged.map((entry) => entry.path)).not.toContain(created.worktreePath);
   });
 });

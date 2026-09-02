@@ -202,7 +202,7 @@ import {
   matchesAgentUpdatesFilter,
   type AgentUpdatesService,
 } from "./session/agent-updates/agent-updates-service.js";
-import { expandTilde, getRealpathAwareRelativePath } from "../utils/path.js";
+import { areEquivalentPaths, expandTilde, getRealpathAwareRelativePath } from "../utils/path.js";
 import {
   searchDirectoryEntries,
   WORKSPACE_SEARCH_HIDDEN_DIRECTORIES,
@@ -871,6 +871,7 @@ export class Session {
     this.workspaceRecovery = createWorkspaceRecoveryService({
       paseoHome: this.paseoHome,
       worktreesRoot: this.worktreesRoot,
+      resolveWorktreeLocation: (repoRoot) => this.resolveWorktreeLocationForRepoRoot(repoRoot),
       getWorkspace: (workspaceId) => this.workspaceRegistry.get(workspaceId),
       getProject: (projectId) => this.projectRegistry.get(projectId),
       isDirectory: (path) => this.filesystem.isDirectory(path),
@@ -1023,6 +1024,7 @@ export class Session {
     this.createAgentLifecycleDispatch = new CreateAgentLifecycleDispatch({
       paseoHome: this.paseoHome,
       worktreesRoot: this.worktreesRoot,
+      resolveWorktreeLocation: (repoRoot) => this.resolveWorktreeLocationForRepoRoot(repoRoot),
       agentManager: this.agentManager,
       agentStorage: this.agentStorage,
       github: this.github,
@@ -3155,6 +3157,31 @@ export class Session {
       }
     }
     return null;
+  }
+
+  /**
+   * Where this repository's project cuts worktrees.
+   *
+   * Keyed by repo root rather than projectId because some entry points — MCP
+   * create_agent among them — only have a cwd. Returns null for an unknown
+   * repository, which resolves to the managed layout.
+   */
+  private async resolveWorktreeLocationForRepoRoot(
+    repoRoot: string,
+  ): Promise<WorktreeLocation | null> {
+    try {
+      const projects = await this.projectRegistry.list();
+      const match = projects.find(
+        (project) => !project.archivedAt && areEquivalentPaths(project.rootPath, repoRoot),
+      );
+      return match?.worktreeLocation ?? null;
+    } catch (error) {
+      this.sessionLogger.warn(
+        { err: error, repoRoot },
+        "Failed to resolve worktree location; falling back to the managed layout",
+      );
+      return null;
+    }
   }
 
   private async handleProjectWorktreeLocationSetRequest(
