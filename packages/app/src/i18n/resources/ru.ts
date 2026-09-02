@@ -305,6 +305,9 @@ export const ru: TranslationResources = {
     },
     actions: {
       copyCode: "Скопировать код",
+      copyLink: "Копировать ссылку",
+      openLinkInBrowser: "Открыть в браузере",
+      openLinkInPaseo: "Открыть в браузере Paseo",
       copyTurn: "Скопировать ответ",
       copyMessage: "Копировать сообщение",
       forkMenu: "Форкнуть чат отсюда",
@@ -2064,6 +2067,15 @@ export const ru: TranslationResources = {
         description: "Где открывать URL-адреса запущенных скриптов",
         options: {
           ask: "Спрашивать",
+          inApp: "В Paseo",
+          external: "Внешний браузер",
+        },
+      },
+      agentLinks: {
+        label: "Ссылки агента",
+        description: "Где открывать ссылки из сообщений агента",
+        accessibilityLabel: "Выберите, где открывать ссылки агента ({{value}})",
+        options: {
           inApp: "В Paseo",
           external: "Внешний браузер",
         },
