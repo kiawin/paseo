@@ -28,6 +28,27 @@ phone width: the last tab landed past the right edge and the close button was pu
 viewport, leaving no way to dismiss the overlay by tapping. The row now scrolls, as the desktop
 rail already did. Shot 09 is the fixed state; the assertion is on geometry, not appearance.
 
+### On device (Android)
+
+Run on a Pixel-class AVD (API 36) with a dev client pointed at an isolated daemon on port 6799
+(`adb reverse` for 8081 and 6799), a one-commit git project, and two seeded artifacts — one
+stored, one link-only.
+
+| Step                                            | Result                                                                                                          |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Compact overlay, `Changes │ Files │ Artifacts`  | All three tabs fit at 1080 px; Artifacts is present with no pull request, as on web                             |
+| Artifacts tab                                   | `On-device artifact — 96 B · 1d ago` and `Published on claude.ai — 1d ago · ↗ claude.ai`, no size on the latter |
+| Tap the stored row                              | Streams over the WebSocket and renders in the native WebView as a workspace tab; overlay dismisses itself       |
+| Narrow to 640 px (`adb shell wm size 640x1400`) | Tab row overflows: the Artifacts label clips, and **the close button stays inside the viewport**                |
+| Swipe left on the tab row                       | Row scrolls; Artifacts becomes fully visible and Changes clips at the left edge                                 |
+| Swipe right in the pane body                    | Panel closes — the swipe-to-close gesture is unaffected                                                         |
+| Swipe right on the tab row                      | The ScrollView claims it: the row scrolls back to the start and the panel stays open. No half state             |
+| Tap a tab after scrolling                       | Switches to Files; touch targets track the scrolled position                                                    |
+
+That last pair is the composition question the fix raised — a horizontal ScrollView inside a
+panel whose ancestor owns a horizontal swipe-to-close gesture. The inner scroll wins inside the
+row, the panel gesture wins everywhere else.
+
 Layout: no shift observed between empty, loading and populated states — the list is a plain
 scroll of fixed-height rows and the viewer's chrome is one optional bar. Row meta drops the size
 segment for a link-only artifact rather than rendering `0 B`.
@@ -102,14 +123,14 @@ Not a hot path: artifacts are fetched once per project on panel open and re-fetc
 
 ## 3. Every platform it affects
 
-| Platform        | Tested | Notes                                                                                                                                                                                           |
-| --------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| iOS             | ✗      | Not run. Compact overlay code is shared with web and exercised at 390 px, but `FileHtmlPreview` on native is the WebView implementation with the navigation latch, which this did not exercise. |
-| Android         | ✗      | Same as iOS.                                                                                                                                                                                    |
-| Web             | ✓      | Chromium via Playwright, desktop (1400×900) and compact (390×844).                                                                                                                              |
-| Desktop macOS   | ✗      | Not run.                                                                                                                                                                                        |
-| Desktop Windows | ✗      | Not run.                                                                                                                                                                                        |
-| Desktop Linux   | ✓      | Daemon under test is the Linux build; the e2e harness starts a real one per worker.                                                                                                             |
+| Platform        | Tested | Notes                                                                                                                                                               |
+| --------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| iOS             | ✗      | Not run. Shares the compact overlay and the native `FileHtmlPreview` with Android, which was run; the untested part is iOS-specific WebView behaviour.              |
+| Android         | ✓      | Pixel-class AVD (API 36) on a dev client against an isolated daemon. Artifacts tab, both row kinds, the native WebView preview, and the overflow/scroll case below. |
+| Web             | ✓      | Chromium via Playwright, desktop (1400×900) and compact (390×844).                                                                                                  |
+| Desktop macOS   | ✗      | Not run.                                                                                                                                                            |
+| Desktop Windows | ✗      | Not run.                                                                                                                                                            |
+| Desktop Linux   | ✓      | Daemon under test is the Linux build; the e2e harness starts a real one per worker.                                                                                 |
 
 No platform-gated code was added — no `isWeb`, `isNative`, or `getIsElectron()` branches. The
 native path is the existing `FileHtmlPreview.native`, reused unchanged.
@@ -144,9 +165,6 @@ native path is the existing `FileHtmlPreview.native`, reused unchanged.
   `CLAUDE_CODE_ARTIFACT=1` (#3561) and the only local sample is an `action: "list"` call, so the
   parser scrapes the first `http(s)` URL out of the result text. End-to-end capture from a live
   Claude run has not been exercised.
-- **The compact tab row's scroll is unverified on a device.** It is a horizontal ScrollView
-  inside a panel whose ancestor owns a horizontal swipe-to-close gesture. On web there is no
-  contest; on native the two are expected to compose the usual way, but that has not been run.
 - **The relay run seeds `$PASEO_HOME` directly.** The registries read their files at boot, so
   its project, workspace and artifact are written before the daemon starts. The transport, the
   store read and the render are real; that spec's artifact creation is not. Creation is covered
