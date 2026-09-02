@@ -23,6 +23,7 @@ import {
   DEFAULT_PANE_ID,
   AMBIENT_PLACEMENT,
   createWorkspaceLayoutWithExplorerSidebar,
+  DEFAULT_EXPLORER_SIDEBAR_TAB_KINDS,
   FOCUSED_PANE_PLACEMENT,
   EXPLORER_SIDEBAR_PANE_ID,
   findPaneById,
@@ -76,6 +77,7 @@ export {
   createDefaultLayout,
   DEFAULT_PANE_ID,
   createWorkspaceLayoutWithExplorerSidebar,
+  DEFAULT_EXPLORER_SIDEBAR_TAB_KINDS,
   FOCUSED_PANE_PLACEMENT,
   findPaneById,
   findPaneContainingTab,
@@ -341,8 +343,7 @@ function migrateVersionOneWorkspaceLayout(input: {
   const preservedTabs = collectAllTabs(strippedLayout.root).filter(
     (tab) =>
       legacyExplorerPane.tabIds.includes(tab.tabId) &&
-      tab.target.kind !== "files" &&
-      tab.target.kind !== "changes_tree",
+      !DEFAULT_EXPLORER_SIDEBAR_TAB_KINDS.has(tab.target.kind),
   );
   const preservedSide = preserveVersionOneSideTabs({
     layout: strippedLayout,
