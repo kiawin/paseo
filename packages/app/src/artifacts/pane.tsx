@@ -27,8 +27,17 @@ function ArtifactRow({
 }) {
   const { artifactId, externalUrl } = artifact;
   const host = externalUrl ? externalLinkHost(externalUrl) : null;
-  const meta = `${formatBytes(artifact.size)} · ${formatTimeAgo(new Date(artifact.updatedAt))}`;
-  const handleOpen = useCallback(() => onOpen(artifactId), [artifactId, onOpen]);
+  // A link-only artifact has nothing to preview, so the row is the link.
+  const isStored = artifact.contentSha256 !== null;
+  const age = formatTimeAgo(new Date(artifact.updatedAt));
+  const meta = artifact.size === null ? age : `${formatBytes(artifact.size)} · ${age}`;
+  const handleOpen = useCallback(() => {
+    if (isStored) {
+      onOpen(artifactId);
+      return;
+    }
+    if (externalUrl) onOpenLink(externalUrl);
+  }, [artifactId, externalUrl, isStored, onOpen, onOpenLink]);
   const handleOpenLink = useCallback(() => {
     if (externalUrl) onOpenLink(externalUrl);
   }, [externalUrl, onOpenLink]);

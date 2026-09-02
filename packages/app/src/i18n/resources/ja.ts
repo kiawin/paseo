@@ -1820,6 +1820,7 @@ export const ja: TranslationResources = {
       chooseFile: "ファイルを選択",
     },
     artifacts: {
+      linkMissing: "この成果物にはドキュメントもリンクもありません。",
       label: "成果物",
       subtitle: "エージェントが公開",
       tooltip: "このプロジェクトでエージェントが公開したドキュメント",

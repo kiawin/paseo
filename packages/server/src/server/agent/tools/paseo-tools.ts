@@ -2464,7 +2464,13 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         "same document is also live at a public address.",
       inputSchema: {
         title: z.string().describe("Short human-readable name shown in the Artifacts list."),
-        html: z.string().describe("The complete HTML document."),
+        html: z
+          .string()
+          .optional()
+          .describe(
+            "The complete HTML document. Omit only when passing externalUrl instead, which " +
+              "records a titled link to a document that lives elsewhere.",
+          ),
         artifactId: z
           .string()
           .optional()
@@ -2477,7 +2483,8 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       outputSchema: {
         artifactId: z.string(),
         title: z.string(),
-        size: z.number().int().nonnegative(),
+        /** Null when the artifact is a link rather than a stored document. */
+        size: z.number().int().nonnegative().nullable(),
       },
     },
     async ({ title, html, artifactId, externalUrl }) => {
@@ -2486,7 +2493,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       const { record } = await options.artifactStore.publish({
         projectId: target.projectId,
         title,
-        html,
+        html: html ?? null,
         artifactId: artifactId ?? null,
         externalUrl: externalUrl ?? null,
         origin: {

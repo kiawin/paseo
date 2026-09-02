@@ -1853,6 +1853,7 @@ export const fr: TranslationResources = {
       chooseFile: "Choisissez un fichier",
     },
     artifacts: {
+      linkMissing: "Cet artefact n'a ni document ni lien.",
       label: "Artefacts",
       subtitle: "Publiés par les agents",
       tooltip: "Documents publiés par les agents dans ce projet",

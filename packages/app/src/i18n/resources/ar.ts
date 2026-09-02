@@ -1803,6 +1803,7 @@ export const ar: TranslationResources = {
       chooseFile: "اختر ملفًا",
     },
     artifacts: {
+      linkMissing: "هذا العنصر ليس له مستند ولا رابط.",
       label: "العناصر",
       subtitle: "نشرها الوكلاء",
       tooltip: "مستندات نشرها الوكلاء في هذا المشروع",

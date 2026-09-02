@@ -81,6 +81,23 @@ describe("artifact messages", () => {
     expect(parsed.payload.artifacts[0]?.externalUrl).toBeNull();
   });
 
+  test("carries a null size and digest for an artifact the daemon does not store", () => {
+    const parsed = ArtifactListResponseSchema.parse({
+      type: "artifact.list.response",
+      payload: {
+        projectId: RECORD.projectId,
+        artifacts: [{ ...RECORD, size: null, contentSha256: null }],
+        success: true,
+        error: null,
+        requestId: "req_link",
+      },
+    });
+    const artifact = parsed.payload.artifacts[0];
+    expect(artifact?.size).toBeNull();
+    expect(artifact?.contentSha256).toBeNull();
+    expect(artifact?.externalUrl).toBe(RECORD.externalUrl);
+  });
+
   test("round-trips a download request and its metadata response", () => {
     const request = {
       type: "artifact.entry.download.request" as const,

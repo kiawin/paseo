@@ -1835,6 +1835,7 @@ export const ptBR: TranslationResources = {
       chooseFile: "Escolha um arquivo",
     },
     artifacts: {
+      linkMissing: "Este artefato não tem documento nem link.",
       label: "Artefatos",
       subtitle: "Publicados por agentes",
       tooltip: "Documentos que os agentes publicaram neste projeto",

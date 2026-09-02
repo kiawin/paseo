@@ -1813,6 +1813,7 @@ export const ko: TranslationResources = {
       chooseFile: "파일 선택",
     },
     artifacts: {
+      linkMissing: "이 산출물에는 문서도 링크도 없습니다.",
       label: "산출물",
       subtitle: "에이전트가 게시함",
       tooltip: "이 프로젝트에서 에이전트가 게시한 문서",

@@ -24,8 +24,15 @@ export const PersistedArtifactRecordSchema = z.object({
   title: z.string(),
   // One value today. A field so a second document type stays additive.
   mimeType: z.literal(ARTIFACT_MIME_TYPE),
-  size: z.number(),
-  contentSha256: z.string(),
+  /**
+   * Null on both when Paseo holds no bytes — the artifact is a title pointing at `externalUrl`.
+   *
+   * `contentSha256 === null` is the single source of truth for that, checked identically by the
+   * startup sweep, the viewer and the download RPC. A record that claims a digest must have its
+   * file; a record that claims none must not.
+   */
+  size: z.number().nullable(),
+  contentSha256: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   pinned: z.boolean(),
@@ -56,7 +63,8 @@ export interface ArtifactOrigin {
 export interface PublishArtifactInput {
   projectId: string;
   title: string;
-  html: string;
+  /** Omit to record a link-only artifact, which then requires `externalUrl`. */
+  html?: string | null;
   /** Overwrite this record instead of minting one. Requires origin ownership. */
   artifactId?: string | null;
   externalUrl?: string | null;
@@ -75,7 +83,8 @@ export class ArtifactError extends Error {
       | "artifact_too_large"
       | "artifact_invalid_title"
       | "artifact_invalid_external_url"
-      | "artifact_forbidden",
+      | "artifact_forbidden"
+      | "artifact_has_no_content",
     message: string,
   ) {
     super(message);
@@ -196,6 +205,12 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
   async readContent(artifactId: string): Promise<Buffer> {
     const record = await this.get(artifactId);
     if (!record) throw new ArtifactError("artifact_not_found", `No artifact ${artifactId}`);
+    if (record.contentSha256 === null) {
+      throw new ArtifactError(
+        "artifact_has_no_content",
+        `Artifact ${artifactId} is a link, not a stored document`,
+      );
+    }
     try {
       return await fs.readFile(this.contentPath(record));
     } catch {
@@ -204,8 +219,9 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
   }
 
   async publish(input: PublishArtifactInput): Promise<PublishArtifactResult> {
-    const html = Buffer.from(input.html, "utf8");
-    if (html.byteLength > ARTIFACT_MAX_BYTES) {
+    const html =
+      input.html === undefined || input.html === null ? null : Buffer.from(input.html, "utf8");
+    if (html && html.byteLength > ARTIFACT_MAX_BYTES) {
       throw new ArtifactError(
         "artifact_too_large",
         `Artifact is ${html.byteLength} bytes, over the ${ARTIFACT_MAX_BYTES} byte limit`,
@@ -213,6 +229,13 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
     }
     const title = normalizeTitle(input.title);
     const externalUrl = normalizeExternalUrl(input.externalUrl);
+    // A row with neither bytes nor a destination is a title that does nothing.
+    if (!html && !externalUrl) {
+      throw new ArtifactError(
+        "artifact_has_no_content",
+        "An artifact needs either a document or an external URL",
+      );
+    }
     const callId = input.origin.callId ?? null;
 
     let pending: PersistedArtifactRecord | null = null;
@@ -225,8 +248,8 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
           projectId: input.projectId,
           title,
           mimeType: ARTIFACT_MIME_TYPE,
-          size: html.byteLength,
-          contentSha256: createHash("sha256").update(html).digest("hex"),
+          size: html ? html.byteLength : null,
+          contentSha256: html ? createHash("sha256").update(html).digest("hex") : null,
           createdAt: target?.createdAt ?? now,
           updatedAt: now,
           pinned: target?.pinned ?? false,
@@ -250,6 +273,14 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
         beforeWrite: async () => {
           if (!pending) return;
           const target = this.contentPath(pending);
+          if (!html) {
+            // Overwriting a stored document with a link drops the bytes here, while the index
+            // still names them; a crash before the commit therefore leaves a record whose file
+            // is gone, which the sweep treats as corrupt and removes. Losing a superseded
+            // document beats leaving a file nothing points at.
+            await fs.rm(target, { force: true });
+            return;
+          }
           await fs.mkdir(path.dirname(target), { recursive: true });
           await writeFileAtomic(target, html);
         },
@@ -349,7 +380,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
       .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
 
     let count = candidates.length;
-    let bytes = candidates.reduce((total, record) => total + record.size, 0);
+    let bytes = candidates.reduce((total, record) => total + (record.size ?? 0), 0);
     const evicted: PersistedArtifactRecord[] = [];
     for (const candidate of candidates) {
       if (count <= this.limits.maxPerProject && bytes <= this.limits.maxBytesPerProject) break;
@@ -357,7 +388,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
       if (candidate.pinned) continue;
       evicted.push(candidate);
       count -= 1;
-      bytes -= candidate.size;
+      bytes -= candidate.size ?? 0;
     }
     return evicted;
   }
@@ -372,13 +403,22 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
   }
 
   /**
-   * Reconciles index and disk at startup. Files no record names are deleted; records whose file
-   * is gone are dropped, because a listed artifact that cannot be opened is worse than an
-   * absent one.
+   * Reconciles index and disk at startup, against one rule: a record that claims a digest must
+   * have its file, and a record that claims none must not.
+   *
+   * Both halves matter. Dropping a record whose file is gone keeps an unopenable row out of the
+   * list; deleting a file no record claims stops an orphan counting against the project quota
+   * forever. A link-only record claims no file, so it is not swept — it never had bytes, and
+   * the earlier rule of "no file means delete" would have removed every one of them on the
+   * first restart.
    */
   private async sweepOrphans(): Promise<void> {
     const records = await this.list();
-    const known = new Map(records.map((record) => [this.contentPath(record), record]));
+    const expectedFiles = new Map(
+      records
+        .filter((record) => record.contentSha256 !== null)
+        .map((record) => [this.contentPath(record), record] as const),
+    );
 
     let projectDirs: string[];
     try {
@@ -399,7 +439,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
       }
       for (const file of files) {
         const full = path.join(dir, file);
-        if (known.has(full)) {
+        if (expectedFiles.has(full)) {
           present.add(full);
           continue;
         }
@@ -408,7 +448,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
       }
     }
 
-    for (const [contentPath, record] of known) {
+    for (const [contentPath, record] of expectedFiles) {
       if (present.has(contentPath)) continue;
       await this.remove(record.artifactId);
       this.logger.warn(

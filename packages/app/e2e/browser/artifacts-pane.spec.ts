@@ -33,11 +33,14 @@ function encodeFrame(input: {
 }
 const OWNED_ID = "art_0000000000000001";
 const LINKED_ID = "art_0000000000000002";
+const LINK_ONLY_ID = "art_0000000000000003";
+const LINK_ONLY_URL = "https://claude.ai/code/artifact/link-only";
 
 function artifactRecord(input: {
   artifactId: string;
   title: string;
-  size: number;
+  /** Null for an artifact the daemon does not store — a title pointing at externalUrl. */
+  size: number | null;
   externalUrl: string | null;
 }) {
   return {
@@ -46,7 +49,7 @@ function artifactRecord(input: {
     title: input.title,
     mimeType: "text/html",
     size: input.size,
-    contentSha256: "a".repeat(64),
+    contentSha256: input.size === null ? null : "a".repeat(64),
     createdAt: "2026-09-01T00:00:00.000Z",
     updatedAt: "2026-09-01T00:00:00.000Z",
     pinned: false,
@@ -96,6 +99,12 @@ async function stubArtifactRpcs(page: Page): Promise<void> {
                     title: "Q3 revenue dashboard",
                     size: ARTIFACT_HTML.length,
                     externalUrl: null,
+                  }),
+                  artifactRecord({
+                    artifactId: LINK_ONLY_ID,
+                    title: "Published on claude.ai",
+                    size: null,
+                    externalUrl: LINK_ONLY_URL,
                   }),
                 ],
                 success: true,
@@ -252,4 +261,32 @@ test("the compact overlay lists artifacts from its own header tab", async ({
   const preview = page.getByTestId("artifact-html-preview").filter({ visible: true }).first();
   await expect(preview).toBeVisible({ timeout: 30_000 });
   await expect(preview.contentFrame().locator("#heading")).toHaveText("Q3 revenue");
+});
+
+test("a link-only artifact opens its destination instead of an empty preview", async ({
+  page,
+  withWorkspace,
+}) => {
+  await stubArtifactRpcs(page);
+  const workspace = await withWorkspace({ prefix: "artifacts-link-only-" });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await workspace.navigateTo();
+  await waitForWorkspaceTabsVisible(page);
+
+  await openArtifactsPanel(page);
+  const list = page.getByTestId("artifacts-list").filter({ visible: true }).first();
+  await expect(list).toBeVisible({ timeout: 30_000 });
+
+  // No size in the meta line: the daemon holds no bytes for this one.
+  const row = list.getByTestId(`artifact-row-${LINK_ONLY_ID}`);
+  await expect(row).toContainText("Published on claude.ai");
+  await expect(row).not.toContainText("KB");
+  await expect(row).not.toContainText("MB");
+
+  const popup = page.waitForEvent("popup");
+  await row.click();
+  expect((await popup).url()).toBe(LINK_ONLY_URL);
+
+  // And it must not have opened the viewer, which would render an empty document.
+  await expect(page.getByTestId("artifact-html-preview")).toHaveCount(0);
 });

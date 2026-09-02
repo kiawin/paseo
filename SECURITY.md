@@ -80,7 +80,7 @@ If you don't trust a page, read it in `Source`, which executes nothing. Source i
 
 ## Artifacts
 
-An artifact is an HTML document an agent published through `publish_artifact`. It renders in the same preview described above, with the same sandbox, the same policy, and the same self-navigation gap. What differs is the odds, and two properties the file preview does not have.
+An artifact is a deliverable an agent published through `publish_artifact`. It is either an HTML document the daemon stores, which renders in the same preview described above — same sandbox, same policy, same self-navigation gap — or a title pointing at a URL, which only ever opens in your browser and is never loaded into the preview. What differs is the odds, and two properties the file preview does not have.
 
 Artifacts are agent-authored by construction. A repo file is markup you chose to open; an artifact only exists because an agent wrote it, and agents routinely read untrusted input — issues, change requests, web pages, MCP output. The surface also invites opening: a list of deliverables is there to be read. Assume any artifact may be hostile markup and rely on the sandbox, not on the source.
 

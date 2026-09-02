@@ -2741,9 +2741,14 @@ export const ArtifactRecordPayloadSchema = z.object({
   projectId: z.string(),
   title: z.string(),
   mimeType: z.string(),
-  size: z.number().int().nonnegative(),
-  // Digest of the stored bytes. Lets a client key a fetch cache without refetching.
-  contentSha256: z.string(),
+  /**
+   * Null on both when the daemon holds no bytes: the artifact is a title pointing at
+   * `externalUrl`, which is where it actually lives. `contentSha256 === null` is what a client
+   * checks — it decides whether the row opens a preview or opens the link. When set, the digest
+   * also keys a fetch cache, so a republish invalidates it without a refetch.
+   */
+  size: z.number().int().nonnegative().nullable(),
+  contentSha256: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   pinned: z.boolean(),

@@ -224,7 +224,7 @@ export class ArtifactsSession {
             size: content.byteLength,
             encoding: "utf-8",
             modifiedAt: record.updatedAt,
-            revision: record.contentSha256,
+            ...(record.contentSha256 ? { revision: record.contentSha256 } : {}),
             fileName: `${record.artifactId}.html`,
           },
         }),

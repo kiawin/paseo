@@ -116,6 +116,27 @@ describe("publish_artifact", () => {
     ).rejects.toThrow(/http or https/);
   });
 
+  test("records a link-only artifact when given a URL and no document", async () => {
+    const catalog = await buildCatalog();
+    const result = await catalog.executeTool("publish_artifact", {
+      title: "Published on claude.ai",
+      externalUrl: "https://claude.ai/code/artifact/abc",
+    });
+
+    const output = result.structuredContent as { artifactId: string; size: number | null };
+    expect(output.size).toBeNull();
+    const stored = await store.get(output.artifactId);
+    expect(stored?.contentSha256).toBeNull();
+    expect(stored?.externalUrl).toBe("https://claude.ai/code/artifact/abc");
+  });
+
+  test("refuses a title with neither a document nor a link", async () => {
+    const catalog = await buildCatalog();
+    await expect(catalog.executeTool("publish_artifact", { title: "Nothing" })).rejects.toThrow(
+      /either a document or an external URL/,
+    );
+  });
+
   test("refuses when the caller agent has no workspace", async () => {
     const catalog = await buildCatalog({
       agent: { id: AGENT_ID, workspaceId: null, provider: "claude", cwd: "/repo" },

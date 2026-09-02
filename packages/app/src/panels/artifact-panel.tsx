@@ -52,6 +52,22 @@ function ArtifactPanel() {
     if (externalUrl) void openExternalUrl(externalUrl);
   }, [externalUrl]);
 
+  // A link-only artifact has no bytes to render. The row routes straight to the link, but a
+  // restored tab can still land here — an artifact can become link-only by being overwritten.
+  if (record && record.contentSha256 === null) {
+    return (
+      <View style={styles.centerState} testID="artifact-link-only">
+        <Text style={styles.emptyTitle}>{record.title}</Text>
+        {externalUrl && host ? (
+          <Pressable onPress={onOpenLink} testID="artifact-external-link">
+            <Text style={styles.linkText}>{t("panels.artifacts.openOn", { host })}</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.emptyBody}>{t("panels.artifacts.linkMissing")}</Text>
+        )}
+      </View>
+    );
+  }
   if (content.error) {
     return (
       <View style={styles.centerState} testID="artifact-error">

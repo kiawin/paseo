@@ -1782,6 +1782,7 @@ export const zhCN: TranslationResources = {
       chooseFile: "选择文件",
     },
     artifacts: {
+      linkMissing: "此制品既无文档也无链接。",
       label: "制品",
       subtitle: "由智能体发布",
       tooltip: "智能体在此项目中发布的文档",

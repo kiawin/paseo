@@ -1834,6 +1834,7 @@ export const ru: TranslationResources = {
       chooseFile: "Выберите файл",
     },
     artifacts: {
+      linkMissing: "У этого артефакта нет ни документа, ни ссылки.",
       label: "Артефакты",
       subtitle: "Опубликованы агентами",
       tooltip: "Документы, опубликованные агентами в этом проекте",

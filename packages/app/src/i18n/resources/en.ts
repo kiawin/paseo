@@ -1813,6 +1813,7 @@ export const en = {
       chooseFile: "Choose a file",
     },
     artifacts: {
+      linkMissing: "This artifact has no document and no link.",
       label: "Artifacts",
       subtitle: "Published by agents",
       tooltip: "Documents agents published in this project",

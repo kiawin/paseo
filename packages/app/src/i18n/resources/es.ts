@@ -1849,6 +1849,7 @@ export const es: TranslationResources = {
       chooseFile: "Elige un archivo",
     },
     artifacts: {
+      linkMissing: "Este artefacto no tiene documento ni enlace.",
       label: "Artefactos",
       subtitle: "Publicados por agentes",
       tooltip: "Documentos que los agentes publicaron en este proyecto",

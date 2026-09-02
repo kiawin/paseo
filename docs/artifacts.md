@@ -1,8 +1,18 @@
 # Artifacts
 
-An artifact is an HTML document an agent published so a person can read it. The agent calls
-`publish_artifact`; the daemon stores the bytes; the Artifacts view in the Explorer lists them and
-opens them in the same sandboxed preview the file pane uses.
+An artifact is a titled deliverable an agent published so a person can read it. The agent calls
+`publish_artifact`; the Artifacts view in the Explorer lists what a project has.
+
+A row is backed one of two ways, and `contentSha256` is what says which:
+
+| `contentSha256` | Backing                                  | Opening the row                                     |
+| --------------- | ---------------------------------------- | --------------------------------------------------- |
+| set             | HTML the daemon stored                   | Renders in the sandboxed preview the file pane uses |
+| `null`          | Nothing; `externalUrl` is where it lives | Opens the link externally                           |
+
+One record type with an optional body, not two lists. Every consumer — the startup sweep, the
+viewer, the download RPC — reads the same field, so there is no second thing to keep in sync and
+no state to infer from a missing file.
 
 The problem it solves is the last mile of a long agent run. An agent that has produced a report, a
 dashboard, or a diagram has nowhere to put it except the transcript, and a wall of text in a
@@ -46,8 +56,12 @@ atomic index write. A publish is not one write, and the parts that are easy to g
   other, and each picks the other as the victim.
 - **Ordering.** HTML renamed into place, then index commit, then victim unlink. A crash in either
   gap leaves an HTML file no record names, which the startup sweep reclaims — an orphan otherwise
-  counts against the project quota forever. The sweep also drops records whose file is gone,
-  because a listed artifact that cannot be opened is worse than an absent one.
+  counts against the project quota forever.
+- **The sweep's rule is the digest, not the file.** A record that claims a `contentSha256` must
+  have its file, and one that claims none must not. Sweeping on "no file means delete" instead
+  would remove every link-only row on the first restart.
+- **A link-only row costs a slot, not bytes.** It counts against the 100-record cap and nothing
+  against the 200 MB one.
 - **Monotonic stamps.** `updatedAt` is the eviction order, so stamps advance past the newest record
   on disk rather than trusting millisecond wall-clock resolution. Two publishes in one tick would
   otherwise be unordered, and "evict the oldest" would mean nothing.
@@ -87,6 +101,19 @@ nowhere to put the link. `origin.provider` already records the vendor.
 
 Vendor knowledge belongs at capture. Only Claude Code has an `Artifact` tool, so filling
 `externalUrl` in automatically is Claude adapter code, not shared plumbing.
+
+## Why a Claude artifact is a link and not a copy
+
+Claude Code's own `Artifact` tool publishes to claude.ai, and the local file it was given is
+tempting to copy. Don't. A Claude artifact can declare runtime capabilities (`window.claude.*`)
+and reference uploaded assets as `_blob/{id}`, and both only exist on the claude.ai origin. Copied
+into Paseo's sandbox, such a page looks right and silently does not work — the worst failure this
+feature can have, because the list exists to be trusted.
+
+So the rule has no heuristic in it: what Claude publishes to claude.ai is recorded link-only, and
+the live page stays canonical. An agent that wants a document Paseo actually holds — including
+Claude — writes the HTML and calls `publish_artifact` with it. That path is unaffected and is the
+normal one.
 
 ## Adding a surface
 

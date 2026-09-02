@@ -312,6 +312,122 @@ describe("eviction", () => {
   });
 });
 
+describe("link-only artifacts", () => {
+  const LINK = "https://claude.ai/code/artifact/abc";
+
+  test("records a title and a destination with no stored bytes", async () => {
+    const { record } = await store.publish({
+      projectId: "prj_a",
+      title: "Published on claude.ai",
+      externalUrl: LINK,
+      origin: AGENT,
+    });
+
+    expect(record.size).toBeNull();
+    expect(record.contentSha256).toBeNull();
+    expect(record.externalUrl).toBe(LINK);
+    await expect(fs.access(store.contentPath(record))).rejects.toThrow();
+  });
+
+  test("reading one reports a link, not a missing artifact", async () => {
+    const { record } = await store.publish({
+      projectId: "prj_a",
+      title: "Linked",
+      externalUrl: LINK,
+      origin: AGENT,
+    });
+    await expect(store.readContent(record.artifactId)).rejects.toMatchObject({
+      code: "artifact_has_no_content",
+    });
+  });
+
+  test("refuses a row with neither a document nor a destination", async () => {
+    await expect(
+      store.publish({ projectId: "prj_a", title: "Nothing", origin: AGENT }),
+    ).rejects.toMatchObject({ code: "artifact_has_no_content" });
+  });
+
+  test("survives a restart — the sweep only claims files a digest names", async () => {
+    const linked = await store.publish({
+      projectId: "prj_a",
+      title: "Linked",
+      externalUrl: LINK,
+      origin: AGENT,
+    });
+    const stored = await store.publish({
+      projectId: "prj_a",
+      title: "Stored",
+      html: "<p>x</p>",
+      origin: AGENT,
+    });
+
+    const reopened = await open();
+    const titles = (await reopened.listForProject("prj_a")).map((record) => record.title);
+    expect(titles.sort()).toEqual(["Linked", "Stored"]);
+    expect((await reopened.readContent(stored.record.artifactId)).toString()).toBe("<p>x</p>");
+    await expect(reopened.readContent(linked.record.artifactId)).rejects.toMatchObject({
+      code: "artifact_has_no_content",
+    });
+  });
+
+  test("overwriting a document with a link drops the bytes", async () => {
+    const first = await store.publish({
+      projectId: "prj_a",
+      title: "Draft",
+      html: "<p>v1</p>",
+      origin: AGENT,
+    });
+    const second = await store.publish({
+      projectId: "prj_a",
+      title: "Moved to claude.ai",
+      externalUrl: LINK,
+      artifactId: first.record.artifactId,
+      origin: AGENT,
+    });
+
+    expect(second.record.contentSha256).toBeNull();
+    await expect(fs.access(store.contentPath(second.record))).rejects.toThrow();
+    // And the file it used to own must not survive as an orphan against the quota.
+    const reopened = await open();
+    expect(await reopened.listForProject("prj_a")).toHaveLength(1);
+  });
+
+  test("overwriting a link with a document restores the bytes", async () => {
+    const first = await store.publish({
+      projectId: "prj_a",
+      title: "Linked",
+      externalUrl: LINK,
+      origin: AGENT,
+    });
+    const second = await store.publish({
+      projectId: "prj_a",
+      title: "Now stored",
+      html: "<p>v2</p>",
+      artifactId: first.record.artifactId,
+      origin: AGENT,
+    });
+
+    expect(second.record.contentSha256).not.toBeNull();
+    expect((await store.readContent(first.record.artifactId)).toString()).toBe("<p>v2</p>");
+  });
+
+  test("costs a slot but no bytes against the project quota", async () => {
+    const capped = new ArtifactStore(root, createTestLogger(), { maxBytesPerProject: 30 });
+    await capped.initialize();
+
+    for (let index = 0; index < 4; index += 1) {
+      await capped.publish({
+        projectId: "prj_a",
+        title: `Link ${index}`,
+        externalUrl: `${LINK}/${index}`,
+        origin: AGENT,
+      });
+    }
+    // Zero bytes across four rows, so the byte cap never binds and nothing is evicted.
+    expect(await capped.listForProject("prj_a")).toHaveLength(4);
+  });
+});
+
 describe("delete", () => {
   test("removes the record and its content", async () => {
     const { record } = await store.publish({
