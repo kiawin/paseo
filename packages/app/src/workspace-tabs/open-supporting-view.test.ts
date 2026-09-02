@@ -204,6 +204,7 @@ describe("autoOpenWorkspacePullRequest", () => {
       "files",
       "changes_tree",
       "pull_request",
+      "artifacts",
       "terminal_terminal-1",
     ]);
     expect(explorer.hidden).toBe(true);
@@ -305,7 +306,12 @@ describe("automatic PR placement", () => {
       intent: "background",
       placement: { mode: "prefer", paneId: "explorer" },
     });
-    store.reorderTabsInPane(WORKSPACE_KEY, "explorer", ["pull_request", "files", "changes_tree"]);
+    store.reorderTabsInPane(WORKSPACE_KEY, "explorer", [
+      "pull_request",
+      "files",
+      "changes_tree",
+      "artifacts",
+    ]);
     const before = useWorkspaceLayoutStore.getState().layoutByWorkspace[WORKSPACE_KEY];
     autoOpenWorkspacePullRequest({ workspaceKey: WORKSPACE_KEY, destination: "explorer" });
     autoOpenWorkspacePullRequest({ workspaceKey: WORKSPACE_KEY, destination: "side" });
@@ -326,6 +332,6 @@ describe("automatic PR placement", () => {
         useWorkspaceLayoutStore.getState().layoutByWorkspace[WORKSPACE_KEY].root,
         "explorer",
       )!.tabIds,
-    ).toEqual(["files", "pull_request"]);
+    ).toEqual(["files", "artifacts", "pull_request"]);
   });
 });
