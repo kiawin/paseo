@@ -92,6 +92,14 @@ Pull requests have a three-way open location: Main panel, On the side, or Explor
 sidebar is the default. Compact layouts always open pull requests in Explorer regardless of this
 desktop preference.
 
+Two rows in the same section pick a browser rather than a pane: pull request links and a script's
+service URL. Pull request links cover every forge link Paseo renders — the PR panel header, the
+sidebar badge, checks, pipelines, review comments — and default to the external browser. In Paseo
+needs a workspace to own the browser tab, so a surface without one (a settings preview, an action
+taken off a workspace route) opens the external browser whatever the setting says. Forge links reach
+their opener through `ForgeLinkProvider` in `packages/app/src/git/forge-link.tsx`; a new forge link
+mounts under that provider and calls `useForgeLinkOpener()` instead of `openExternalUrl`.
+
 Panels request an implicit open through the narrow `openPreferredTarget(target, source)` pane
 contract. Entry points outside panels use `openPreferredWorkspaceTarget`. Do not branch on a
 specific shell inside a panel.

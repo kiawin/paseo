@@ -3,7 +3,7 @@ import { Pressable, ScrollView, Text, View, type GestureResponderEvent } from "r
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ChevronDown, ChevronRight, MessageSquarePlus } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
-import { openExternalUrl } from "@/utils/open-external-url";
+import { useForgeLinkOpener } from "@/git/forge-link";
 import { ICON_SIZE } from "@/styles/theme";
 import { classifyCheck, type CheckPresentation } from "@/git/check-presentation";
 import { CheckPresentationIcon } from "@/git/check-presentation.view";
@@ -186,9 +186,10 @@ function CheckRow({
   isAddingLogsToChat: boolean;
   onAddLogsToChat: (check: PrPaneCheck) => void;
 }) {
+  const openForgeLink = useForgeLinkOpener();
   const handlePress = useCallback(() => {
-    void openExternalUrl(check.url);
-  }, [check.url]);
+    openForgeLink(check.url);
+  }, [check.url, openForgeLink]);
   const handleAddLogsToChat = useCallback(
     (event: GestureResponderEvent) => {
       event.stopPropagation();
