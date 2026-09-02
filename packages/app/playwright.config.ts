@@ -4,7 +4,9 @@ import { defineConfig, devices } from "@playwright/test";
 // This allows multiple test runs in parallel across different worktrees
 const baseURL =
   process.env.E2E_BASE_URL ?? `http://localhost:${process.env.E2E_METRO_PORT ?? "8081"}`;
-const relayDeploymentSpec = "**/relay-deployment-reconnect.real.spec.ts";
+// Relay specs need a local Elixir relay and a packaged daemon, so they run in their own
+// project rather than alongside the real-provider ones.
+const relaySpecs = "**/relay-*.real.spec.ts";
 
 function videoMode(): "on" | "on-first-retry" | "retain-on-failure" {
   if (process.env.E2E_RECORD_VIDEO === "1") return "on";
@@ -40,12 +42,12 @@ export default defineConfig({
     {
       name: "real-provider",
       testMatch: ["**/*.real.spec.ts"],
-      testIgnore: [relayDeploymentSpec],
+      testIgnore: [relaySpecs],
       use: { ...devices["Desktop Chrome"] },
     },
     {
       name: "relay-deployment",
-      testMatch: [relayDeploymentSpec],
+      testMatch: [relaySpecs],
       use: { ...devices["Desktop Chrome"] },
     },
   ],
