@@ -1827,6 +1827,21 @@ export const ar: TranslationResources = {
       tooltip: "تصفح ملفات مساحة العمل",
       chooseFile: "اختر ملفًا",
     },
+    artifacts: {
+      linkMissing: "هذا العنصر ليس له مستند ولا رابط.",
+      label: "العناصر",
+      subtitle: "نشرها الوكلاء",
+      tooltip: "مستندات نشرها الوكلاء في هذا المشروع",
+      emptyTitle: "لا توجد عناصر في هذا المشروع",
+      emptyDescription: "ينشرها الوكلاء باستخدام publish_artifact.",
+      loadFailed: "تعذر تحميل العناصر",
+      hostTooOld: "حدّث المضيف لعرض العناصر.",
+      openOn: "فتح على {{host}}",
+      deleteTitle: "حذف العنصر؟",
+      deleteMessage: "هل تريد حذف «{{title}}»؟ لا يمكن التراجع عن ذلك.",
+      deleteConfirm: "حذف",
+      deleteFailed: "تعذّر حذف العنصر",
+    },
     pullRequest: {
       label: "طلب السحب",
       subtitle: "تفاصيل طلب السحب",
@@ -1847,6 +1862,7 @@ export const ar: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "فتح على {{host}}",
     error: "خطأ",
     empty: "لا توجد تفاصيل إضافية متاحة",
     subAgentActivity: "نشاط الوكيل الفرعي",
@@ -2026,7 +2042,7 @@ export const ar: TranslationResources = {
       },
       agentLinks: {
         label: "روابط الوكيل",
-        description: "مكان فتح الروابط في رسائل الوكيل",
+        description: "مكان فتح الروابط التي ينشرها الوكلاء",
         accessibilityLabel: "حدد مكان فتح روابط الوكيل ({{value}})",
         options: {
           inApp: "في Paseo",
