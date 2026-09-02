@@ -113,7 +113,9 @@ async function closeOtherExplorerTabs(page: Parameters<typeof ensureExplorerSide
   });
   await files.click({ button: "right", position: { x: 12, y: 13 } });
   const confirmation = page.waitForEvent("dialog").then((dialog) => {
-    expect(dialog.message()).toContain("close 1 tab");
+    // Two, not one: upstream's Explorer opens Files and Changes, and this fork adds Artifacts
+    // as a third default tab, so closing the others from Files closes Changes and Artifacts.
+    expect(dialog.message()).toContain("close 2 tab");
     return dialog.accept();
   });
   await page.getByRole("menuitem", { name: "Close other tabs", exact: true }).click();
