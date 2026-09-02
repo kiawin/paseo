@@ -35,6 +35,7 @@ import {
   parseTerminalScrollbackLines,
   sanitizeFontFamily,
   saveAppSettings as saveAppSettingsPure,
+  type AgentLinkBehavior,
   type AppSettings,
   type OpenInSidePanePreferences,
   type PullRequestOpenLocation,
@@ -71,6 +72,7 @@ export {
   sanitizeFontFamily,
 };
 export type {
+  AgentLinkBehavior,
   AppSettings,
   AppLanguage,
   OpenInSidePanePreferences,

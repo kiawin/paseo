@@ -295,6 +295,9 @@ export const ptBR: TranslationResources = {
     },
     actions: {
       copyCode: "Copiar código",
+      copyLink: "Copiar link",
+      openLinkInBrowser: "Abrir no navegador",
+      openLinkInPaseo: "Abrir no navegador do Paseo",
       copyTurn: "Copiar turno",
       copyMessage: "Copiar mensagem",
       forkMenu: "Bifurcar mensagem",
@@ -2028,6 +2031,15 @@ export const ptBR: TranslationResources = {
         description: "Onde abrir URLs de scripts em execução",
         options: {
           ask: "Perguntar",
+          inApp: "No Paseo",
+          external: "Navegador externo",
+        },
+      },
+      agentLinks: {
+        label: "Links do agente",
+        description: "Onde abrir links das mensagens do agente",
+        accessibilityLabel: "Selecione onde os links do agente abrem ({{value}})",
+        options: {
           inApp: "No Paseo",
           external: "Navegador externo",
         },

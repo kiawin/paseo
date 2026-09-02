@@ -295,6 +295,9 @@ export const ja: TranslationResources = {
     },
     actions: {
       copyCode: "コードをコピー",
+      copyLink: "リンクをコピー",
+      openLinkInBrowser: "ブラウザーで開く",
+      openLinkInPaseo: "Paseo のブラウザーで開く",
       copyTurn: "ターンをコピー",
       copyMessage: "メッセージをコピー",
       forkMenu: "メッセージをフォーク",
@@ -2012,6 +2015,15 @@ export const ja: TranslationResources = {
         description: "実行中のスクリプトからURLを開く場所",
         options: {
           ask: "確認する",
+          inApp: "Paseoで",
+          external: "外部ブラウザ",
+        },
+      },
+      agentLinks: {
+        label: "エージェントのリンク",
+        description: "エージェントのメッセージ内のリンクを開く場所",
+        accessibilityLabel: "エージェントのリンクを開く場所を選択（{{value}}）",
+        options: {
           inApp: "Paseoで",
           external: "外部ブラウザ",
         },
