@@ -26,6 +26,14 @@ when you have actually looked at it on a phone.
 `ContextMenu` is the exception: it defaults to `compactMode="sheet"` and enables native long press.
 Disable mobile triggering explicitly on draggable rows, where long press belongs to drag instead.
 
+`ContextMenuTrigger` wants to be a wrapper element, which some triggers cannot afford. An inline
+link inside a paragraph is the case: wrapping it turns the span into a block box and the sentence
+reflows. Such a trigger takes the gesture on the element it already has and calls
+`useContextMenuAnchorAtEvent` with the event, which anchors the surrounding `ContextMenu` to the
+gesture point exactly as the trigger would. One menu then serves every link in the message —
+`assistant-file-links/link-context-menu.tsx` is the worked example. Pair it with
+`suppressNativeContextMenu` on web so the browser's own menu gives way.
+
 ## When the items differ per form factor
 
 A menu whose contents depend on what else is on screen gets one component per surface, not one
