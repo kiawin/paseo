@@ -141,6 +141,7 @@ import { useWorkspaceArchiveUndoRunning } from "@/workspace/archive-undo";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { removeResidentBrowserWebview } from "@/desktop/browser/resident-webviews";
 import { createWorkspaceBrowser, useBrowserStore } from "@/desktop/browser/store";
+import { useOpenUrlInWorkspaceBrowserTab } from "@/desktop/browser/open-in-workspace";
 import { getDesktopHost } from "@/desktop/host";
 import { buildProviderCommand } from "@/utils/provider-command-templates";
 import { generateDraftId } from "@/stores/draft-keys";
@@ -1891,19 +1892,12 @@ function WorkspaceScreenContent({
     [createTerminal, createWorkspaceTab, persistenceKey, replaceWorkspaceTabTarget],
   );
 
+  const openUrlInBrowserTab = useOpenUrlInWorkspaceBrowserTab(persistenceKey);
   const handleOpenUrlInBrowserTab = useCallback(
     (url: string) => {
-      if (!persistenceKey || !getIsElectron()) {
-        return;
-      }
-      const { browserId } = createWorkspaceBrowser({ initialUrl: url });
-      openWorkspaceTabFocused(
-        persistenceKey,
-        { kind: "browser", browserId },
-        FOCUSED_PANE_PLACEMENT,
-      );
+      openUrlInBrowserTab?.(url);
     },
-    [openWorkspaceTabFocused, persistenceKey],
+    [openUrlInBrowserTab],
   );
 
   useDesktopBrowserNewTabRequests({
@@ -3879,6 +3873,7 @@ function WorkspaceScreenContent({
         serverId={normalizedServerId}
         workspaceRoot={workspaceDirectory ?? undefined}
         onOpenWorkspaceFile={openMarkdownPath}
+        onOpenUrlInBrowserTab={openUrlInBrowserTab}
         toast={toast}
       >
         {renderedWorkspaceScreen}
