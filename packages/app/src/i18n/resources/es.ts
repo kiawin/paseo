@@ -300,6 +300,9 @@ export const es: TranslationResources = {
     },
     actions: {
       copyCode: "Copiar código",
+      copyLink: "Copiar enlace",
+      openLinkInBrowser: "Abrir en el navegador",
+      openLinkInPaseo: "Abrir en el navegador de Paseo",
       copyTurn: "Copiar turno",
       copyMessage: "Copiar mensaje",
       forkMenu: "Bifurcar mensaje",
@@ -2094,6 +2097,15 @@ export const es: TranslationResources = {
         options: {
           ask: "Preguntar",
           inApp: "En Paseo",
+          external: "Navegador externo",
+        },
+      },
+      agentLinks: {
+        label: "Enlaces del agente",
+        description: "Dónde abrir los enlaces de los mensajes del agente",
+        accessibilityLabel: "Selecciona dónde se abren los enlaces del agente ({{value}})",
+        options: {
+          inApp: "EnPaseo",
           external: "Navegador externo",
         },
       },

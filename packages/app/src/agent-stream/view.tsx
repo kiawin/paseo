@@ -27,6 +27,7 @@ import { useMutation } from "@tanstack/react-query";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Check, ChevronDown, X } from "lucide-react-native";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
+import { useOpenUrlInWorkspaceBrowserTab } from "@/desktop/browser/open-in-workspace";
 import { openExplorerSidebarView } from "@/workspace-tabs/explorer-sidebar";
 import {
   AssistantMessage,
@@ -91,6 +92,7 @@ import { createAssistantImageOccurrenceKey } from "@/assistant-image/acquisition
 import { AssistantSelectionCopySurface } from "@/assistant-selection-copy/surface";
 import {
   AssistantFileLinkResolverProvider,
+  AssistantLinkContextMenu,
   normalizeInlinePathTarget,
 } from "@/assistant-file-links";
 import {
@@ -439,6 +441,20 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       setExpandedToolCallGroupIds(new Set());
     }, [agentId]);
 
+    // The workspace that owns this stream's tabs. Agent-message links open a browser tab
+    // here when the user has asked for that; `null` everywhere a workspace can't own one.
+    const workspaceTabKey = useMemo(
+      () =>
+        context.workspaceId
+          ? buildWorkspaceTabPersistenceKey({
+              serverId: resolvedServerId,
+              workspaceId: context.workspaceId,
+            })
+          : null,
+      [context.workspaceId, resolvedServerId],
+    );
+    const openUrlInBrowserTab = useOpenUrlInWorkspaceBrowserTab(workspaceTabKey);
+
     const handleInlinePathPress = useStableEvent(
       (target: InlinePathTarget, disposition: OpenFileDisposition) => {
         if (!target.path) {
@@ -729,22 +745,33 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             serverId={resolvedServerId}
             workspaceRoot={workspaceRoot}
             onOpenWorkspaceFile={handleInlinePathPress}
+            onOpenUrlInBrowserTab={openUrlInBrowserTab}
             toast={toast}
           >
-            <AssistantMessage
-              occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
-              message={item.text}
-              timestamp={item.timestamp.getTime()}
-              workspaceRoot={workspaceRoot}
-              serverId={resolvedServerId}
-              client={client}
-              spacing={layoutItem.assistantSpacing}
-              phase={layoutItem.phase}
-            />
+            <AssistantLinkContextMenu>
+              <AssistantMessage
+                occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
+                message={item.text}
+                timestamp={item.timestamp.getTime()}
+                workspaceRoot={workspaceRoot}
+                serverId={resolvedServerId}
+                client={client}
+                spacing={layoutItem.assistantSpacing}
+                phase={layoutItem.phase}
+              />
+            </AssistantLinkContextMenu>
           </AssistantFileLinkResolverProvider>
         );
       },
-      [agentId, client, handleInlinePathPress, resolvedServerId, toast, workspaceRoot],
+      [
+        agentId,
+        client,
+        handleInlinePathPress,
+        openUrlInBrowserTab,
+        resolvedServerId,
+        toast,
+        workspaceRoot,
+      ],
     );
 
     const renderThoughtItem = useCallback(
