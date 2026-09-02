@@ -9,6 +9,8 @@ function openFile(filePath: string, persistenceKey: string | null = workspaceKey
   openWorkspaceFileFromExplorer({
     filePath,
     persistenceKey,
+    closeExplorerAfterOpen: false,
+    showMobileAgent: () => {},
     openWorkspaceTabInFocusedPane: (key, target, placement) =>
       useWorkspaceLayoutStore
         .getState()
