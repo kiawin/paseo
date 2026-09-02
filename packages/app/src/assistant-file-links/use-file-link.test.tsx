@@ -4,16 +4,27 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import React, { useCallback, useMemo, useState, type ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToastApi } from "@/components/toast-host";
 import type { InlinePathTarget } from "./parse";
 import { AssistantFileLinkResolverProvider } from "./provider";
 import type { DirectorySuggestionResult } from "./resolver";
+import { isElectronRuntime } from "@/desktop/host";
+import { loadAppSettingsFromStorage } from "@/hooks/use-settings";
+import { openExternalUrl } from "@/utils/open-external-url";
 import { useFileLink } from "./use-file-link";
 import type { OpenFileDisposition } from "@/workspace/file-open";
 
 vi.mock("@/utils/open-external-url", () => ({
   openExternalUrl: vi.fn(async () => {}),
+}));
+
+vi.mock("@/desktop/host", () => ({
+  isElectronRuntime: vi.fn(() => true),
+}));
+
+vi.mock("@/hooks/use-settings", () => ({
+  loadAppSettingsFromStorage: vi.fn(async () => ({ agentLinkBehavior: "external" })),
 }));
 
 const SOURCE = {
@@ -322,6 +333,126 @@ describe("useFileLink", () => {
       expect(getDirectorySuggestions).toHaveBeenCalledTimes(1);
     });
     expect(openedFiles).toEqual([]);
+  });
+});
+
+const EXTERNAL_SOURCE = { href: "https://example.com/docs", text: "the docs" };
+
+const EXTERNAL_TEST_CLIENT: TestClient = {
+  getDirectorySuggestions: vi.fn(async () => resolvedSuggestions([])),
+};
+
+function createExternalWrapper(input: { onOpenUrlInBrowserTab?: ((url: string) => void) | null }) {
+  const queryClient = createQueryClient();
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <AssistantFileLinkResolverProvider
+          client={EXTERNAL_TEST_CLIENT}
+          serverId="server-1"
+          workspaceRoot="/Users/test/project"
+          onOpenUrlInBrowserTab={input.onOpenUrlInBrowserTab}
+        >
+          {children}
+        </AssistantFileLinkResolverProvider>
+      </QueryClientProvider>
+    );
+  };
+}
+
+describe("useFileLink external link routing", () => {
+  beforeEach(() => {
+    vi.mocked(openExternalUrl).mockClear();
+    vi.mocked(isElectronRuntime).mockReturnValue(true);
+    vi.mocked(loadAppSettingsFromStorage).mockResolvedValue({
+      agentLinkBehavior: "external",
+    } as Awaited<ReturnType<typeof loadAppSettingsFromStorage>>);
+  });
+
+  it("reports the resolved external URL so callers can offer a destination", () => {
+    const { result } = renderHook(() => useFileLink(EXTERNAL_SOURCE), {
+      wrapper: createExternalWrapper({ onOpenUrlInBrowserTab: vi.fn() }),
+    });
+    expect(result.current.externalUrl).toBe("https://example.com/docs");
+  });
+
+  it("reports no external URL for a file link", () => {
+    const { result } = renderHook(() => useFileLink({ ...SOURCE }), {
+      wrapper: createExternalWrapper({ onOpenUrlInBrowserTab: vi.fn() }),
+    });
+    expect(result.current.externalUrl).toBeNull();
+  });
+
+  it("opens in the platform browser under the default behavior", async () => {
+    const openInBrowserTab = vi.fn();
+    const { result } = renderHook(() => useFileLink(EXTERNAL_SOURCE), {
+      wrapper: createExternalWrapper({ onOpenUrlInBrowserTab: openInBrowserTab }),
+    });
+
+    act(() => {
+      result.current.onPress();
+    });
+
+    await waitFor(() => {
+      expect(openExternalUrl).toHaveBeenCalledWith("https://example.com/docs");
+    });
+    expect(openInBrowserTab).not.toHaveBeenCalled();
+  });
+
+  it("opens a workspace browser tab when the user asked for in-app", async () => {
+    vi.mocked(loadAppSettingsFromStorage).mockResolvedValue({
+      agentLinkBehavior: "in-app",
+    } as Awaited<ReturnType<typeof loadAppSettingsFromStorage>>);
+    const openInBrowserTab = vi.fn();
+    const { result } = renderHook(() => useFileLink(EXTERNAL_SOURCE), {
+      wrapper: createExternalWrapper({ onOpenUrlInBrowserTab: openInBrowserTab }),
+    });
+
+    act(() => {
+      result.current.onPress();
+    });
+
+    await waitFor(() => {
+      expect(openInBrowserTab).toHaveBeenCalledWith("https://example.com/docs");
+    });
+    expect(openExternalUrl).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the platform browser when no opener is mounted", async () => {
+    vi.mocked(loadAppSettingsFromStorage).mockResolvedValue({
+      agentLinkBehavior: "in-app",
+    } as Awaited<ReturnType<typeof loadAppSettingsFromStorage>>);
+    const { result } = renderHook(() => useFileLink(EXTERNAL_SOURCE), {
+      wrapper: createExternalWrapper({ onOpenUrlInBrowserTab: null }),
+    });
+
+    act(() => {
+      result.current.onPress();
+    });
+
+    await waitFor(() => {
+      expect(openExternalUrl).toHaveBeenCalledWith("https://example.com/docs");
+    });
+  });
+
+  it("falls back to the platform browser outside Electron", async () => {
+    vi.mocked(loadAppSettingsFromStorage).mockResolvedValue({
+      agentLinkBehavior: "in-app",
+    } as Awaited<ReturnType<typeof loadAppSettingsFromStorage>>);
+    vi.mocked(isElectronRuntime).mockReturnValue(false);
+    const openInBrowserTab = vi.fn();
+    const { result } = renderHook(() => useFileLink(EXTERNAL_SOURCE), {
+      wrapper: createExternalWrapper({ onOpenUrlInBrowserTab: openInBrowserTab }),
+    });
+
+    act(() => {
+      result.current.onPress();
+    });
+
+    await waitFor(() => {
+      expect(openExternalUrl).toHaveBeenCalledWith("https://example.com/docs");
+    });
+    expect(openInBrowserTab).not.toHaveBeenCalled();
   });
 });
 
