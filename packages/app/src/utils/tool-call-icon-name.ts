@@ -14,6 +14,7 @@ const TOOL_DETAIL_ICON_NAMES: Record<ToolCallDetail["type"], ToolCallIcon> = {
   sub_agent: "bot",
   plain_text: "wrench",
   plan: "brain",
+  artifact: "sparkles",
   unknown: "wrench",
 };
 
