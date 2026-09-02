@@ -13,11 +13,11 @@ import { HostBadge, HOST_BADGE_ICON_SIZE } from "@/hosts/host-badge";
 import { WorkspaceLabelChip, WORKSPACE_LABEL_CHIP_INSET } from "@/workspace-labels/chip";
 import type { PrHint } from "@/git/pr-hint";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
-import { openExternalUrl } from "@/utils/open-external-url";
 import {
   useSidebarAgentRows,
   useSidebarMetaPreferences,
 } from "@/components/sidebar/display-preferences/model";
+import { useForgeLinkOpener } from "@/git/forge-link";
 import type { Theme } from "@/styles/theme";
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
 import { PullRequestStateIcon } from "@/git/pull-request-state-icon";
@@ -299,12 +299,13 @@ function PullRequestItem({ hint }: { hint: PrHint }) {
   const [isHovered, setIsHovered] = useState(false);
   const presentation = getForgePresentation(normalizeForge(hint.forge));
 
+  const openForgeLink = useForgeLinkOpener();
   const handlePress = useCallback(
     (event: GestureResponderEvent) => {
       event.stopPropagation();
-      void openExternalUrl(hint.url);
+      openForgeLink(hint.url);
     },
-    [hint.url],
+    [hint.url, openForgeLink],
   );
   const handlePressIn = useCallback((event: GestureResponderEvent) => event.stopPropagation(), []);
   const handleHoverIn = useCallback(() => setIsHovered(true), []);
