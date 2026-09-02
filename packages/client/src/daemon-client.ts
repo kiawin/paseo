@@ -4705,6 +4705,12 @@ export class DaemonClient {
     accept: (payload: CorrelatedResponsePayload<TResponseType>) => TResult;
   }): Promise<TResult> {
     const { requestId } = input;
+    // `downloadEntry` and `downloadArtifact` share these registries, and both let the caller
+    // supply the id. A second registration under a live id would overwrite the first sink —
+    // frames to the wrong consumer — and its cleanup would then unregister the survivor.
+    if (this.binaryFileSinks.has(requestId) || this.activeDownloadAborts.has(requestId)) {
+      throw new Error(`Download request id ${requestId} is already in flight.`);
+    }
 
     let receivedBytes = 0;
     let ackedBytes = 0;

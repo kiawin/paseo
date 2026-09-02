@@ -67,7 +67,10 @@ export function toArtifactRecordPayload(record: PersistedArtifactRecord): Artifa
  */
 export class ArtifactsSession {
   private readonly logger: pino.Logger;
-  private readonly activeDownloads = new Map<string, { flow: TransferFlowControl }>();
+  private readonly activeDownloads = new Map<
+    string,
+    { flow: TransferFlowControl; source?: object }
+  >();
 
   constructor(
     private readonly host: ArtifactsSessionHost,
@@ -185,8 +188,18 @@ export class ArtifactsSession {
     source?: object,
   ): Promise<void> {
     const { artifactId, requestId } = request;
+    // Answering would hand two transfers one requestId, and the ack stream carries nothing else
+    // to tell them apart — frames would interleave into whichever sink registered last. The
+    // owner keeps the id; this request is dropped rather than allowed to corrupt it.
+    if (this.activeDownloads.has(requestId)) {
+      this.logger.error(
+        { requestId, artifactId },
+        "Refused a download reusing an active requestId",
+      );
+      return;
+    }
     const flow = new TransferFlowControl();
-    this.activeDownloads.set(requestId, { flow });
+    this.activeDownloads.set(requestId, { flow, ...(source ? { source } : {}) });
     let streamStarted = false;
 
     try {
@@ -279,6 +292,27 @@ export class ArtifactsSession {
     } finally {
       this.activeDownloads.delete(requestId);
     }
+  }
+
+  /**
+   * Cancels whatever a departing socket started.
+   *
+   * The registry belongs to the logical session, which outlives any one socket. With a second
+   * socket still attached the session stays alive, so a download parked at its window would wait
+   * on an ack that can no longer come — holding the flow, the task and the whole document.
+   */
+  cancelTransfersForSource(source: object): void {
+    for (const [requestId, entry] of Array.from(this.activeDownloads.entries())) {
+      if (entry.source === source) {
+        entry.flow.cancel();
+        this.activeDownloads.delete(requestId);
+      }
+    }
+  }
+
+  /** True while this subsystem owns the transfer, so the session can refuse a colliding id. */
+  hasTransfer(requestId: string): boolean {
+    return this.activeDownloads.has(requestId);
   }
 
   /** No-ops for a requestId this subsystem does not own; the workspace one may. */

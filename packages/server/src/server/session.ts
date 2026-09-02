@@ -1129,9 +1129,10 @@ export class Session {
     }
   }
 
-  /** A socket going away must not strand the transfers it started. */
+  /** A socket going away must not strand the transfers it started, in either subsystem. */
   cancelWorkspaceTransfersForSource(source: object): void {
     this.workspaceFilesSession.cancelTransfersForSource(source);
+    this.artifactsSession.cancelTransfersForSource(source);
   }
 
   clearAgentTimelineSubscription(source: object): void {
@@ -2570,6 +2571,14 @@ export class Session {
       case "artifact.list.request":
         return this.artifactsSession.handleListRequest(msg, source);
       case "artifact.entry.download.request":
+        if (this.workspaceFilesSession.hasTransfer(msg.requestId)) {
+          // Both subsystems see every ack and cancel, so one id cannot name two transfers.
+          this.sessionLogger.error(
+            { requestId: msg.requestId },
+            "Refused an artifact download reusing a workspace transfer id",
+          );
+          return undefined;
+        }
         return this.artifactsSession.handleEntryDownloadRequest(msg, source);
       case "artifact.delete.request":
         return this.artifactsSession.handleDeleteRequest(msg, source);
@@ -2603,6 +2612,13 @@ export class Session {
       case "fs.entry.delete.request":
         return this.workspaceFilesSession.handleFileEntryDeleteRequest(msg);
       case "fs.entry.download.request":
+        if (this.artifactsSession.hasTransfer(msg.requestId)) {
+          this.sessionLogger.error(
+            { requestId: msg.requestId },
+            "Refused a workspace download reusing an artifact transfer id",
+          );
+          return undefined;
+        }
         return this.workspaceFilesSession.handleEntryDownloadRequest(msg, source);
       case "fs.entry.upload.request":
         return this.workspaceFilesSession.handleEntryUploadRequest(msg, source);
