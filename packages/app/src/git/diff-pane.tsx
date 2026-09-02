@@ -60,6 +60,7 @@ import { BranchSwitcher } from "@/components/branch-switcher";
 import { useGitActions } from "@/git/use-actions";
 import { GIT_ACTION_ICONS } from "@/git/action-icons";
 import { buildForgeSignInCommand, getForgePresentation, type Forge } from "@/git/forge";
+import { ForgeLinkProvider, useForgeLinkOpener } from "@/git/forge-link";
 import { parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
 import type { ForgeAuthState } from "@getpaseo/protocol/messages";
 import { useCheckoutGitActionsStore } from "@/git/actions-store";
@@ -94,7 +95,6 @@ import type { CheckoutStatusPayload } from "@/git/use-status-query";
 import { DiffTooLargeState } from "@/git/diff-too-large-state";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
 import { PullRequestStateIcon } from "@/git/pull-request-state-icon";
-import { openExternalUrl } from "@/utils/open-external-url";
 import { openWorkspacePullRequest } from "@/workspace-tabs/open-supporting-view";
 import type { PullRequestOpenLocation } from "@/hooks/use-settings";
 
@@ -640,10 +640,15 @@ function ChangesRepositoryToolbar({
       </ChangesToolbarLeading>
       <ChangesToolbarTrailing>
         {model.pullRequest ? (
-          <>
+          <ForgeLinkProvider
+            workspaceKey={buildWorkspaceTabPersistenceKey({
+              serverId: model.serverId,
+              workspaceId: model.workspaceId ?? model.cwd,
+            })}
+          >
             <ChangesPullRequestLink model={model.pullRequest} />
             <ChangesPullRequestExternalLink compact={compact} model={model.pullRequest} />
-          </>
+          </ForgeLinkProvider>
         ) : null}
         {model.gitActions ? <GitActionsSplitButton gitActions={model.gitActions} menuOnly /> : null}
       </ChangesToolbarTrailing>
@@ -693,9 +698,10 @@ function ChangesPullRequestExternalLink({
   const { t } = useTranslation();
   const presentation = getForgePresentation(model.forge);
   const label = t("workspace.git.pr.actions.openOn", { brand: presentation.brandLabel });
+  const openForgeLink = useForgeLinkOpener();
   const handlePress = useCallback(() => {
-    void openExternalUrl(model.url);
-  }, [model.url]);
+    openForgeLink(model.url);
+  }, [model.url, openForgeLink]);
   return (
     <ToolbarButton
       compact={compact}

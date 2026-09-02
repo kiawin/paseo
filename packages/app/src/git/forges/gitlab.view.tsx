@@ -10,7 +10,7 @@ import {
   type ClientForgeViewModule,
   type PaneChecksSlotContext,
 } from "@/git/client-forge-module";
-import { openExternalUrl } from "@/utils/open-external-url";
+import { useForgeLinkOpener } from "@/git/forge-link";
 import { formatDuration } from "@/utils/time";
 import { COUNTED_CHECK_PRESENTATIONS } from "@/git/check-presentation";
 import { CheckPresentationIcon } from "@/git/check-presentation.view";
@@ -134,11 +134,12 @@ function GitLabPipelineSection({
   const showBreakdown = !isPlaceholderData && totalCounted > 0;
   const displayCounts = showBreakdown ? counts : countGitlabPipelineJobs([]);
 
+  const openForgeLink = useForgeLinkOpener();
   const handleOpenPipeline = useCallback(() => {
     if (summary.url) {
-      void openExternalUrl(summary.url);
+      openForgeLink(summary.url);
     }
-  }, [summary.url]);
+  }, [openForgeLink, summary.url]);
 
   const sectionSummary = (
     <>
@@ -220,11 +221,12 @@ function PipelineStageGroup({ stage }: { stage: CheckoutPipelineStage }) {
 
 function PipelineJobRow({ job }: { job: CheckoutPipelineJob }) {
   const { t } = useTranslation();
+  const openForgeLink = useForgeLinkOpener();
   const handlePress = useCallback(() => {
     if (job.url) {
-      void openExternalUrl(job.url);
+      openForgeLink(job.url);
     }
-  }, [job.url]);
+  }, [job.url, openForgeLink]);
   const duration = formatPipelineDuration(job.durationSeconds);
   return (
     <Pressable onPress={handlePress} style={jobRowPressableStyle} disabled={!job.url}>
