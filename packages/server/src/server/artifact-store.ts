@@ -76,6 +76,20 @@ export interface PublishArtifactResult {
   evictedArtifactIds: string[];
 }
 
+/**
+ * What one committed publish leaves behind to clean up.
+ *
+ * Carried out of the mutation rather than captured in a closure so the records are typed where
+ * they are used: a `let` assigned inside the callback reads back as `null` to control-flow
+ * analysis, and the unlink below would need a cast to see it at all.
+ */
+interface CommittedPublish {
+  record: PersistedArtifactRecord;
+  /** The record this publish overwrote, if it overwrote one. */
+  superseded: PersistedArtifactRecord | null;
+  evicted: PersistedArtifactRecord[];
+}
+
 export class ArtifactError extends Error {
   constructor(
     readonly code:
@@ -135,13 +149,16 @@ function normalizeExternalUrl(raw: string | null | undefined): string | null {
 /**
  * Project-scoped store for agent-published HTML documents.
  *
- * Bytes live beside the index rather than in it: `<root>/<projectId>/<artifactId>.html`, with
- * `<root>/index.json` holding only metadata. A publish is therefore not one write, so every
- * step that decides or mutates runs inside the inherited mutation queue — quota selection and
- * index commit share one lock, or two concurrent publishes each pick the other as the victim.
+ * Bytes live beside the index rather than in it:
+ * `<root>/<projectId>/<artifactId>.<contentSha256>.html`, with `<root>/index.json` holding only
+ * metadata. A publish is therefore not one write, so every step that decides or mutates runs
+ * inside the inherited mutation queue — quota selection and index commit share one lock, or two
+ * concurrent publishes each pick the other as the victim.
  *
- * Ordering is: HTML written and renamed into place, then the index commits, then victim files
- * are unlinked. A crash in either gap leaves an HTML file no record points at, which
+ * Ordering is: the new HTML written and renamed into place, then the index commits, then the
+ * superseded and evicted files are unlinked. Nothing is ever overwritten in place, which is what
+ * makes a crash safe at any point: until the index commits it still names the old digest, and
+ * that file is still there. A crash in either gap leaves an HTML file no record points at, which
  * `sweepOrphans` reclaims at startup — an orphan otherwise counts against the project quota
  * forever.
  */
@@ -202,19 +219,28 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
-  async readContent(artifactId: string): Promise<Buffer> {
-    const record = await this.get(artifactId);
-    if (!record) throw new ArtifactError("artifact_not_found", `No artifact ${artifactId}`);
-    if (record.contentSha256 === null) {
+  /**
+   * Reads the bytes a specific record names.
+   *
+   * Takes the record rather than an id so that whatever a caller advertised — size, digest —
+   * describes the bytes it goes on to send. Re-reading the record here would let an overwrite
+   * land in between and stream the new document under the old digest.
+   */
+  async readContent(record: PersistedArtifactRecord): Promise<Buffer> {
+    const target = this.contentPath(record);
+    if (!target) {
       throw new ArtifactError(
         "artifact_has_no_content",
-        `Artifact ${artifactId} is a link, not a stored document`,
+        `Artifact ${record.artifactId} is a link, not a stored document`,
       );
     }
     try {
-      return await fs.readFile(this.contentPath(record));
+      return await fs.readFile(target);
     } catch {
-      throw new ArtifactError("artifact_not_found", `Artifact ${artifactId} has no stored content`);
+      throw new ArtifactError(
+        "artifact_not_found",
+        `Artifact ${record.artifactId} has no stored content`,
+      );
     }
   }
 
@@ -239,7 +265,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
     const callId = input.origin.callId ?? null;
 
     let pending: PersistedArtifactRecord | null = null;
-    const result = await this.mutateCache<PublishArtifactResult>(
+    const committed = await this.mutateCache<CommittedPublish>(
       (records) => {
         const now = nextStamp(records);
         const target = this.resolveTarget(records, input, callId);
@@ -265,33 +291,35 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
         records.set(record.artifactId, record);
         const evicted = this.selectEvictions(records, record);
         for (const victim of evicted) records.delete(victim.artifactId);
-        return { record, evictedArtifactIds: evicted.map((victim) => victim.artifactId) };
+        return { record, superseded: target, evicted };
       },
       {
         // Durable before the index names it, so a crash here leaves an orphan file the startup
-        // sweep reclaims rather than a record pointing at nothing.
+        // sweep reclaims rather than a record pointing at nothing. Nothing is removed in this
+        // phase: the path is digest-versioned, so this only ever adds a file, and the record it
+        // supersedes keeps its own until the index has committed.
         beforeWrite: async () => {
-          if (!pending) return;
+          if (!pending || !html) return;
           const target = this.contentPath(pending);
-          if (!html) {
-            // Overwriting a stored document with a link drops the bytes here, while the index
-            // still names them; a crash before the commit therefore leaves a record whose file
-            // is gone, which the sweep treats as corrupt and removes. Losing a superseded
-            // document beats leaving a file nothing points at.
-            await fs.rm(target, { force: true });
-            return;
-          }
+          if (!target) return;
           await fs.mkdir(path.dirname(target), { recursive: true });
           await writeFileAtomic(target, html);
         },
       },
     );
 
-    for (const artifactId of result.evictedArtifactIds) {
-      await this.unlinkContent(input.projectId, artifactId);
+    // Past the commit, so every removal below is of something the index no longer names. The
+    // superseded version goes only when the new record carries a different digest — republishing
+    // identical bytes resolves to the same path, and unlinking it would delete the live file.
+    const { record, superseded, evicted } = committed;
+    if (superseded && superseded.contentSha256 !== record.contentSha256) {
+      await this.unlinkContent(superseded);
+    }
+    for (const victim of evicted) {
+      await this.unlinkContent(victim);
     }
     this.notifyChanged(input.projectId);
-    return result;
+    return { record, evictedArtifactIds: evicted.map((victim) => victim.artifactId) };
   }
 
   /** Leaves `updatedAt` alone: pinning is not a content change and must not reorder the list. */
@@ -304,7 +332,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
   async delete(artifactId: string): Promise<boolean> {
     const record = await this.removeIfPresent(artifactId);
     if (!record) return false;
-    await this.unlinkContent(record.projectId, record.artifactId);
+    await this.unlinkContent(record);
     this.notifyChanged(record.projectId);
     return true;
   }
@@ -323,8 +351,23 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
     if (records.length > 0) this.notifyChanged(projectId);
   }
 
-  contentPath(record: Pick<PersistedArtifactRecord, "projectId" | "artifactId">): string {
-    return path.join(this.root, record.projectId, `${record.artifactId}.html`);
+  /**
+   * Versioned by digest, so a record's bytes are immutable once written.
+   *
+   * An overwrite writes a new file rather than replacing one, which is what makes publish
+   * crash-consistent: the index still names the old digest until it commits, and the old file
+   * is only unlinked afterwards. Naming by digest alone would let two records share a file and
+   * make either one's deletion destroy the other's content, so the id stays in the name.
+   */
+  contentPath(
+    record: Pick<PersistedArtifactRecord, "projectId" | "artifactId" | "contentSha256">,
+  ): string | null {
+    if (record.contentSha256 === null) return null;
+    return path.join(
+      this.root,
+      record.projectId,
+      `${record.artifactId}.${record.contentSha256}.html`,
+    );
   }
 
   private resolveTarget(
@@ -393,12 +436,16 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
     return evicted;
   }
 
-  private async unlinkContent(projectId: string, artifactId: string): Promise<void> {
-    const target = this.contentPath({ projectId, artifactId });
+  private async unlinkContent(record: PersistedArtifactRecord): Promise<void> {
+    const target = this.contentPath(record);
+    if (!target) return;
     try {
       await fs.rm(target, { force: true });
     } catch (error) {
-      this.logger.error({ err: error, artifactId }, "Failed to remove artifact content");
+      this.logger.error(
+        { err: error, artifactId: record.artifactId },
+        "Failed to remove artifact content",
+      );
     }
   }
 
@@ -414,11 +461,11 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
    */
   private async sweepOrphans(): Promise<void> {
     const records = await this.list();
-    const expectedFiles = new Map(
-      records
-        .filter((record) => record.contentSha256 !== null)
-        .map((record) => [this.contentPath(record), record] as const),
-    );
+    const expectedFiles = new Map<string, PersistedArtifactRecord>();
+    for (const record of records) {
+      const target = this.contentPath(record);
+      if (target) expectedFiles.set(target, record);
+    }
 
     let projectDirs: string[];
     try {

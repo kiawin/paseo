@@ -196,7 +196,9 @@ export class ArtifactsSession {
       const store = this.requireStore();
       const record = await store.get(artifactId);
       if (!record) throw new ArtifactError("artifact_not_found", `No artifact ${artifactId}`);
-      const content = await store.readContent(artifactId);
+      // By record, not id: the digest advertised below has to describe the bytes sent below it,
+      // and a concurrent overwrite between the two reads would otherwise break that.
+      const content = await store.readContent(record);
 
       this.host.emit(
         {

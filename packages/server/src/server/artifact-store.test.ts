@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -43,8 +44,10 @@ describe("publish", () => {
     expect(record.mimeType).toBe("text/html");
     expect(record.size).toBe(11);
     expect(record.externalUrl).toBeNull();
-    expect((await store.readContent(record.artifactId)).toString()).toBe("<h1>hi</h1>");
-    expect(store.contentPath(record)).toBe(path.join(root, "prj_a", `${record.artifactId}.html`));
+    expect((await store.readContent(record)).toString()).toBe("<h1>hi</h1>");
+    expect(store.contentPath(record)).toBe(
+      path.join(root, "prj_a", `${record.artifactId}.${record.contentSha256}.html`),
+    );
   });
 
   test("survives a reopen", async () => {
@@ -146,8 +149,10 @@ describe("overwrite", () => {
     expect(second.record.artifactId).toBe(first.record.artifactId);
     expect(second.record.createdAt).toBe(first.record.createdAt);
     expect(second.record.title).toBe("Final");
-    expect((await store.readContent(first.record.artifactId)).toString()).toBe("<p>v2</p>");
+    expect((await store.readContent(second.record)).toString()).toBe("<p>v2</p>");
     expect(await store.listForProject("prj_a")).toHaveLength(1);
+    // The superseded version is unlinked once the index no longer names it.
+    await expect(fs.access(store.contentPath(first.record) as string)).rejects.toThrow();
   });
 
   test("refuses a sibling agent's artifact", async () => {
@@ -167,7 +172,7 @@ describe("overwrite", () => {
         origin: OTHER_AGENT,
       }),
     ).rejects.toMatchObject({ code: "artifact_forbidden" });
-    expect((await store.readContent(record.artifactId)).toString()).toBe("<p>v1</p>");
+    expect((await store.readContent(record)).toString()).toBe("<p>v1</p>");
   });
 
   test("refuses an unknown artifact id", async () => {
@@ -240,7 +245,7 @@ describe("eviction", () => {
 
     const listed = await capped.listForProject("prj_a");
     expect(listed.map((record) => record.title)).toEqual(["Four", "Three", "Two"]);
-    await expect(fs.access(capped.contentPath(first))).rejects.toThrow();
+    await expect(fs.access(capped.contentPath(first) as string)).rejects.toThrow();
     expect(second.artifactId).toBe(listed[2]?.artifactId);
   });
 
@@ -262,7 +267,7 @@ describe("eviction", () => {
 
     const listed = await capped.listForProject("prj_a");
     expect(listed.map((record) => record.title)).toEqual(["Four", "One again", "Three"]);
-    await expect(fs.access(capped.contentPath(second))).rejects.toThrow();
+    await expect(fs.access(capped.contentPath(second) as string)).rejects.toThrow();
   });
 
   test("evicts on the byte cap as well as the count cap", async () => {
@@ -274,7 +279,7 @@ describe("eviction", () => {
 
     const listed = await capped.listForProject("prj_a");
     expect(listed.map((record) => record.title)).toEqual(["Two"]);
-    await expect(fs.access(capped.contentPath(first))).rejects.toThrow();
+    await expect(fs.access(capped.contentPath(first) as string)).rejects.toThrow();
   });
 
   test("never evicts a pinned artifact", async () => {
@@ -288,8 +293,8 @@ describe("eviction", () => {
 
     const listed = await capped.listForProject("prj_a");
     expect(listed.map((record) => record.title).sort()).toEqual(["Pinned", "Three"]);
-    await expect(fs.access(capped.contentPath(second))).rejects.toThrow();
-    expect((await capped.readContent(first.artifactId)).toString()).toBe("x".repeat(8));
+    await expect(fs.access(capped.contentPath(second) as string)).rejects.toThrow();
+    expect((await capped.readContent(first)).toString()).toBe("x".repeat(8));
   });
 
   test("never evicts the artifact being published, even over the byte cap", async () => {
@@ -299,7 +304,7 @@ describe("eviction", () => {
     const only = await publish(capped, "Oversized for the cap", 40);
 
     expect(await capped.listForProject("prj_a")).toEqual([only]);
-    expect((await capped.readContent(only.artifactId)).byteLength).toBe(40);
+    expect((await capped.readContent(only)).byteLength).toBe(40);
   });
 
   test("pinning does not reorder the list", async () => {
@@ -326,7 +331,8 @@ describe("link-only artifacts", () => {
     expect(record.size).toBeNull();
     expect(record.contentSha256).toBeNull();
     expect(record.externalUrl).toBe(LINK);
-    await expect(fs.access(store.contentPath(record))).rejects.toThrow();
+    // No digest, so no path: a link-only record names no file at all.
+    expect(store.contentPath(record)).toBeNull();
   });
 
   test("reading one reports a link, not a missing artifact", async () => {
@@ -336,7 +342,7 @@ describe("link-only artifacts", () => {
       externalUrl: LINK,
       origin: AGENT,
     });
-    await expect(store.readContent(record.artifactId)).rejects.toMatchObject({
+    await expect(store.readContent(record)).rejects.toMatchObject({
       code: "artifact_has_no_content",
     });
   });
@@ -364,8 +370,8 @@ describe("link-only artifacts", () => {
     const reopened = await open();
     const titles = (await reopened.listForProject("prj_a")).map((record) => record.title);
     expect(titles.sort()).toEqual(["Linked", "Stored"]);
-    expect((await reopened.readContent(stored.record.artifactId)).toString()).toBe("<p>x</p>");
-    await expect(reopened.readContent(linked.record.artifactId)).rejects.toMatchObject({
+    expect((await reopened.readContent(stored.record)).toString()).toBe("<p>x</p>");
+    await expect(reopened.readContent(linked.record)).rejects.toMatchObject({
       code: "artifact_has_no_content",
     });
   });
@@ -386,8 +392,9 @@ describe("link-only artifacts", () => {
     });
 
     expect(second.record.contentSha256).toBeNull();
-    await expect(fs.access(store.contentPath(second.record))).rejects.toThrow();
+    expect(store.contentPath(second.record)).toBeNull();
     // And the file it used to own must not survive as an orphan against the quota.
+    await expect(fs.access(store.contentPath(first.record) as string)).rejects.toThrow();
     const reopened = await open();
     expect(await reopened.listForProject("prj_a")).toHaveLength(1);
   });
@@ -408,7 +415,7 @@ describe("link-only artifacts", () => {
     });
 
     expect(second.record.contentSha256).not.toBeNull();
-    expect((await store.readContent(first.record.artifactId)).toString()).toBe("<p>v2</p>");
+    expect((await store.readContent(second.record)).toString()).toBe("<p>v2</p>");
   });
 
   test("costs a slot but no bytes against the project quota", async () => {
@@ -439,7 +446,7 @@ describe("delete", () => {
 
     expect(await store.delete(record.artifactId)).toBe(true);
     expect(await store.listForProject("prj_a")).toEqual([]);
-    await expect(fs.access(store.contentPath(record))).rejects.toThrow();
+    await expect(fs.access(store.contentPath(record) as string)).rejects.toThrow();
   });
 
   test("is idempotent", async () => {
@@ -491,10 +498,70 @@ describe("startup sweep", () => {
 });
 
 describe("readContent", () => {
-  test("reports a missing artifact rather than throwing an ENOENT", async () => {
-    await expect(store.readContent("art_missing")).rejects.toBeInstanceOf(ArtifactError);
-    await expect(store.readContent("art_missing")).rejects.toMatchObject({
+  test("reports missing content rather than throwing an ENOENT", async () => {
+    const { record } = await store.publish({
+      projectId: "prj_a",
+      title: "Doomed",
+      html: "<p>x</p>",
+      origin: AGENT,
+    });
+    await fs.rm(store.contentPath(record) as string);
+
+    await expect(store.readContent(record)).rejects.toBeInstanceOf(ArtifactError);
+    await expect(store.readContent(record)).rejects.toMatchObject({
       code: "artifact_not_found",
     });
+  });
+
+  test("a crash between writing content and committing the index keeps the old version", async () => {
+    const { record } = await store.publish({
+      projectId: "prj_a",
+      title: "Draft",
+      html: "<p>v1</p>",
+      origin: AGENT,
+    });
+
+    // What `beforeWrite` does, without the index commit that would follow it: the new version
+    // lands under its own digest and the old one is untouched, because nothing is removed until
+    // the index no longer names it.
+    const nextDigest = createHash("sha256").update("<p>v2</p>").digest("hex");
+    await fs.writeFile(
+      path.join(root, "prj_a", `${record.artifactId}.${nextDigest}.html`),
+      "<p>v2</p>",
+    );
+
+    const reopened = await open();
+    const [survivor] = await reopened.listForProject("prj_a");
+    expect(survivor?.contentSha256).toBe(record.contentSha256);
+    // The index still names v1, and v1 is still readable — no record pointing at nothing, and
+    // no bytes served under a digest that does not describe them.
+    expect((await reopened.readContent(record)).toString()).toBe("<p>v1</p>");
+    // The half-written v2 is reclaimed rather than left counting against the quota.
+    await expect(
+      fs.access(path.join(root, "prj_a", `${record.artifactId}.${nextDigest}.html`)),
+    ).rejects.toThrow();
+  });
+
+  test("a superseded record cannot read the version that replaced it", async () => {
+    const first = await store.publish({
+      projectId: "prj_a",
+      title: "Draft",
+      html: "<p>v1</p>",
+      origin: AGENT,
+    });
+    const second = await store.publish({
+      projectId: "prj_a",
+      title: "Final",
+      html: "<p>v2</p>",
+      artifactId: first.record.artifactId,
+      origin: AGENT,
+    });
+
+    // The whole point of digest-versioned paths: a caller holding stale metadata gets an error,
+    // never the new bytes labelled with the old digest.
+    await expect(store.readContent(first.record)).rejects.toMatchObject({
+      code: "artifact_not_found",
+    });
+    expect((await store.readContent(second.record)).toString()).toBe("<p>v2</p>");
   });
 });
