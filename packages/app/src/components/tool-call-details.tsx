@@ -1,5 +1,6 @@
-import React, { useMemo, type ReactNode } from "react";
+import React, { useCallback, useMemo, type ReactNode } from "react";
 import {
+  Pressable,
   View,
   Text,
   ScrollView as RNScrollView,
@@ -25,6 +26,8 @@ import { HighlightedLines } from "./highlighted-content";
 import { DiffViewer } from "./diff-viewer";
 import { getCodeInsets } from "./code-insets";
 import { isWeb } from "@/constants/platform";
+import { openExternalUrl } from "@/utils/open-external-url";
+import { externalLinkHost } from "@/utils/external-link-host";
 
 const ScrollView = isWeb ? RNScrollView : GHScrollView;
 
@@ -494,6 +497,30 @@ function FetchDetailSection({ url, result, ds }: FetchDetailProps) {
   );
 }
 
+function ArtifactDetailSection({ url, title }: { url: string; title?: string }) {
+  const { t } = useTranslation();
+  const host = useMemo(() => externalLinkHost(url), [url]);
+  const handlePress = useCallback(() => {
+    void openExternalUrl(url);
+  }, [url]);
+
+  return (
+    <View style={styles.section}>
+      {title ? (
+        <Text selectable style={styles.plainText}>
+          {title}
+        </Text>
+      ) : null}
+      {/* The destination is named before the tap. openExternalUrl owns the scheme allowlist. */}
+      <Pressable onPress={handlePress} testID="tool-call-artifact-link">
+        <Text style={styles.artifactLink} numberOfLines={1}>
+          {host ? t("toolCallDetails.artifactOpenOn", { host }) : url}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function ScrollablePlainTextSection({ text, ds }: { text: string; ds: DetailStyles }) {
   return (
     <View style={styles.section}>
@@ -736,6 +763,9 @@ function buildDetailSections(
   if (detail.type === "fetch") {
     return [<FetchDetailSection key="fetch" url={detail.url} result={detail.result} ds={ds} />];
   }
+  if (detail.type === "artifact") {
+    return [<ArtifactDetailSection key="artifact" url={detail.url} title={detail.title} />];
+  }
   if (detail.type === "plain_text") {
     if (!detail.text) return [];
     return [<ScrollablePlainTextSection key="plain-text" text={detail.text} ds={ds} />];
@@ -883,6 +913,12 @@ const styles = StyleSheet.create((theme) => {
     fillHeight: {
       flex: 1,
       minHeight: 0,
+    },
+    artifactLink: {
+      fontFamily: theme.fontFamily.ui,
+      fontSize: theme.fontSize.base,
+      color: theme.colors.primary,
+      lineHeight: 22,
     },
     plainText: {
       fontFamily: theme.fontFamily.ui,
