@@ -1,4 +1,8 @@
 export {
+  AssistantLinkContextMenu,
+  useAssistantLinkContextMenu,
+} from "./link-context-menu";
+export {
   classifyAssistantFileLink,
   normalizeInlinePathTarget,
   type InlinePathTarget,

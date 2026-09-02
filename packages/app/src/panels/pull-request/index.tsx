@@ -13,6 +13,7 @@ import {
 } from "@/git/pull-request-panel";
 import type { UsePrPaneDataResult } from "@/git/pull-request-panel/use-data";
 import { useCheckoutPrStatusQuery } from "@/git/use-pr-status-query";
+import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 
 import { useSettings } from "@/hooks/use-settings";
 import { useWorkspaceLayoutStoreHydrated } from "@/stores/workspace-layout-store";
@@ -77,6 +78,10 @@ export function PullRequestContent(input: {
           serverId: input.serverId,
           workspaceId: input.workspaceId,
           cwd: input.cwd,
+        })}
+        workspaceKey={buildWorkspaceTabPersistenceKey({
+          serverId: input.serverId,
+          workspaceId: input.workspaceId ?? "",
         })}
       />
     );
