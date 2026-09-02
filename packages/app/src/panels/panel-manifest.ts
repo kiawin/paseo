@@ -58,6 +58,17 @@ const manifests = {
     supportedHosts: ["main", "explorer"],
     resourceKey: () => "pull_request",
   },
+  // The list is an Explorer view; a single artifact opens like a file, in either host.
+  artifacts: {
+    kind: "artifacts",
+    supportedHosts: ["explorer"],
+    resourceKey: () => "artifacts",
+  },
+  artifact: {
+    kind: "artifact",
+    supportedHosts: ["main", "explorer"],
+    resourceKey: (target) => target.artifactId,
+  },
   file: {
     kind: "file",
     supportedHosts: ["main", "explorer"],

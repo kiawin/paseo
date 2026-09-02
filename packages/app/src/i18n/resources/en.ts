@@ -1862,6 +1862,21 @@ export const en = {
       tooltip: "Browse workspace files",
       chooseFile: "Choose a file",
     },
+    artifacts: {
+      linkMissing: "This artifact has no document and no link.",
+      label: "Artifacts",
+      subtitle: "Published by agents",
+      tooltip: "Documents agents published in this project",
+      emptyTitle: "No artifacts in this project",
+      emptyDescription: "Agents publish them with publish_artifact.",
+      loadFailed: "Failed to load artifacts",
+      hostTooOld: "Update the host to view artifacts.",
+      openOn: "Open on {{host}}",
+      deleteTitle: "Delete artifact?",
+      deleteMessage: 'Delete "{{title}}"? This cannot be undone.',
+      deleteConfirm: "Delete",
+      deleteFailed: "Failed to delete artifact",
+    },
     pullRequest: {
       label: "Pull request",
       subtitle: "Pull request details",
@@ -1882,6 +1897,7 @@ export const en = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Open on {{host}}",
     error: "Error",
     empty: "No additional details available",
     subAgentActivity: "Sub-agent activity",
@@ -2156,7 +2172,7 @@ export const en = {
       },
       agentLinks: {
         label: "Agent links",
-        description: "Where to open links in agent messages",
+        description: "Where to open links published by agents",
         accessibilityLabel: "Select where agent links open ({{value}})",
         options: {
           inApp: "In Paseo",
