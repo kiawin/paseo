@@ -1,9 +1,7 @@
-import { promises as fs } from "node:fs";
-
 import type { Logger } from "pino";
 import { z } from "zod";
 
-import { writeJsonFileAtomic } from "./atomic-file.js";
+import { ArchivableFileBackedRegistry } from "./file-backed-registry.js";
 import { areEquivalentPaths } from "../utils/path.js";
 import {
   generateProjectId,
@@ -164,202 +162,8 @@ export interface WorkspaceRegistry {
   ): () => void;
 }
 
-type RegistryRecord = PersistedProjectRecord | PersistedWorkspaceRecord;
-
-class FileBackedRegistry<TRecord extends RegistryRecord> {
-  private readonly filePath: string;
-  protected readonly logger: Logger;
-  private readonly schema: z.ZodType<TRecord, unknown>;
-  private readonly getId: (record: TRecord) => string;
-  private loaded = false;
-  private readonly cache = new Map<string, TRecord>();
-  private mutationQueue: Promise<void> = Promise.resolve();
-  private mutationsBlockedUntilRestart = false;
-  private readonly writeRecords: (filePath: string, records: readonly TRecord[]) => Promise<void>;
-
-  constructor(options: {
-    filePath: string;
-    logger: Logger;
-    schema: z.ZodType<TRecord, unknown>;
-    getId: (record: TRecord) => string;
-    component: string;
-    writeRecords?: (filePath: string, records: readonly TRecord[]) => Promise<void>;
-  }) {
-    this.filePath = options.filePath;
-    this.schema = options.schema;
-    this.getId = options.getId;
-    this.logger = options.logger.child({
-      module: "workspace-registry",
-      component: options.component,
-    });
-    this.writeRecords = options.writeRecords ?? writeJsonFileAtomic;
-  }
-
-  async initialize(): Promise<void> {
-    await this.load();
-  }
-
-  async existsOnDisk(): Promise<boolean> {
-    try {
-      await fs.access(this.filePath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async list(): Promise<TRecord[]> {
-    await this.load();
-    return Array.from(this.cache.values());
-  }
-
-  async get(id: string): Promise<TRecord | null> {
-    await this.load();
-    return this.cache.get(id) ?? null;
-  }
-
-  async upsert(record: TRecord): Promise<void> {
-    const parsed = this.schema.parse(record);
-    await this.mutateCache((records) => {
-      records.set(this.getId(parsed), parsed);
-      return undefined;
-    });
-  }
-
-  async update(id: string, updater: (record: TRecord) => TRecord): Promise<TRecord | null> {
-    return this.mutateCache((records) => {
-      const existing = records.get(id);
-      if (!existing) return null;
-      const next = this.schema.parse(updater(existing));
-      records.set(id, next);
-      return next;
-    });
-  }
-
-  async archive(id: string, archivedAt: string): Promise<void> {
-    await this.archiveIfPresent(id, archivedAt);
-  }
-
-  protected async archiveIfPresent(id: string, archivedAt: string): Promise<TRecord | null> {
-    return this.mutateCache((records) => {
-      const existing = records.get(id);
-      if (!existing) return null;
-      const next = this.schema.parse({ ...existing, updatedAt: archivedAt, archivedAt });
-      records.set(id, next);
-      return next;
-    });
-  }
-
-  protected async archiveIfActive(id: string, archivedAt: string): Promise<TRecord | null> {
-    return this.mutateCache((records) => {
-      const existing = records.get(id);
-      if (!existing || existing.archivedAt) return null;
-      const next = this.schema.parse({ ...existing, updatedAt: archivedAt, archivedAt });
-      records.set(id, next);
-      return next;
-    });
-  }
-
-  async remove(id: string): Promise<void> {
-    await this.removeIfPresent(id);
-  }
-
-  protected async removeIfPresent(id: string): Promise<TRecord | null> {
-    return this.mutateCache((records) => {
-      const existing = records.get(id);
-      if (!existing) return null;
-      records.delete(id);
-      return existing;
-    });
-  }
-
-  private async load(): Promise<void> {
-    if (this.loaded) {
-      return;
-    }
-
-    this.cache.clear();
-    try {
-      const raw = await fs.readFile(this.filePath, "utf8");
-      const parsed = z.array(this.schema).parse(JSON.parse(raw));
-      for (const record of parsed) {
-        this.cache.set(this.getId(record), record);
-      }
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") {
-        this.logger.error({ err: error, filePath: this.filePath }, "Failed to load registry file");
-      }
-    }
-    this.loaded = true;
-  }
-
-  protected async mutateMany(
-    updater: (records: ReadonlyMap<string, TRecord>) => readonly TRecord[],
-  ): Promise<TRecord[]> {
-    return this.mutateCache((records) => {
-      const changed = updater(records);
-      if (changed.length === 0) return [];
-      const parsed = changed.map((record) => this.schema.parse(record));
-      for (const record of parsed) records.set(this.getId(record), record);
-      return parsed;
-    });
-  }
-
-  protected async mutateCache<TResult>(
-    updater: (records: Map<string, TRecord>) => TResult,
-    hooks?: {
-      forcePersist?: (result: TResult) => boolean;
-      beforeWrite?: (records: readonly TRecord[]) => Promise<void>;
-      afterWrite?: () => Promise<void>;
-      afterCommit?: () => void;
-    },
-  ): Promise<TResult> {
-    const previous = this.mutationQueue;
-    let release!: () => void;
-    this.mutationQueue = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      await this.load();
-      if (this.mutationsBlockedUntilRestart) {
-        throw new Error("Workspace registry mutations are blocked until daemon restart");
-      }
-      const staged = new Map(this.cache);
-      const result = updater(staged);
-      const recordsChanged = !mapsEqual(this.cache, staged);
-      if (!recordsChanged && !hooks?.forcePersist?.(result)) return result;
-      const records = Array.from(staged.values());
-      await hooks?.beforeWrite?.(records);
-      if (recordsChanged) await this.writeRecords(this.filePath, records);
-      await hooks?.afterWrite?.();
-      if (recordsChanged) {
-        this.cache.clear();
-        for (const [id, record] of staged) this.cache.set(id, record);
-      }
-      hooks?.afterCommit?.();
-      return result;
-    } finally {
-      release();
-    }
-  }
-
-  protected freezeMutationsUntilRestart(): void {
-    this.mutationsBlockedUntilRestart = true;
-  }
-}
-
-function mapsEqual<TKey, TValue>(left: Map<TKey, TValue>, right: Map<TKey, TValue>): boolean {
-  if (left.size !== right.size) return false;
-  for (const [key, value] of left) {
-    if (right.get(key) !== value) return false;
-  }
-  return true;
-}
-
 export class FileBackedProjectRegistry
-  extends FileBackedRegistry<PersistedProjectRecord>
+  extends ArchivableFileBackedRegistry<PersistedProjectRecord>
   implements ProjectRegistry
 {
   private allocationQueue: Promise<void> = Promise.resolve();
@@ -371,6 +175,7 @@ export class FileBackedProjectRegistry
       project: PersistedProjectRecord | null;
     }) => void | Promise<void>
   >();
+  private readonly pendingRemovalListeners = new Set<(projectId: string) => void | Promise<void>>();
 
   constructor(
     filePath: string,
@@ -480,7 +285,25 @@ export class FileBackedProjectRegistry
     await this.notifyMutation({ kind: "archive", projectId, project });
   }
 
+  /**
+   * Runs before a project record is removed, and may refuse the removal by throwing.
+   *
+   * `subscribeToMutations` fires after the commit and swallows listener failures, which is right
+   * for publication but wrong for a cascade: a crash partway through leaves the project already
+   * gone, so nothing retries and whatever it owned is orphaned for good. Cascading from here
+   * makes the project record its own tombstone — the removal only completes once the cascade
+   * has, and until then the user's next delete runs it again.
+   */
+  subscribeToPendingRemoval(listener: (projectId: string) => void | Promise<void>): () => void {
+    this.pendingRemovalListeners.add(listener);
+    return () => this.pendingRemovalListeners.delete(listener);
+  }
+
   override async remove(projectId: string): Promise<void> {
+    if (!(await this.get(projectId))) return;
+    for (const listener of this.pendingRemovalListeners) {
+      await listener(projectId);
+    }
     const project = await this.removeIfPresent(projectId);
     if (!project) return;
     await this.notifyMutation({ kind: "remove", projectId, project: null });
@@ -491,12 +314,23 @@ export class FileBackedProjectRegistry
     projectId: string;
     project: PersistedProjectRecord | null;
   }): Promise<void> {
-    await Promise.all([...this.mutationListeners].map((listener) => listener(mutation)));
+    await Promise.all(
+      [...this.mutationListeners].map(async (listener) => {
+        try {
+          await listener(mutation);
+        } catch (error) {
+          // Matches the workspace registry: publication runs after the registry commit, so a
+          // failing listener must not report failure for a removal that already happened.
+          // Cascades reached from here have to be idempotent and retryable.
+          this.logger.error({ err: error, mutation }, "Project mutation listener failed");
+        }
+      }),
+    );
   }
 }
 
 export class FileBackedWorkspaceRegistry
-  extends FileBackedRegistry<PersistedWorkspaceRecord>
+  extends ArchivableFileBackedRegistry<PersistedWorkspaceRecord>
   implements WorkspaceRegistry
 {
   private readonly mutationListeners = new Set<

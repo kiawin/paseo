@@ -78,6 +78,20 @@ Native builds narrow this gap rather than closing it outright. The WebView refus
 
 If you don't trust a page, read it in `Source`, which executes nothing. Source is available as an editable view on supported web hosts and a read-only view everywhere else.
 
+## Artifacts
+
+An artifact is a deliverable an agent published through `publish_artifact`. It is either an HTML document the daemon stores, which renders in the same preview described above — same sandbox, same policy, same self-navigation gap — or a title pointing at a URL, which only ever opens in your browser and is never loaded into the preview. What differs is the odds, and two properties the file preview does not have.
+
+Artifacts are agent-authored by construction. A repo file is markup you chose to open; an artifact only exists because an agent wrote it, and agents routinely read untrusted input — issues, change requests, web pages, MCP output. The surface also invites opening: a list of deliverables is there to be read. Assume any artifact may be hostile markup and rely on the sandbox, not on the source.
+
+Reading is project-wide. Every agent and workspace in a project sees the same list, which is the point — it is how a deliverable reaches you from wherever it was produced. It is also a cross-agent channel: one compromised agent can read what a sibling published. Overwriting and deleting are not project-wide for that reason. They require the record's own origin agent, so knowing an `artifactId` confers no destructive write over someone else's deliverable, and every mutation records its origin.
+
+Paired with the companion link, project-wide read is a durable exfiltration path: an agent can read a sibling's artifact and republish the contents to an address it controls. The link itself is agent-supplied and validated only for scheme — `http:` and `https:` — so a prompt-injected agent can point it anywhere. The mitigation is that the affordance shows the URL's hostname rather than a bare "Open", so the destination is visible before you tap it. A host allowlist was rejected deliberately: it could only ever cover one vendor, and the field exists so every provider can attach a link. That leaves loopback and private-network destinations (a GET against `127.0.0.1` or `10.x` is a CSRF primitive), lookalike domains, and a public URL compromised after the fact. Treat a companion link like any link an untrusted party sent you.
+
+The preview never loads the companion link. It renders only the bytes the daemon stored; the link opens externally, in your browser.
+
+Active content is not only an exfiltration risk. The preview's policy allows inline script and `eval`, so a hostile artifact can monopolize CPU or exhaust memory in the viewer, and on native a stalled JS thread widens the navigation gap described above.
+
 ## Agent authentication
 
 Paseo wraps agent CLIs (Claude Code, Codex, OpenCode) but does not manage their authentication. Each agent provider handles its own credentials. Paseo never stores or transmits provider API keys. Agents run in your user context with your existing credentials.

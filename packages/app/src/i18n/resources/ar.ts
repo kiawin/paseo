@@ -1802,6 +1802,17 @@ export const ar: TranslationResources = {
       tooltip: "تصفح ملفات مساحة العمل",
       chooseFile: "اختر ملفًا",
     },
+    artifacts: {
+      linkMissing: "هذا العنصر ليس له مستند ولا رابط.",
+      label: "العناصر",
+      subtitle: "نشرها الوكلاء",
+      tooltip: "مستندات نشرها الوكلاء في هذا المشروع",
+      emptyTitle: "لا توجد عناصر في هذا المشروع",
+      emptyDescription: "ينشرها الوكلاء باستخدام publish_artifact.",
+      loadFailed: "تعذر تحميل العناصر",
+      hostTooOld: "حدّث المضيف لعرض العناصر.",
+      openOn: "فتح على {{host}}",
+    },
     pullRequest: {
       label: "طلب السحب",
       subtitle: "تفاصيل طلب السحب",
@@ -1822,6 +1833,7 @@ export const ar: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "فتح على {{host}}",
     error: "خطأ",
     empty: "لا توجد تفاصيل إضافية متاحة",
     subAgentActivity: "نشاط الوكيل الفرعي",

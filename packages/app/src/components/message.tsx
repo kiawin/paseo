@@ -34,7 +34,6 @@ import {
   Info,
   CheckCircle,
   XCircle,
-  FileText,
   ChevronRight,
   ChevronDown,
   Check,
@@ -2034,14 +2033,10 @@ export const SpeakMessage = memo(function SpeakMessage({
 });
 
 interface ActivityLogProps {
-  type: "system" | "info" | "success" | "error" | "artifact";
+  type: "system" | "info" | "success" | "error";
   message: string;
   timestamp: number;
   metadata?: Record<string, unknown>;
-  artifactId?: string;
-  artifactType?: string;
-  title?: string;
-  onArtifactClick?: (artifactId: string) => void;
   disableOuterSpacing?: boolean;
 }
 
@@ -2066,9 +2061,6 @@ const activityLogStylesheet = StyleSheet.create((theme) => ({
     backgroundColor: "rgba(20, 83, 45, 0.3)",
   },
   errorBg: {},
-  artifactBg: {
-    backgroundColor: "rgba(30, 58, 138, 0.4)",
-  },
   content: {
     paddingHorizontal: theme.spacing[3],
     paddingVertical: 10,
@@ -2121,10 +2113,6 @@ export const ActivityLog = memo(function ActivityLog({
   message,
   timestamp: _timestamp,
   metadata,
-  artifactId,
-  artifactType,
-  title,
-  onArtifactClick,
   disableOuterSpacing,
 }: ActivityLogProps) {
   const { t } = useTranslation();
@@ -2148,28 +2136,18 @@ export const ActivityLog = memo(function ActivityLog({
       color: "#f87171",
       Icon: XCircle,
     },
-    artifact: {
-      bg: activityLogStylesheet.artifactBg,
-      color: "#93c5fd",
-      Icon: FileText,
-    },
   };
 
   const config = typeConfig[type];
   const IconComponent = config.Icon;
 
   const handlePress = useCallback(() => {
-    if (type === "artifact" && artifactId && onArtifactClick) {
-      onArtifactClick(artifactId);
-    } else if (metadata) {
-      setIsExpanded((prev) => !prev);
-    }
-  }, [type, artifactId, onArtifactClick, metadata]);
+    if (metadata) setIsExpanded((prev) => !prev);
+  }, [metadata]);
 
-  const displayMessage =
-    type === "artifact" && artifactType && title ? `${artifactType}: ${title}` : message;
+  const displayMessage = message;
 
-  const isInteractive = type === "artifact" || metadata;
+  const isInteractive = Boolean(metadata);
   const pressableStyle = useMemo(
     () => [
       activityLogStylesheet.pressable,

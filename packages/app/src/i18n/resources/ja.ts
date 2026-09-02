@@ -1819,6 +1819,17 @@ export const ja: TranslationResources = {
       tooltip: "ワークスペースのファイルを参照",
       chooseFile: "ファイルを選択",
     },
+    artifacts: {
+      linkMissing: "この成果物にはドキュメントもリンクもありません。",
+      label: "成果物",
+      subtitle: "エージェントが公開",
+      tooltip: "このプロジェクトでエージェントが公開したドキュメント",
+      emptyTitle: "このプロジェクトに成果物はありません",
+      emptyDescription: "エージェントは publish_artifact で公開します。",
+      loadFailed: "成果物を読み込めませんでした",
+      hostTooOld: "成果物を表示するにはホストを更新してください。",
+      openOn: "{{host}} で開く",
+    },
     pullRequest: {
       label: "プルリクエスト",
       subtitle: "プルリクエストの詳細",
@@ -1840,6 +1851,7 @@ export const ja: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "{{host}} で開く",
     error: "エラー",
     empty: "追加の詳細はありません",
     subAgentActivity: "サブエージェントアクティビティ",

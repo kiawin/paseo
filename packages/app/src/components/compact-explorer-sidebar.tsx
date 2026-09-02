@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, ScrollView } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
@@ -31,6 +31,7 @@ import { RetainedPanel, RetainedPanelActivity } from "@/components/retained-pane
 import { useMountedTabSet } from "@/screens/workspace/use-mounted-tab-set";
 import { usePullRequestPanelAvailability } from "@/panels/pull-request-availability";
 import { PullRequestContent } from "@/panels/pull-request";
+import { ArtifactsPane } from "@/artifacts/pane";
 import { useAddFileToChat } from "@/panels/use-add-file-to-chat";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import {
@@ -48,6 +49,7 @@ interface ExplorerSidebarProps {
   workspaceRoot: string;
   isGit: boolean;
   onOpenFile?: (filePath: string) => void;
+  onOpenArtifact?: (artifactId: string) => void;
 }
 
 interface ExplorerSidebarSharedState {
@@ -78,6 +80,7 @@ export function CompactExplorerSidebar({
   workspaceRoot,
   isGit,
   onOpenFile,
+  onOpenArtifact,
 }: ExplorerSidebarProps) {
   const { theme } = useUnistyles();
   const insets = useSafeAreaInsets();
@@ -143,6 +146,7 @@ export function CompactExplorerSidebar({
           isGit={isGit}
           isOpen={isOpen}
           onOpenFile={onOpenFile}
+          onOpenArtifact={onOpenArtifact}
         />
       </MobilePanelOverlay>
     </RetainedPanelActivity>
@@ -160,6 +164,7 @@ export function NativeExplorerSidebarDock({
   workspaceRoot,
   isGit,
   onOpenFile,
+  onOpenArtifact,
   persistenceKey,
   containerWidth,
 }: NativeExplorerSidebarDockProps) {
@@ -254,6 +259,7 @@ export function NativeExplorerSidebarDock({
             isGit={isGit}
             isOpen={isOpen}
             onOpenFile={onOpenFile}
+            onOpenArtifact={onOpenArtifact}
           />
         </View>
       </Animated.View>
@@ -289,6 +295,8 @@ function ExplorerTabButton({
   );
 }
 
+const noopOpenArtifact = () => {};
+
 interface SidebarContentProps {
   activeTab: ExplorerTab;
   onTabPress: (tab: ExplorerTab) => void;
@@ -299,6 +307,7 @@ interface SidebarContentProps {
   isGit: boolean;
   isOpen: boolean;
   onOpenFile?: (filePath: string) => void;
+  onOpenArtifact?: (artifactId: string) => void;
 }
 
 function ExplorerSidebarContent({
@@ -311,6 +320,7 @@ function ExplorerSidebarContent({
   isGit,
   isOpen,
   onOpenFile,
+  onOpenArtifact,
 }: SidebarContentProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
@@ -329,6 +339,9 @@ function ExplorerSidebarContent({
   const availableTabs = useMemo<ExplorerTab[]>(() => {
     const tabs: ExplorerTab[] = isGit ? ["changes", "files"] : ["files"];
     if (isGit && showPrTab) tabs.push("pr");
+    // Outside the isGit guard on purpose: artifacts are project-scoped, and a non-git
+    // directory workspace belongs to a project that can hold them.
+    tabs.push("artifacts");
     return tabs;
   }, [isGit, showPrTab]);
   const { mountedTabIds } = useMountedTabSet({
@@ -347,7 +360,18 @@ function ExplorerSidebarContent({
         testID="explorer-header"
       >
         <TitlebarDragRegion />
-        <View style={styles.tabsContainer}>
+        {/*
+          Scrolls rather than wraps or clips. A git checkout with an open pull request shows four
+          tabs, and four labels do not fit the overlay's header at phone width — before this the
+          last tab was cut off and the close button was pushed outside the viewport entirely.
+          The desktop rail solves the same problem the same way.
+        */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsScroll}
+          contentContainerStyle={styles.tabsContainer}
+        >
           {isGit && (
             <ExplorerTabButton
               tab="changes"
@@ -381,7 +405,14 @@ function ExplorerSidebarContent({
               />
             </ExplorerTabButton>
           )}
-        </View>
+          <ExplorerTabButton
+            tab="artifacts"
+            active={resolvedTab === "artifacts"}
+            label={t("panels.artifacts.label")}
+            onTabPress={onTabPress}
+            testID="explorer-tab-artifacts"
+          />
+        </ScrollView>
         <View style={styles.headerRightSection}>
           <Pressable
             onPress={onClose}
@@ -423,6 +454,15 @@ function ExplorerSidebarContent({
               workspaceId={workspaceId}
               workspaceRoot={workspaceRoot}
               onOpenFile={onOpenFile}
+            />
+          </RetainedPanel>
+        ) : null}
+        {mountedTabIds.has("artifacts") ? (
+          <RetainedPanel active={resolvedTab === "artifacts"}>
+            <ArtifactsPane
+              serverId={serverId}
+              workspaceId={workspaceId ?? null}
+              onOpenArtifact={onOpenArtifact ?? noopOpenArtifact}
             />
           </RetainedPanel>
         ) : null}
@@ -520,8 +560,17 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
+  tabsScroll: {
+    // Shrinks so the close button keeps its place; never grows past its content. `minWidth: 0`
+    // is what lets it shrink at all — a flex item's floor is its content width without it, and
+    // four tabs' worth of content would push the close button outside the viewport.
+    flexShrink: 1,
+    flexGrow: 0,
+    minWidth: 0,
+  },
   tabsContainer: {
     flexDirection: "row",
+    alignItems: "center",
     gap: theme.spacing[1],
   },
   tab: {
