@@ -1,0 +1,357 @@
+import type pino from "pino";
+
+import { getErrorMessage } from "@getpaseo/protocol/error-utils";
+import {
+  encodeFileTransferFrame,
+  FileTransferOpcode,
+  TransferFlowControl,
+} from "@getpaseo/protocol/binary-frames/index";
+
+import type {
+  ArtifactDeleteRequest,
+  ArtifactEntryDownloadRequest,
+  ArtifactListRequest,
+  ArtifactPinSetRequest,
+  ArtifactRecordPayload,
+  FileTransferAck,
+  FileTransferCancel,
+  SessionOutboundMessage,
+} from "../../messages.js";
+import {
+  ArtifactError,
+  type ArtifactStore,
+  type PersistedArtifactRecord,
+} from "../../artifact-store.js";
+
+/** Frames are sized well under the 8 MiB flow-control window, so several fit before an ack. */
+const CHUNK_BYTES = 256 * 1024;
+
+export interface ArtifactsSessionHost {
+  emit(msg: SessionOutboundMessage, source?: object): void;
+  emitBinary(frame: Uint8Array, source?: object): Promise<void>;
+  hasBinaryChannel(): boolean;
+}
+
+export function toArtifactRecordPayload(record: PersistedArtifactRecord): ArtifactRecordPayload {
+  return {
+    artifactId: record.artifactId,
+    projectId: record.projectId,
+    title: record.title,
+    mimeType: record.mimeType,
+    size: record.size,
+    contentSha256: record.contentSha256,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    pinned: record.pinned,
+    externalUrl: record.externalUrl,
+    origin: {
+      agentId: record.origin.agentId,
+      workspaceId: record.origin.workspaceId,
+      provider: record.origin.provider,
+    },
+  };
+}
+
+/**
+ * Session-side surface for the artifact store.
+ *
+ * Downloads reuse the workspace file-transfer machinery wholesale — the binary opcodes and
+ * `fs.transfer.ack` / `fs.transfer.cancel` are keyed by requestId and carry no path, so they
+ * are transport, not workspace semantics. The daemon keeps its own in-flight map here rather
+ * than sharing the workspace one; the session routes ack and cancel to both, and each ignores a
+ * requestId it does not own.
+ *
+ * HTTP is not an alternative. A relay answers only its own `/ws`, `/health`, `/ready` and
+ * `/metrics`, so `GET /api/files/download` cannot reach the daemon on the connection this
+ * feature exists for.
+ */
+export class ArtifactsSession {
+  private readonly logger: pino.Logger;
+  private readonly activeDownloads = new Map<
+    string,
+    { flow: TransferFlowControl; source?: object }
+  >();
+  /**
+   * Sockets that have asked for an artifact list.
+   *
+   * `artifact.changed` is a discriminator a client from before this feature does not know, and
+   * its outbound validator rejects the whole message and logs a protocol failure. Having listed
+   * artifacts is the proof that a client understands the message — and it is also the only
+   * client with a list worth invalidating.
+   */
+  private readonly listeningSources = new Set<object>();
+
+  constructor(
+    private readonly host: ArtifactsSessionHost,
+    private readonly store: ArtifactStore | null,
+    logger: pino.Logger,
+  ) {
+    this.logger = logger.child({ module: "artifacts-session" });
+  }
+
+  dispose(): void {
+    for (const { flow } of this.activeDownloads.values()) flow.cancel();
+    this.activeDownloads.clear();
+    this.listeningSources.clear();
+  }
+
+  async handleListRequest(request: ArtifactListRequest, source?: object): Promise<void> {
+    const { projectId, requestId } = request;
+    if (source) this.listeningSources.add(source);
+    try {
+      const records = await this.requireStore().listForProject(projectId);
+      this.host.emit(
+        {
+          type: "artifact.list.response",
+          payload: {
+            projectId,
+            artifacts: records.map(toArtifactRecordPayload),
+            success: true,
+            error: null,
+            requestId,
+          },
+        },
+        source,
+      );
+    } catch (error) {
+      this.host.emit(
+        {
+          type: "artifact.list.response",
+          payload: {
+            projectId,
+            artifacts: [],
+            success: false,
+            error: getErrorMessage(error),
+            requestId,
+          },
+        },
+        source,
+      );
+    }
+  }
+
+  async handleDeleteRequest(request: ArtifactDeleteRequest, source?: object): Promise<void> {
+    const { artifactId, requestId } = request;
+    try {
+      const store = this.requireStore();
+      const record = await store.get(artifactId);
+      const removed = await store.delete(artifactId);
+      if (!removed) throw new ArtifactError("artifact_not_found", `No artifact ${artifactId}`);
+      this.host.emit(
+        {
+          type: "artifact.delete.response",
+          payload: { artifactId, success: true, error: null, requestId },
+        },
+        source,
+      );
+      if (record) this.emitChanged(record.projectId, source);
+    } catch (error) {
+      this.host.emit(
+        {
+          type: "artifact.delete.response",
+          payload: { artifactId, success: false, error: getErrorMessage(error), requestId },
+        },
+        source,
+      );
+    }
+  }
+
+  async handlePinSetRequest(request: ArtifactPinSetRequest, source?: object): Promise<void> {
+    const { artifactId, pinned, requestId } = request;
+    try {
+      const record = await this.requireStore().setPinned(artifactId, pinned);
+      if (!record) throw new ArtifactError("artifact_not_found", `No artifact ${artifactId}`);
+      this.host.emit(
+        {
+          type: "artifact.pin.set.response",
+          payload: {
+            artifact: toArtifactRecordPayload(record),
+            success: true,
+            error: null,
+            requestId,
+          },
+        },
+        source,
+      );
+      this.emitChanged(record.projectId, source);
+    } catch (error) {
+      this.host.emit(
+        {
+          type: "artifact.pin.set.response",
+          payload: {
+            artifact: null,
+            success: false,
+            error: getErrorMessage(error),
+            requestId,
+          },
+        },
+        source,
+      );
+    }
+  }
+
+  /**
+   * The client registers a sink for `requestId` before sending the request, so the metadata
+   * response and the frames behind it both land on a receiver that already exists.
+   */
+  async handleEntryDownloadRequest(
+    request: ArtifactEntryDownloadRequest,
+    source?: object,
+  ): Promise<void> {
+    const { artifactId, requestId } = request;
+    // Answering would hand two transfers one requestId, and the ack stream carries nothing else
+    // to tell them apart — frames would interleave into whichever sink registered last. The
+    // owner keeps the id; this request is dropped rather than allowed to corrupt it.
+    if (this.activeDownloads.has(requestId)) {
+      this.logger.error(
+        { requestId, artifactId },
+        "Refused a download reusing an active requestId",
+      );
+      return;
+    }
+    const flow = new TransferFlowControl();
+    this.activeDownloads.set(requestId, { flow, ...(source ? { source } : {}) });
+    let streamStarted = false;
+
+    try {
+      if (!this.host.hasBinaryChannel()) {
+        throw new Error("This connection cannot carry artifact downloads.");
+      }
+      const store = this.requireStore();
+      const record = await store.get(artifactId);
+      if (!record) throw new ArtifactError("artifact_not_found", `No artifact ${artifactId}`);
+      // By record, not id: the digest advertised below has to describe the bytes sent below it,
+      // and a concurrent overwrite between the two reads would otherwise break that.
+      const content = await store.readContent(record);
+
+      this.host.emit(
+        {
+          type: "artifact.entry.download.response",
+          payload: {
+            artifactId,
+            title: record.title,
+            mimeType: record.mimeType,
+            size: content.byteLength,
+            success: true,
+            error: null,
+            requestId,
+          },
+        },
+        source,
+      );
+
+      streamStarted = true;
+      await this.host.emitBinary(
+        encodeFileTransferFrame({
+          opcode: FileTransferOpcode.FileBegin,
+          requestId,
+          metadata: {
+            mime: record.mimeType,
+            size: content.byteLength,
+            encoding: "utf-8",
+            modifiedAt: record.updatedAt,
+            ...(record.contentSha256 ? { revision: record.contentSha256 } : {}),
+            fileName: `${record.artifactId}.html`,
+          },
+        }),
+        source,
+      );
+
+      for (let offset = 0; offset < content.byteLength; offset += CHUNK_BYTES) {
+        await flow.awaitWindow();
+        if (flow.isCancelled) return;
+        const chunk = content.subarray(offset, Math.min(offset + CHUNK_BYTES, content.byteLength));
+        await this.host.emitBinary(
+          encodeFileTransferFrame({
+            opcode: FileTransferOpcode.FileChunk,
+            requestId,
+            payload: chunk,
+          }),
+          source,
+        );
+        flow.recordSent(chunk.byteLength);
+      }
+
+      if (flow.isCancelled) return;
+      await this.host.emitBinary(
+        encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }),
+        source,
+      );
+    } catch (error) {
+      this.logger.error({ err: error, artifactId }, "Failed to stream artifact download");
+      if (streamStarted) {
+        // The client is draining frames and no longer awaiting the response, so cancel is the
+        // only signal it will act on.
+        this.host.emit({ type: "fs.transfer.cancel", requestId }, source);
+      } else {
+        this.host.emit(
+          {
+            type: "artifact.entry.download.response",
+            payload: {
+              artifactId,
+              title: null,
+              mimeType: null,
+              size: null,
+              success: false,
+              error: getErrorMessage(error),
+              requestId,
+            },
+          },
+          source,
+        );
+      }
+    } finally {
+      this.activeDownloads.delete(requestId);
+    }
+  }
+
+  /**
+   * Cancels whatever a departing socket started.
+   *
+   * The registry belongs to the logical session, which outlives any one socket. With a second
+   * socket still attached the session stays alive, so a download parked at its window would wait
+   * on an ack that can no longer come — holding the flow, the task and the whole document.
+   */
+  cancelTransfersForSource(source: object): void {
+    this.listeningSources.delete(source);
+    for (const [requestId, entry] of Array.from(this.activeDownloads.entries())) {
+      if (entry.source === source) {
+        entry.flow.cancel();
+        this.activeDownloads.delete(requestId);
+      }
+    }
+  }
+
+  /** True while this subsystem owns the transfer, so the session can refuse a colliding id. */
+  hasTransfer(requestId: string): boolean {
+    return this.activeDownloads.has(requestId);
+  }
+
+  /** No-ops for a requestId this subsystem does not own; the workspace one may. */
+  handleFileTransferAck(message: FileTransferAck): void {
+    this.activeDownloads.get(message.requestId)?.flow.onAck(message.bytesReceived);
+  }
+
+  handleFileTransferCancel(message: FileTransferCancel): void {
+    this.activeDownloads.get(message.requestId)?.flow.cancel();
+  }
+
+  emitChanged(projectId: string, source?: object): void {
+    this.host.emit({ type: "artifact.changed", payload: { projectId } }, source);
+  }
+
+  /**
+   * Invalidation for a publish that no session caused — the agent runtime owns no session, so the
+   * daemon fans this out. Only sockets that have listed artifacts are told.
+   */
+  broadcastChanged(projectId: string): void {
+    for (const source of this.listeningSources) {
+      this.emitChanged(projectId, source);
+    }
+  }
+
+  private requireStore(): ArtifactStore {
+    if (!this.store) throw new Error("This daemon does not support artifacts.");
+    return this.store;
+  }
+}

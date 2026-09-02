@@ -22,6 +22,14 @@ const fileTransferRequests = [
       requestId: "workspace-file",
     },
   ],
+  [
+    "artifact entry download",
+    {
+      type: "artifact.entry.download.request",
+      artifactId: "art_123",
+      requestId: "artifact-file",
+    },
+  ],
 ] as const satisfies ReadonlyArray<readonly [string, SessionInboundMessage]>;
 
 test.each(fileTransferRequests)("authorizes %s binary replies", async (_label, request) => {
