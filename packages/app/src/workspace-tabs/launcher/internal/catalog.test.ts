@@ -9,6 +9,7 @@ describe("getBuiltInLaunchOrder", () => {
       "changes",
       "diff",
       "files",
+      "artifacts",
       "browser",
       "pullRequest",
     ]);
@@ -19,6 +20,7 @@ describe("getBuiltInLaunchOrder", () => {
       "changes",
       "diff",
       "files",
+      "artifacts",
       "terminal",
       "agent",
       "browser",
