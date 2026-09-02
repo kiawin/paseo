@@ -67,10 +67,15 @@ npx vitest run --project unit src/i18n src/utils src/workspace-tabs src/stores/p
 ```
 
 ```
-npm run test:e2e -- e2e/browser/artifacts-pane.spec.ts e2e/browser/artifacts-qa-evidence.spec.ts
+npm run test:e2e -- e2e/browser/artifacts-publish.spec.ts e2e/browser/artifacts-pane.spec.ts \
+  e2e/browser/artifacts-qa-evidence.spec.ts e2e/browser/agent-message-submission.spec.ts
 
-  9 passed
+  37 passed (5.2m)
 ```
+
+The last suite is there as a regression check: the mock provider now declares
+`supportsNativePaseoTools`, so every mock agent is handed a tool catalog it did not have
+before.
 
 Relay, against a real local Elixir relay and a packaged daemon. Requires the sibling
 `paseo-relay` checkout (`mise install && mix local.hex --force && mix deps.get` there once) and
@@ -122,6 +127,11 @@ native path is the existing `FileHtmlPreview.native`, reused unchanged.
   history replay.
 - **The e2e stubs only the two artifact read RPCs** and proxies everything else to a real
   daemon, so the app, the transport, the ack pacing and the sandbox are all real.
+- **`artifacts-publish.spec.ts` stubs nothing at all.** A real agent calls the real
+  `publish_artifact`, the daemon stores real bytes, the `artifact.changed` push invalidates the
+  list, and the viewer streams the document back. It is driven by a new `/mock publish-artifact`
+  command on the mock provider, which is what lets a test make a real tool call without a live
+  model.
 
 ## Gaps, stated
 
@@ -137,7 +147,9 @@ native path is the existing `FileHtmlPreview.native`, reused unchanged.
 - **The compact tab row's scroll is unverified on a device.** It is a horizontal ScrollView
   inside a panel whose ancestor owns a horizontal swipe-to-close gesture. On web there is no
   contest; on native the two are expected to compose the usual way, but that has not been run.
-- **The relay run seeds `$PASEO_HOME` directly.** Publishing is agent-only and the registries
-  read their files at boot, so the project, workspace and artifact are written before the daemon
-  starts. The transport, the store read and the render are all real; the artifact's creation is
-  not.
+- **The relay run seeds `$PASEO_HOME` directly.** The registries read their files at boot, so
+  its project, workspace and artifact are written before the daemon starts. The transport, the
+  store read and the render are real; that spec's artifact creation is not. Creation is covered
+  for real by `artifacts-publish.spec.ts` instead — the two were combined into one spec first,
+  and the packaged-daemon relay harness would not carry the agent flow, so they stayed split
+  rather than weakening either.
