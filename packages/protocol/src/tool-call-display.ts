@@ -121,10 +121,22 @@ function buildCanonicalDetailDisplay(input: ToolCallDisplayInput): DetailDisplay
       return {
         displayName: "Plan",
       };
+    case "artifact":
+      return {
+        displayName: "Artifact",
+        summary: readString(input.detail.title) ?? input.detail.url,
+      };
     case "unknown":
       return {};
-    default:
-      throw new Error("unreachable");
+    default: {
+      // A newer daemon can name a detail type this build has never heard of, and the protocol
+      // requires the older client to keep rendering rather than take the transcript down with
+      // it. The never binding makes a case missing from *this* build a compile error, so this
+      // fallback only ever catches a peer that is ahead of us.
+      const exhaustiveCheck: never = input.detail;
+      void exhaustiveCheck;
+      return {};
+    }
   }
 }
 

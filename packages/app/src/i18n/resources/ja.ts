@@ -1844,6 +1844,21 @@ export const ja: TranslationResources = {
       tooltip: "ワークスペースのファイルを参照",
       chooseFile: "ファイルを選択",
     },
+    artifacts: {
+      linkMissing: "この成果物にはドキュメントもリンクもありません。",
+      label: "成果物",
+      subtitle: "エージェントが公開",
+      tooltip: "このプロジェクトでエージェントが公開したドキュメント",
+      emptyTitle: "このプロジェクトに成果物はありません",
+      emptyDescription: "エージェントは publish_artifact で公開します。",
+      loadFailed: "成果物を読み込めませんでした",
+      hostTooOld: "成果物を表示するにはホストを更新してください。",
+      openOn: "{{host}} で開く",
+      deleteTitle: "成果物を削除しますか？",
+      deleteMessage: "「{{title}}」を削除しますか？この操作は取り消せません。",
+      deleteConfirm: "削除",
+      deleteFailed: "成果物を削除できませんでした",
+    },
     pullRequest: {
       label: "プルリクエスト",
       subtitle: "プルリクエストの詳細",
@@ -1865,6 +1880,7 @@ export const ja: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "{{host}} で開く",
     error: "エラー",
     empty: "追加の詳細はありません",
     subAgentActivity: "サブエージェントアクティビティ",
@@ -2043,7 +2059,7 @@ export const ja: TranslationResources = {
       },
       agentLinks: {
         label: "エージェントのリンク",
-        description: "エージェントのメッセージ内のリンクを開く場所",
+        description: "エージェントが公開したリンクを開く場所",
         accessibilityLabel: "エージェントのリンクを開く場所を選択（{{value}}）",
         options: {
           inApp: "Paseoで",

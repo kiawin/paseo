@@ -31,6 +31,11 @@ export const CLIENT_CAPS = {
   // timeline items for older clients whose strict timeline union rejects them.
   // Remove after 2027-03-03 once the supported client floor is >= v0.7.2.
   timelineNotifications: "timeline_notifications",
+  // COMPAT(artifactToolDetail): added in v0.7.2. Older clients pin ToolCallDetail to a closed
+  // union, so an artifact detail makes them reject the whole message carrying it and a timeline
+  // page fails to load. The daemon rewrites the detail to plain_text when this is absent.
+  // Remove after 2028-03-01 once the supported client floor understands the variant.
+  artifactToolDetail: "artifact_tool_detail",
   browserHost: "browser_host",
 } as const;
 

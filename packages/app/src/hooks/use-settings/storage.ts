@@ -35,7 +35,7 @@ export type SendBehavior = ActiveTurnBehavior | "queue";
 export type ReleaseChannel = "stable" | "beta";
 export type ServiceUrlBehavior = "ask" | "in-app" | "external";
 /**
- * Where a plain tap on an external link in an agent message goes. No `ask` state:
+ * Where a plain tap on an external link published by an agent goes. No `ask` state:
  * the link context menu is the per-link chooser, so a prompt would be a second one.
  */
 export type AgentLinkBehavior = "in-app" | "external";
