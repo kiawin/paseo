@@ -44,7 +44,12 @@ Artifacts therefore reuse the workspace file-transfer channel unchanged: the `Fi
 `FileChunk` / `FileEnd` opcodes, and `fs.transfer.ack` / `fs.transfer.cancel` for flow control.
 Those messages are keyed by `requestId` and carry no path, which is what makes them shareable. The
 session routes ack and cancel to both the workspace and artifact subsystems, and each ignores a
-`requestId` it does not own.
+`requestId` it does not own — which is exactly why one id must never name two transfers. Both
+subsystems refuse an id already in flight, in themselves or in the other, and so does the client:
+an ack carries nothing else to tell two transfers apart, so a shared id paces and cancels both.
+A download also records the socket that asked for it, because the logical session outlives any one
+socket and a transfer parked at its flow-control window would otherwise wait forever on an ack that
+can no longer come.
 
 ## What the store has to get right
 
@@ -54,9 +59,18 @@ atomic index write. A publish is not one write, and the parts that are easy to g
 - **One lock over quota and index.** Selecting eviction victims and committing the index share the
   inherited queue. Split them and two concurrent publishes each compute a total that excludes the
   other, and each picks the other as the victim.
-- **Ordering.** HTML renamed into place, then index commit, then victim unlink. A crash in either
-  gap leaves an HTML file no record names, which the startup sweep reclaims — an orphan otherwise
-  counts against the project quota forever.
+- **Content is immutable, so ordering can be safe.** The path carries the digest —
+  `<projectId>/<artifactId>.<contentSha256>.html` — so a publish only ever adds a file. New HTML
+  in place, then the index commit, then the superseded and evicted files unlink. Until the index
+  moves it names a digest whose file is still there, so a crash at any point leaves a consistent
+  pair; what it can leave is an HTML file no record names, which the startup sweep reclaims — an
+  orphan otherwise counts against the project quota forever. Replacing content in place instead
+  would let a crash strand the index claiming one digest over another's bytes, which no sweep can
+  detect. The id stays in the filename because addressing by digest alone would let two records
+  share a file, and deleting either would destroy the other's content.
+- **A download reads the record it advertised.** `readContent` takes the record, not an id, so the
+  digest in the transfer's metadata describes the bytes behind it. Re-resolving the id would let an
+  overwrite land in between and stream the new document under the old digest.
 - **The sweep's rule is the digest, not the file.** A record that claims a `contentSha256` must
   have its file, and one that claims none must not. Sweeping on "no file means delete" instead
   would remove every link-only row on the first restart.
@@ -70,6 +84,12 @@ atomic index write. A publish is not one write, and the parts that are easy to g
   eviction firing line.
 - **A pinned artifact is never evicted, even over quota.** Blind eviction destroys something a
   person deliberately kept. The quota loses that argument.
+- **The project record is the cascade's tombstone.** Removing a project runs its artifact cleanup
+  _before_ the record commits, and refuses the removal if that fails. Cascading only from the
+  after-commit listener would leave a crash halfway through with the project already gone and
+  nothing left to retry from — the sweep keeps those artifacts, correctly, because their files are
+  intact. The after-commit listener still runs, idempotently, to collect anything a publish landed
+  during the first pass.
 
 Not covered: an artifact open in a pane can still be evicted by a concurrent publish. The pane
 already holds the bytes and keeps rendering; reopening it reports the artifact as gone. Pin it if
@@ -82,6 +102,15 @@ exists to provide. Overwriting and deleting require the record's own `origin.age
 knowing an `artifactId` must not confer destructive write over a sibling agent's deliverable. A
 session-initiated delete (the user, through the UI) is allowed on the strength of
 `workspace.write`; an agent's overwrite is not.
+
+## Invalidation is opt-in
+
+A publish comes from the agent runtime, which owns no session, so the daemon fans `artifact.changed`
+out itself — but only to sockets that have sent `artifact.list.request`. `features.artifacts`
+describes what the daemon supports, not what a client understands, and an app built before this
+feature rejects the unknown discriminator outright and logs a protocol failure on every publish.
+Having listed artifacts is the proof a client knows the message, and it is also the only client
+holding a list worth invalidating.
 
 ## Replay
 
@@ -115,8 +144,10 @@ the live page stays canonical. An agent that wants a document Paseo actually hol
 Claude — writes the HTML and calls `publish_artifact` with it. That path is unaffected and is the
 normal one.
 
-Capture happens in `AgentManager.recordAndDispatchTimelineItem`, not in the Claude adapter, and
-keys on the `artifact` tool-call detail rather than on a tool name. Any provider that grows a
+Capture happens in `AgentManager`, not in the Claude adapter, and keys on the `artifact` tool-call
+detail rather than on a tool name. Every path that records a timeline item runs it, hydration
+included — a session resumed after an upgrade holds completed artifact calls that no live capture
+ever saw, and a capture that failed once is retried on the next load. Any provider that grows a
 publishing tool is captured by mapping onto that detail; nothing in the manager has to change.
 The manager reports the publication, and `artifact-capture.ts` resolves the agent's workspace to
 a project and files it — so the manager needs neither the store nor the registry.
