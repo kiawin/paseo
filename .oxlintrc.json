@@ -638,6 +638,15 @@
         "paseo/no-raw-pressable": "off"
       }
     },
+    // Fork-owned raw pressables, kept apart from the upstream burn-down so syncs never conflict
+    // on it. They may only leave this list. The shell-stream copy icon sits in a 12px gutter that
+    // ToolbarButton's frame would widen.
+    {
+      "files": ["packages/app/src/components/tool-call-details.tsx"],
+      "rules": {
+        "paseo/no-raw-pressable": "off"
+      }
+    },
     {
       "files": ["**/e2e/**/fixtures.ts"],
       "rules": {
