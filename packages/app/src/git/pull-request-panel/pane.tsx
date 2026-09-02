@@ -17,7 +17,7 @@ import {
 } from "lucide-react-native";
 import type { PressableStateCallbackType } from "react-native";
 import { useTranslation } from "react-i18next";
-import { openExternalUrl } from "@/utils/open-external-url";
+import { ForgeLinkProvider, useForgeLinkOpener, useForgeMarkdownLinkPress } from "@/git/forge-link";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -136,11 +136,6 @@ const ADD_TO_CHAT_MENU_ICON = (
 const COPY_MENU_ICON = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
 const OPEN_MENU_ICON = <ThemedExternalLink size={14} uniProps={foregroundMutedColorMapping} />;
 
-function handleMarkdownLinkPress(url: string): boolean {
-  void openExternalUrl(url);
-  return false;
-}
-
 function entryHeaderPressableStyle({ hovered }: { hovered?: boolean }) {
   return [styles.entryHeaderPressable, Boolean(hovered) && styles.hoverable];
 }
@@ -185,19 +180,35 @@ function removeLoadingCheck(current: ReadonlySet<string>, checkKey: string): Rea
   return next;
 }
 
-export function PullRequestPane({
-  serverId,
-  cwd,
-  data,
-  activityLoading,
-  workspaceAttachmentScopeKey,
-}: {
+interface PullRequestPaneProps {
   serverId: string;
   cwd: string;
   data: PrPaneData;
   activityLoading: boolean;
   workspaceAttachmentScopeKey?: string;
-}) {
+  /** Workspace an in-app browser tab belongs to; null keeps forge links in the system browser. */
+  workspaceKey?: string | null;
+}
+
+/**
+ * Wraps the pane so every forge link inside it — the header, the checks, the timeline cards —
+ * reads one opener instead of each card learning which workspace hosts it.
+ */
+export function PullRequestPane({ workspaceKey = null, ...props }: PullRequestPaneProps) {
+  return (
+    <ForgeLinkProvider workspaceKey={workspaceKey}>
+      <PullRequestPaneBody {...props} />
+    </ForgeLinkProvider>
+  );
+}
+
+function PullRequestPaneBody({
+  serverId,
+  cwd,
+  data,
+  activityLoading,
+  workspaceAttachmentScopeKey,
+}: Omit<PullRequestPaneProps, "workspaceKey">) {
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
   const toolbarRefreshButtonStyle = useCallback(
@@ -226,9 +237,10 @@ export function PullRequestPane({
   const [activityState, setActivityState] = useState(getActivityState);
   const [loadingCheckKeys, setLoadingCheckKeys] = useState<ReadonlySet<string>>(() => new Set());
 
+  const openForgeLink = useForgeLinkOpener();
   const handleOpenPrUrl = useCallback(() => {
-    void openExternalUrl(data.url);
-  }, [data.url]);
+    openForgeLink(data.url);
+  }, [data.url, openForgeLink]);
 
   const refreshSupported = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.checkoutRefresh === true,
@@ -692,9 +704,10 @@ function ActivityKebab({
   const handleCopy = useCallback(() => {
     void writeMarkdownToRichClipboard(activity.body, getDefaultMarkdownClipboardEnvironment());
   }, [activity.body]);
+  const openForgeLink = useForgeLinkOpener();
   const handleOpen = useCallback(() => {
-    void openExternalUrl(activity.url);
-  }, [activity.url]);
+    openForgeLink(activity.url);
+  }, [activity.url, openForgeLink]);
 
   return (
     <View style={kebabSlotStyle(visible)} pointerEvents={visible ? "auto" : "none"}>
@@ -822,13 +835,15 @@ function SingleActivityCard({
     useRevealOnHover();
   const hasBody = activity.body.trim() !== "";
   const handleAddToChat = useCallback(() => onAddToChat(activity), [activity, onAddToChat]);
+  const openForgeLink = useForgeLinkOpener();
+  const handleMarkdownLinkPress = useForgeMarkdownLinkPress();
   const handleHeaderPress = useCallback(() => {
     if (hasBody) {
       onToggleCollapsed(entry.id, collapsed);
       return;
     }
-    void openExternalUrl(activity.url);
-  }, [activity.url, collapsed, entry.id, hasBody, onToggleCollapsed]);
+    openForgeLink(activity.url);
+  }, [activity.url, collapsed, entry.id, hasBody, onToggleCollapsed, openForgeLink]);
 
   if (!hasBody) {
     return (
@@ -941,6 +956,7 @@ function ReviewCard({
   const { review, threads } = entry;
   const { actionsVisible, handlePointerEnter, handlePointerLeave, setMenuOpen } =
     useRevealOnHover();
+  const handleMarkdownLinkPress = useForgeMarkdownLinkPress();
   const hasBody = review.body.trim() !== "";
   const handleAddToChat = useCallback(() => onAddToChat(review), [onAddToChat, review]);
   const handleHeaderPress = useCallback(() => {
@@ -1052,9 +1068,10 @@ function ThreadBlock({
     () => onAddThreadToChat(thread),
     [onAddThreadToChat, thread],
   );
+  const openForgeLink = useForgeLinkOpener();
   const handleOpenThread = useCallback(() => {
-    void openExternalUrl(thread.comments[0].url);
-  }, [thread.comments]);
+    openForgeLink(thread.comments[0].url);
+  }, [openForgeLink, thread.comments]);
 
   const [root, ...replies] = thread.comments;
 
@@ -1164,6 +1181,7 @@ function ThreadComment({
 }) {
   const { actionsVisible, handlePointerEnter, handlePointerLeave, setMenuOpen } =
     useRevealOnHover();
+  const handleMarkdownLinkPress = useForgeMarkdownLinkPress();
   return (
     <View
       style={threadCommentStyle(contentStyle)}
