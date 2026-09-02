@@ -12,6 +12,14 @@ export interface ArtifactContentState {
   html: string | null;
   /** Digest the cached html was fetched at, so a republish invalidates it. */
   contentSha256: string | null;
+  /**
+   * Digest of the load in flight, if one is.
+   *
+   * The version is what makes this more than an `isLoading` flag: a republish arriving mid-load
+   * asks for a different digest, and both "is a load already covering this?" and "is the result
+   * still wanted?" are answered by comparing against it.
+   */
+  loadingSha256: string | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -20,6 +28,7 @@ const EMPTY_LIST: ArtifactListState = { artifacts: [], isLoading: false, error: 
 const EMPTY_CONTENT: ArtifactContentState = {
   html: null,
   contentSha256: null,
+  loadingSha256: null,
   isLoading: false,
   error: null,
 };
@@ -78,9 +87,15 @@ export const useArtifactsStore = create<ArtifactsState>((set, get) => ({
     const key = contentKey(serverId, artifactId);
     const cached = get().contents[key];
     if (cached?.contentSha256 === contentSha256 && cached.html !== null) return;
-    if (cached?.isLoading) return;
+    // Only a load for this same version is worth waiting on. One for a superseded digest is
+    // about to be discarded, so returning here would leave the pane on the old document until
+    // something else invalidated it.
+    if (cached?.loadingSha256 === contentSha256) return;
     set((state) => ({
-      contents: { ...state.contents, [key]: { ...EMPTY_CONTENT, isLoading: true } },
+      contents: {
+        ...state.contents,
+        [key]: { ...EMPTY_CONTENT, loadingSha256: contentSha256, isLoading: true },
+      },
     }));
     try {
       const chunks: Uint8Array[] = [];
@@ -99,29 +114,39 @@ export const useArtifactsStore = create<ArtifactsState>((set, get) => ({
         merged.set(chunk, offset);
         offset += chunk.byteLength;
       }
-      set((state) => ({
-        contents: {
-          ...state.contents,
-          [key]: {
-            html: new TextDecoder().decode(merged),
-            contentSha256,
-            isLoading: false,
-            error: null,
+      set((state) => {
+        // Superseded while this was in flight: a newer digest owns the slot, and committing
+        // here would overwrite it with the older document.
+        if (state.contents[key]?.loadingSha256 !== contentSha256) return state;
+        return {
+          contents: {
+            ...state.contents,
+            [key]: {
+              html: new TextDecoder().decode(merged),
+              contentSha256,
+              loadingSha256: null,
+              isLoading: false,
+              error: null,
+            },
           },
-        },
-      }));
+        };
+      });
     } catch (error) {
-      set((state) => ({
-        contents: {
-          ...state.contents,
-          [key]: {
-            html: null,
-            contentSha256: null,
-            isLoading: false,
-            error: error instanceof Error ? error.message : String(error),
+      set((state) => {
+        if (state.contents[key]?.loadingSha256 !== contentSha256) return state;
+        return {
+          contents: {
+            ...state.contents,
+            [key]: {
+              html: null,
+              contentSha256: null,
+              loadingSha256: null,
+              isLoading: false,
+              error: error instanceof Error ? error.message : String(error),
+            },
           },
-        },
-      }));
+        };
+      });
     }
   },
 
