@@ -211,8 +211,76 @@ const ClaudeToolDetailPass2Schema = z.union([
       } satisfies ToolCallDetail;
     },
   ),
+  // Claude Code's Artifact tool. `action` selects among publish / list / read / comments / …,
+  // and only a publish produces a URL worth surfacing; a missing action means publish.
+  //
+  // The URL is scraped out of the result text rather than read from a field. The tool's result
+  // shape is not part of any contract Paseo can pin, and the tool is withheld entirely unless
+  // CLAUDE_CODE_ARTIFACT=1 (#3561), so there is no sample to code against. A URL match is the
+  // one thing that is stable; no match falls through to the generic unknown card.
+  toolDetailBranchByName(
+    "Artifact",
+    z
+      .object({
+        action: z.string().optional().nullable(),
+        title: z.string().optional().nullable(),
+        file_path: z.string().optional().nullable(),
+      })
+      .passthrough(),
+    z
+      .union([
+        z.string(),
+        z
+          .object({ output: z.string() })
+          .passthrough()
+          .transform((value) => value.output),
+      ])
+      .nullable(),
+    (input, output) => {
+      const action = input?.action?.trim().toLowerCase();
+      if (action && action !== "publish") return undefined;
+      const url = firstHttpUrl(output);
+      if (!url) return undefined;
+      const filePath = input?.file_path?.trim();
+      const title = input?.title?.trim() || fileTitle(filePath);
+      return {
+        type: "artifact" as const,
+        url,
+        ...(title ? { title } : {}),
+        ...(filePath ? { filePath } : {}),
+      } satisfies ToolCallDetail;
+    },
+  ),
   ClaudeSpeakToolDetailSchema,
 ]);
+
+/** First absolute http(s) URL in a tool result, or null. Trailing punctuation is not part of it. */
+function firstHttpUrl(text: string | null): string | null {
+  if (!text) return null;
+  const match = text.match(/https?:\/\/[^\s<>"')\]]+/);
+  if (!match) return null;
+  const candidate = match[0].replace(/[.,;:]+$/, "");
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Publishes often arrive with no title: the tool tells the agent to name the page in its `<title>`
+ * tag, so the parameter is usually absent, and a row named after the host ("claude.ai") tells the
+ * reader nothing when several artifacts share one origin. This is what the timeline row shows and
+ * what capture falls back to when it cannot read the file — extension stripped, whitespace
+ * collapsed. Capture prefers the document's own `<title>`; the host fallback is last.
+ */
+function fileTitle(raw: string | null | undefined): string | undefined {
+  const base = raw?.split(/[\\/]/).pop()?.trim();
+  if (!base) return undefined;
+  const stem = base.replace(/\.[^./\\]+$/, "").trim() || base;
+  return stem.replace(/\s+/g, " ") || undefined;
+}
 
 export function deriveClaudeToolDetail(
   name: string,
