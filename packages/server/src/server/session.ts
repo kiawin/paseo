@@ -1129,6 +1129,11 @@ export class Session {
     }
   }
 
+  /** Fans a publish-driven invalidation out to whichever sockets have listed artifacts. */
+  publishArtifactChanged(projectId: string): void {
+    this.artifactsSession.broadcastChanged(projectId);
+  }
+
   /** A socket going away must not strand the transfers it started, in either subsystem. */
   cancelWorkspaceTransfersForSource(source: object): void {
     this.workspaceFilesSession.cancelTransfersForSource(source);

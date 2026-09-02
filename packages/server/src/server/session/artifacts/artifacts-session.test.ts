@@ -32,10 +32,10 @@ afterEach(() => {
  * neither.
  */
 function makeSession() {
-  const emitted: SessionOutboundMessage[] = [];
+  const emitted: Array<{ message: SessionOutboundMessage; source?: object }> = [];
   const session = new ArtifactsSession(
     {
-      emit: (msg) => emitted.push(msg),
+      emit: (message, source) => emitted.push({ message, source }),
       emitBinary: async () => undefined,
       hasBinaryChannel: () => true,
     },
@@ -122,8 +122,47 @@ describe("artifact transfers and their owning socket", () => {
 
     // One transfer answered, not two: a shared id would have interleaved their frames.
     const responses = emitted.filter(
-      (message) => message.type === "artifact.entry.download.response",
+      ({ message }) => message.type === "artifact.entry.download.response",
     );
     expect(responses).toHaveLength(1);
+  });
+});
+
+describe("publish invalidation", () => {
+  test("reaches only sockets that have listed artifacts", async () => {
+    await publish("<p>x</p>");
+    const { session, emitted } = makeSession();
+    const listener = {};
+    const bystander = {};
+
+    await session.handleListRequest(
+      { type: "artifact.list.request", projectId: "prj_a", requestId: "ls-1" },
+      listener,
+    );
+    emitted.length = 0;
+
+    session.broadcastChanged("prj_a");
+
+    // A client from before this feature rejects the whole message and logs a protocol failure,
+    // so silence towards one that never asked is the compatible behaviour and the useful one.
+    expect(emitted.map((entry) => entry.source)).toEqual([listener]);
+    expect(emitted.every((entry) => entry.message.type === "artifact.changed")).toBe(true);
+    expect(emitted.some((entry) => entry.source === bystander)).toBe(false);
+  });
+
+  test("stops after that socket goes away", async () => {
+    await publish("<p>x</p>");
+    const { session, emitted } = makeSession();
+    const source = {};
+
+    await session.handleListRequest(
+      { type: "artifact.list.request", projectId: "prj_a", requestId: "ls-1" },
+      source,
+    );
+    session.cancelTransfersForSource(source);
+    emitted.length = 0;
+
+    session.broadcastChanged("prj_a");
+    expect(emitted).toEqual([]);
   });
 });

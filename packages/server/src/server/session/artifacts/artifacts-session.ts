@@ -71,6 +71,15 @@ export class ArtifactsSession {
     string,
     { flow: TransferFlowControl; source?: object }
   >();
+  /**
+   * Sockets that have asked for an artifact list.
+   *
+   * `artifact.changed` is a discriminator a client from before this feature does not know, and
+   * its outbound validator rejects the whole message and logs a protocol failure. Having listed
+   * artifacts is the proof that a client understands the message — and it is also the only
+   * client with a list worth invalidating.
+   */
+  private readonly listeningSources = new Set<object>();
 
   constructor(
     private readonly host: ArtifactsSessionHost,
@@ -83,10 +92,12 @@ export class ArtifactsSession {
   dispose(): void {
     for (const { flow } of this.activeDownloads.values()) flow.cancel();
     this.activeDownloads.clear();
+    this.listeningSources.clear();
   }
 
   async handleListRequest(request: ArtifactListRequest, source?: object): Promise<void> {
     const { projectId, requestId } = request;
+    if (source) this.listeningSources.add(source);
     try {
       const records = await this.requireStore().listForProject(projectId);
       this.host.emit(
@@ -302,6 +313,7 @@ export class ArtifactsSession {
    * on an ack that can no longer come — holding the flow, the task and the whole document.
    */
   cancelTransfersForSource(source: object): void {
+    this.listeningSources.delete(source);
     for (const [requestId, entry] of Array.from(this.activeDownloads.entries())) {
       if (entry.source === source) {
         entry.flow.cancel();
@@ -326,6 +338,16 @@ export class ArtifactsSession {
 
   emitChanged(projectId: string, source?: object): void {
     this.host.emit({ type: "artifact.changed", payload: { projectId } }, source);
+  }
+
+  /**
+   * Invalidation for a publish that no session caused — the agent runtime owns no session, so the
+   * daemon fans this out. Only sockets that have listed artifacts are told.
+   */
+  broadcastChanged(projectId: string): void {
+    for (const source of this.listeningSources) {
+      this.emitChanged(projectId, source);
+    }
   }
 
   private requireStore(): ArtifactStore {

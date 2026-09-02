@@ -930,7 +930,12 @@ export class VoiceAssistantWebSocketServer {
    */
   private subscribeToArtifactChanges(): void {
     this.artifactStore?.subscribeToChanges((projectId) => {
-      this.broadcast(wrapSessionMessage({ type: "artifact.changed", payload: { projectId } }));
+      // Not `broadcast`: the message is newer than some clients, whose strict outbound validator
+      // rejects a discriminator it does not know. The session delivers it only to sockets that
+      // have listed artifacts, which is both the compatibility proof and the audience.
+      for (const connection of new Set(this.sessions.values())) {
+        connection.session.publishArtifactChanged(projectId);
+      }
     });
   }
 
