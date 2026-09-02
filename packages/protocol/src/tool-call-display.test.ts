@@ -175,6 +175,41 @@ describe("shared tool-call display mapping", () => {
     expect(display.displayName).toBe("Speak");
   });
 
+  it("labels artifact detail rows with the document title", () => {
+    const display = buildToolCallDisplayModel({
+      name: "Artifact",
+      status: "completed",
+      error: null,
+      detail: {
+        type: "artifact",
+        url: "https://claude.ai/code/artifact/abc",
+        title: "Q3 revenue",
+      },
+    });
+
+    expect(display).toEqual({
+      displayName: "Artifact",
+      summary: "Q3 revenue",
+    });
+  });
+
+  it("falls back to the artifact url when the document has no title", () => {
+    const display = buildToolCallDisplayModel({
+      name: "Artifact",
+      status: "completed",
+      error: null,
+      detail: {
+        type: "artifact",
+        url: "https://claude.ai/code/artifact/abc",
+      },
+    });
+
+    expect(display).toEqual({
+      displayName: "Artifact",
+      summary: "https://claude.ai/code/artifact/abc",
+    });
+  });
+
   it("labels plan detail rows as Plan", () => {
     const display = buildToolCallDisplayModel({
       name: "plan",
