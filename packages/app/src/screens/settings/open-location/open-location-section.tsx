@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { SettingsSection, SettingsCard, SettingsSelect } from "@/components/settings";
 import {
   useAppSettings,
+  type ForgeLinkBehavior,
   type OpenInSidePanePreferences,
   type PullRequestOpenLocation,
   type ServiceUrlBehavior,
@@ -17,6 +18,16 @@ const SOURCES = [
 ] as const satisfies readonly (keyof OpenInSidePanePreferences)[];
 
 const SERVICE_URL_BEHAVIORS: readonly ServiceUrlBehavior[] = ["ask", "in-app", "external"];
+const FORGE_LINK_BEHAVIORS: readonly ForgeLinkBehavior[] = ["in-app", "external"];
+
+/**
+ * Both rows name the same two destinations, so they read the same labels. The agent-links row
+ * in General owns the strings because it shipped first.
+ */
+const FORGE_LINK_LABEL_KEYS: Record<ForgeLinkBehavior, string> = {
+  "in-app": "settings.general.agentLinks.options.inApp",
+  external: "settings.general.agentLinks.options.external",
+};
 
 const SERVICE_URL_LABEL_KEYS: Record<ServiceUrlBehavior, string> = {
   ask: "settings.general.serviceUrls.options.ask",
@@ -83,6 +94,27 @@ function ServiceUrlRow() {
   );
 }
 
+function ForgeLinkRow() {
+  const { t } = useTranslation();
+  const { settings, updateSettings } = useAppSettings();
+  const options = useMemo(
+    () => FORGE_LINK_BEHAVIORS.map((value) => ({ value, label: t(FORGE_LINK_LABEL_KEYS[value]) })),
+    [t],
+  );
+  const change = useCallback(
+    (forgeLinkBehavior: ForgeLinkBehavior) => void updateSettings({ forgeLinkBehavior }),
+    [updateSettings],
+  );
+  return (
+    <SettingsSelect
+      label={t("settings.layout.openInSidePane.sources.forgeLinks.label")}
+      value={settings.forgeLinkBehavior}
+      options={options}
+      onValueChange={change}
+    />
+  );
+}
+
 /** Where things open: files, diffs, subagents, pull requests, and script URLs. Desktop only. */
 export function OpenLocationSection() {
   const { t } = useTranslation();
@@ -116,6 +148,7 @@ export function OpenLocationSection() {
           allowExplorer
           onDestinationChange={handleDestinationChange}
         />
+        <ForgeLinkRow />
         <ServiceUrlRow />
       </SettingsCard>
     </SettingsSection>
