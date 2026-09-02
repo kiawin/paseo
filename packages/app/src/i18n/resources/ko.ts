@@ -410,12 +410,12 @@ export const ko: TranslationResources = {
         removeWorktreeInProgress: "삭제 중...",
         removeWorktreeTitle: "워크트리를 삭제할까요?",
         removeWorktreeMessage:
-          "{{path}}와 그 안의 모든 것을 삭제합니다. node_modules와 .env 같은 무시된 파일도 포함됩니다. 커밋하지 않은 변경이 있으면 git이 거부합니다.",
+          "{{path}}와 그 안의 모든 내용을 삭제합니다. node_modules와 .env처럼 Git이 무시하는 파일도 포함됩니다. 커밋하지 않은 변경이 있으면 Git이 삭제를 거부합니다.",
         removeWorktreeConfirm: "삭제",
         removeWorktreeDone: "워크트리를 삭제했습니다",
-        removeWorktreeRefused: "git이 워크트리를 삭제하지 않았습니다",
+        removeWorktreeRefused: "Git이 워크트리 삭제를 거부했습니다",
         removeWorktreeTerminal:
-          "git이 이 디렉터리를 더 이상 인식하지 못해 Paseo가 삭제할 수 없습니다. 직접 삭제하세요:",
+          "Git이 이 디렉터리를 더 이상 인식하지 못해 Paseo가 삭제할 수 없습니다. 수동으로 삭제하세요:",
         unavailableTitle: "워크스페이스를 사용할 수 없습니다",
         checkFailedTitle: "워크스페이스를 확인하지 못했습니다",
       },
@@ -2642,7 +2642,7 @@ export const ko: TranslationResources = {
         modes: {
           managed: "관리됨",
           managedHint: "Paseo 전용 디렉터리",
-          sibling: "형제",
+          sibling: "같은 계층",
           siblingHint: "저장소 옆",
           nested: "중첩",
           nestedHint: "저장소 안",

@@ -413,12 +413,12 @@ export const ja: TranslationResources = {
         removeWorktreeInProgress: "削除中...",
         removeWorktreeTitle: "ワークツリーを削除しますか？",
         removeWorktreeMessage:
-          "{{path}} とその中身をすべて削除します。node_modules や .env などの無視されたファイルも含みます。未コミットの変更がある場合、git は拒否します。",
+          "{{path}} とその中身をすべて削除します。node_modules や .env など、Git が無視するファイルも含まれます。未コミットの変更がある場合、Git は削除を拒否します。",
         removeWorktreeConfirm: "削除",
         removeWorktreeDone: "ワークツリーを削除しました",
-        removeWorktreeRefused: "git がワークツリーを削除しませんでした",
+        removeWorktreeRefused: "Git がワークツリーの削除を拒否しました",
         removeWorktreeTerminal:
-          "git がこのディレクトリを認識しなくなったため、Paseo からは削除できません。手動で削除してください:",
+          "Git がこのディレクトリを認識しなくなったため、Paseo からは削除できません。手動で削除してください：",
         unavailableTitle: "ワークスペースを利用できません",
         checkFailedTitle: "ワークスペースを確認できませんでした",
       },
@@ -2650,9 +2650,9 @@ export const ja: TranslationResources = {
         noMigrationNote:
           "変更しても既存のワークツリーは移動しません。そのまま残り、新しいものだけが新しい場所を使います。",
         modes: {
-          managed: "マネージド",
+          managed: "管理",
           managedHint: "Paseo 専用のディレクトリ",
-          sibling: "兄弟",
+          sibling: "同じ階層",
           siblingHint: "リポジトリの隣",
           nested: "ネスト",
           nestedHint: "リポジトリの内側",

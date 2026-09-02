@@ -413,12 +413,12 @@ export const fr: TranslationResources = {
         removeWorktreeInProgress: "Suppression...",
         removeWorktreeTitle: "Supprimer le worktree ?",
         removeWorktreeMessage:
-          "Supprime {{path}} et tout son contenu, y compris les fichiers ignorés comme node_modules et .env. Git refuse s'il y a des modifications non validées.",
+          "Supprime {{path}} et tout son contenu, y compris les fichiers ignorés comme node_modules et .env. Git refuse de le supprimer si des modifications ne sont pas validées.",
         removeWorktreeConfirm: "Supprimer",
         removeWorktreeDone: "Worktree supprimé",
-        removeWorktreeRefused: "Git n'a pas supprimé le worktree",
+        removeWorktreeRefused: "Git a refusé de supprimer le worktree",
         removeWorktreeTerminal:
-          "Git ne reconnaît plus ce répertoire, Paseo ne peut donc pas le supprimer. Supprimez-le vous-même :",
+          "Git ne reconnaît plus ce répertoire, Paseo ne peut donc pas le supprimer. Supprimez-le manuellement :",
         unavailableTitle: "Espace de travail indisponible",
         checkFailedTitle: "Impossible de vérifier l'espace de travail",
       },
@@ -2690,8 +2690,8 @@ export const fr: TranslationResources = {
           "Ce changement ne déplace pas les worktrees existants. Ils restent en place ; seuls les nouveaux utilisent le nouvel emplacement.",
         modes: {
           managed: "Géré",
-          managedHint: "Le répertoire propre à Paseo",
-          sibling: "Voisin",
+          managedHint: "Le répertoire privé de Paseo",
+          sibling: "Adjacent",
           siblingHint: "À côté du dépôt",
           nested: "Imbriqué",
           nestedHint: "Dans le dépôt",

@@ -412,12 +412,12 @@ export const ru: TranslationResources = {
         removeWorktreeInProgress: "Удаление...",
         removeWorktreeTitle: "Удалить worktree?",
         removeWorktreeMessage:
-          "Удаляет {{path}} и всё его содержимое, включая игнорируемые файлы вроде node_modules и .env. Git откажет, если есть незакоммиченные изменения.",
+          "Удаляет {{path}} и всё содержимое каталога, включая игнорируемые файлы вроде node_modules и .env. Git откажется удалять каталог, если в нём есть незакоммиченные изменения.",
         removeWorktreeConfirm: "Удалить",
         removeWorktreeDone: "Worktree удалён",
-        removeWorktreeRefused: "Git не удалил worktree",
+        removeWorktreeRefused: "Git отказался удалить каталог worktree",
         removeWorktreeTerminal:
-          "Git больше не распознаёт этот каталог, поэтому Paseo не может его удалить. Удалите его сами:",
+          "Git больше не распознаёт этот каталог, поэтому Paseo не может его удалить. Удалите каталог вручную:",
         unavailableTitle: "Рабочая область недоступна",
         checkFailedTitle: "Не удалось проверить рабочее пространство",
       },
@@ -2665,12 +2665,12 @@ export const ru: TranslationResources = {
       },
       worktreeLocation: {
         title: "Расположение worktree",
-        info: "Где Paseo создаёт worktree для этого проекта",
+        info: "Где Paseo создаёт каталоги worktree для этого проекта",
         label: "Расположение",
-        description: "Где создаются новые worktree.",
+        description: "Где создаются новые каталоги worktree.",
         accessibilityLabel: "Расположение worktree, сейчас {{value}}",
         noMigrationNote:
-          "Изменение не перемещает существующие worktree. Они остаются на месте; новое расположение используют только новые.",
+          "Изменение настройки не перемещает существующие каталоги worktree. Они остаются на месте; новое расположение используется только для новых каталогов.",
         modes: {
           managed: "Управляемое",
           managedHint: "Собственный каталог Paseo",
@@ -2678,14 +2678,14 @@ export const ru: TranslationResources = {
           siblingHint: "Рядом с репозиторием",
           nested: "Вложенное",
           nestedHint: "Внутри репозитория",
-          custom: "Своё",
+          custom: "Пользовательское",
           customHint: "Путь на ваш выбор",
         },
         customPathLabel: "Путь",
         customPathPlaceholder: "~/code/worktrees",
         customPathAccessibility: "Свой каталог для worktree",
         externalRemovalNote:
-          "Архивирование рабочего пространства оставляет его worktree на диске. Удалите его сами через git worktree remove.",
+          "После архивирования рабочего пространства его каталог worktree остаётся на диске. Удалите каталог вручную командой git worktree remove.",
         saveFailed: "Не удалось изменить расположение worktree",
       },
       worktree: {

@@ -409,12 +409,12 @@ export const ar: TranslationResources = {
         removeWorktreeInProgress: "جارٍ الإزالة...",
         removeWorktreeTitle: "إزالة شجرة العمل؟",
         removeWorktreeMessage:
-          "يحذف {{path}} وكل ما بداخله، بما في ذلك الملفات المتجاهَلة مثل node_modules و .env. سيرفض git إذا كانت هناك تغييرات غير مُلتزَمة.",
+          "يحذف \u2066{{path}}\u2069 وكل ما بداخله، بما في ذلك الملفات المتجاهَلة مثل \u2066node_modules\u2069 و \u2066.env\u2069. سيرفض \u2066Git\u2069 الإزالة إذا كانت هناك تغييرات غير مُلتزَمة.",
         removeWorktreeConfirm: "إزالة",
         removeWorktreeDone: "تمت إزالة شجرة العمل",
-        removeWorktreeRefused: "لم يُزل git شجرة العمل",
+        removeWorktreeRefused: "رفض \u2066Git\u2069 إزالة شجرة العمل",
         removeWorktreeTerminal:
-          "لم يعد git يتعرف على هذا الدليل، لذا لا يستطيع Paseo إزالته. أزله بنفسك:",
+          "لم يعد \u2066Git\u2069 يتعرف على هذا الدليل، لذا لا يستطيع \u2066Paseo\u2069 إزالته. أزله يدويًا:",
         unavailableTitle: "مساحة العمل غير متاحة",
         checkFailedTitle: "تعذر التحقق من مساحة العمل",
       },
@@ -2618,7 +2618,7 @@ export const ar: TranslationResources = {
       },
       worktreeLocation: {
         title: "موقع شجرة العمل",
-        info: "أين ينشئ Paseo أشجار العمل لهذا المشروع",
+        info: "أين ينشئ \u2066Paseo\u2069 أشجار العمل لهذا المشروع",
         label: "الموقع",
         description: "أين تُنشأ أشجار العمل الجديدة.",
         accessibilityLabel: "موقع شجرة العمل، حاليًا {{value}}",
@@ -2626,7 +2626,7 @@ export const ar: TranslationResources = {
           "تغيير هذا لا ينقل أشجار العمل الحالية. تبقى في مكانها؛ الجديدة فقط تستخدم الموقع الجديد.",
         modes: {
           managed: "مُدار",
-          managedHint: "دليل Paseo الخاص",
+          managedHint: "دليل \u2066Paseo\u2069 الخاص",
           sibling: "مجاور",
           siblingHint: "بجانب المستودع",
           nested: "متداخل",
@@ -2638,7 +2638,7 @@ export const ar: TranslationResources = {
         customPathPlaceholder: "~/code/worktrees",
         customPathAccessibility: "دليل شجرة عمل مخصص",
         externalRemovalNote:
-          "أرشفة مساحة العمل تترك شجرة العمل على القرص. أزلها بنفسك عبر git worktree remove.",
+          "تترك أرشفة مساحة العمل شجرة العمل على القرص. أزلها يدويًا باستخدام \u2066git worktree remove\u2069.",
         saveFailed: "تعذر تغيير موقع شجرة العمل",
       },
       worktree: {
