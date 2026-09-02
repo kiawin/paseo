@@ -131,9 +131,14 @@ test("an artifact can be deleted from its context menu", async ({ page, withWork
   const menu = page.getByTestId(`artifact-menu-${OWNED_ID}`);
   await expect(menu).toBeVisible();
 
-  const dialog = page.waitForEvent("dialog");
+  const dialog = new Promise<void>((resolve) => {
+    page.once("dialog", async (event) => {
+      await event.accept();
+      resolve();
+    });
+  });
   await menu.getByTestId(`artifact-delete-${OWNED_ID}`).click();
-  await (await dialog).accept();
+  await dialog;
 
   await expect(row).toHaveCount(0);
 });

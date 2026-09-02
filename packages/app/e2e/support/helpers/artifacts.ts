@@ -217,6 +217,15 @@ export async function stubArtifactRpcs(
  */
 export async function openArtifactsPanel(page: Page): Promise<void> {
   await ensureExplorerSidebar(page);
+  const artifactTab = page
+    .getByTestId("explorer-sidebar-tab-artifacts")
+    .filter({ visible: true })
+    .first();
+  if (await artifactTab.isVisible().catch(() => false)) {
+    await artifactTab.click();
+    return;
+  }
+
   const rail = page.getByTestId("explorer-sidebar-tab-rail").first();
   const box = await rail.boundingBox();
   if (!box) throw new Error("Explorer tab rail has no bounding box");

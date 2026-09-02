@@ -107,6 +107,7 @@ export async function openWorkspacePanelFromExplorerMenu(
     "New tab",
     "Changes",
     "Files",
+    "Artifacts",
     "Other review",
     "Other review summary",
     "Review",
