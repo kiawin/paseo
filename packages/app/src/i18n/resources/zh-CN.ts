@@ -2583,7 +2583,7 @@ export const zhCN: TranslationResources = {
         accessibilityLabel: "worktree 位置，当前为 {{value}}",
         noMigrationNote: "更改此项不会移动现有 worktree。它们保持原位，只有新建的才使用新位置。",
         modes: {
-          managed: "托管",
+          managed: "受管",
           managedHint: "Paseo 自己的目录",
           sibling: "同级",
           siblingHint: "仓库旁边",
