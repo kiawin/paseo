@@ -312,6 +312,25 @@ async function emitTimelineResponse(options?: {
   return response;
 }
 
+const ARTIFACT_ROWS: AgentTimelineRow[] = [
+  {
+    seq: 1,
+    timestamp: "2026-05-02T00:00:00.000Z",
+    item: {
+      type: "tool_call",
+      callId: "call-artifact",
+      name: "Artifact",
+      status: "completed",
+      error: null,
+      detail: {
+        type: "artifact",
+        url: "https://example.com/artifacts/abc",
+        title: "Release plan",
+      },
+    },
+  },
+];
+
 describe("wire compatibility", () => {
   test("sends project updates only to clients that declare support", async () => {
     const project = createPersistedProjectRecord({
@@ -404,6 +423,37 @@ describe("wire compatibility", () => {
         mode: "changes",
         headSeq: 2,
         removals: [{ id: "project-ordered", seq: 2 }],
+      },
+    });
+  });
+
+  test("downgrades artifact tool details for clients that do not declare the capability", async () => {
+    const response = await emitTimelineResponse({ rows: ARTIFACT_ROWS });
+
+    const parsed = FetchAgentTimelineResponseMessageSchema.parse(response);
+    expect(parsed.payload.entries[0]?.item).toMatchObject({
+      type: "tool_call",
+      detail: {
+        type: "plain_text",
+        label: "Release plan",
+        text: "https://example.com/artifacts/abc",
+      },
+    });
+  });
+
+  test("preserves artifact tool details for clients that declare the capability", async () => {
+    const response = await emitTimelineResponse({
+      rows: ARTIFACT_ROWS,
+      clientCapabilities: { [CLIENT_CAPS.artifactToolDetail]: true },
+    });
+
+    const parsed = FetchAgentTimelineResponseMessageSchema.parse(response);
+    expect(parsed.payload.entries[0]?.item).toMatchObject({
+      type: "tool_call",
+      detail: {
+        type: "artifact",
+        url: "https://example.com/artifacts/abc",
+        title: "Release plan",
       },
     });
   });

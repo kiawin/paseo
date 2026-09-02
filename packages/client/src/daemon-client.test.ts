@@ -743,6 +743,7 @@ test("advertises client capabilities in hello", async () => {
       reasoning_merge_enum: true,
       terminal_reflowable_snapshot: true,
       timeline_notifications: true,
+      artifact_tool_detail: true,
       plugin_timeline_items: true,
       workspace_setup_blocked: true,
       browser_host: {
