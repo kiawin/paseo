@@ -640,6 +640,18 @@ const ToolCallDetailPayloadSchema: z.ZodType<ToolCallDetail, unknown> = z.discri
       text: z.string(),
     }),
     z.object({
+      type: z.literal("artifact"),
+      url: z.string(),
+      title: z.string().optional(),
+      /**
+       * Local path the publishing tool was handed, when it reported one. Capture reads that file
+       * for the document's own `<title>` and for the copy Paseo keeps. It rides on the row rather
+       * than living in adapter memory because capture also runs from history replay, which has
+       * nothing but the row.
+       */
+      filePath: z.string().optional(),
+    }),
+    z.object({
       type: z.literal("unknown"),
       input: UnknownValueSchema,
       output: UnknownValueSchema,
@@ -2914,6 +2926,95 @@ export const FileTransferCancelSchema = z.object({
   requestId: z.string(),
 });
 
+// ---------------------------------------------------------------------------
+// Artifacts — project-scoped HTML documents an agent published.
+// ---------------------------------------------------------------------------
+
+export const ArtifactRecordPayloadSchema = z.object({
+  artifactId: z.string(),
+  // Project identity. Artifacts are keyed by project, never by cwd, so every workspace and
+  // worktree in a project sees one list.
+  projectId: z.string(),
+  title: z.string(),
+  customTitle: z.string().optional(),
+  mimeType: z.string(),
+  /**
+   * Null on both when the daemon holds no bytes: the artifact is a title pointing at
+   * `externalUrl`, which is where it actually lives. `contentSha256 === null` is what a client
+   * checks — it decides whether the row opens a preview or opens the link. When set, the digest
+   * also keys a fetch cache, so a republish invalidates it without a refetch.
+   */
+  size: z.number().int().nonnegative().nullable(),
+  contentSha256: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  pinned: z.boolean(),
+  // Companion link to the same document published elsewhere; `http:` / `https:` only, and
+  // opened externally rather than loaded into the preview.
+  externalUrl: z.string().nullable(),
+  origin: z.object({
+    agentId: z.string().nullable(),
+    workspaceId: z.string().nullable(),
+    provider: z.string().nullable(),
+  }),
+});
+
+export const ArtifactListRequestSchema = z.object({
+  type: z.literal("artifact.list.request"),
+  projectId: z.string(),
+  requestId: z.string(),
+});
+
+export const ArtifactSearchRequestSchema = z.object({
+  type: z.literal("artifact.search.request"),
+  projectId: z.string(),
+  query: z.string().max(200),
+  requestId: z.string(),
+});
+
+// Metadata only. The document itself travels over the binary channel, never inline.
+export const ArtifactEntryDownloadRequestSchema = z.object({
+  type: z.literal("artifact.entry.download.request"),
+  artifactId: z.string(),
+  requestId: z.string(),
+});
+
+export const ArtifactDeleteRequestSchema = z.object({
+  type: z.literal("artifact.delete.request"),
+  artifactId: z.string(),
+  requestId: z.string(),
+});
+
+export const ArtifactPinSetRequestSchema = z.object({
+  type: z.literal("artifact.pin.set.request"),
+  artifactId: z.string(),
+  pinned: z.boolean(),
+  requestId: z.string(),
+});
+
+export const ArtifactRenameRequestSchema = z.object({
+  type: z.literal("artifact.rename.request"),
+  artifactId: z.string(),
+  /** Null restores the agent-provided title. */
+  title: z.string().nullable(),
+  requestId: z.string(),
+});
+
+// Creates an artifact from a client, so a person can copy one daemon's artifacts to another.
+// The document travels inline: it is capped at the store's 10 MiB limit, well under the relay's
+// message ceiling, and the binary upload channel is bound to workspace paths.
+export const ArtifactPublishRequestSchema = z.object({
+  type: z.literal("artifact.publish.request"),
+  projectId: z.string(),
+  title: z.string(),
+  customTitle: z.string().optional(),
+  /** Null publishes a link-only row; `externalUrl` is then required. */
+  html: z.string().nullable(),
+  externalUrl: z.string().nullable(),
+  pinned: z.boolean().optional(),
+  requestId: z.string(),
+});
+
 export const ProjectIconRequestSchema = z.object({
   type: z.literal("project_icon_request"),
   cwd: z.string(),
@@ -3237,6 +3338,7 @@ export const SessionEventSubscriptionSchema = z.enum([
   "activity_log",
   "hub.execution.agent.update",
   "hub.execution.agent.stream",
+  "artifact.changed",
 ]);
 export type SessionEventSubscription = z.infer<typeof SessionEventSubscriptionSchema>;
 export const SessionEventsSetSubscriptionRequestSchema = z.object({
@@ -3443,6 +3545,13 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   FileEntryRenameRequestSchema,
   FileEntryDuplicateRequestSchema,
   FileEntryDeleteRequestSchema,
+  ArtifactListRequestSchema,
+  ArtifactSearchRequestSchema,
+  ArtifactEntryDownloadRequestSchema,
+  ArtifactDeleteRequestSchema,
+  ArtifactPinSetRequestSchema,
+  ArtifactRenameRequestSchema,
+  ArtifactPublishRequestSchema,
   FileEntryDownloadRequestSchema,
   FileEntryUploadRequestSchema,
   FileTransferAckSchema,
@@ -3692,6 +3801,16 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceTerminals: z.boolean().optional(),
         // COMPAT(workspaceFileTransfer): added in v0.6.2, remove gate after 2027-08-24.
         workspaceFileTransfer: z.boolean().optional(),
+        // COMPAT(artifacts): added in v0.7.x, remove gate after 2028-03-01.
+        artifacts: z.boolean().optional(),
+        // COMPAT(artifactSearch): added in v0.11.x, remove after 2028-04-09.
+        artifactSearch: z.boolean().optional(),
+        // COMPAT(artifactInvalidation): added in v0.11.x, remove after 2028-04-09.
+        artifactInvalidation: z.boolean().optional(),
+        // COMPAT(artifactRename): added in v0.11.x, remove after 2028-04-09.
+        artifactRename: z.boolean().optional(),
+        // COMPAT(artifactPublish): added in v0.11.x, remove after 2028-04-17.
+        artifactPublish: z.boolean().optional(),
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the
         // feature gate and checkoutGithubSetAutoMerge fallback after 2027-01-17
         // once the supported daemon floor is >= v0.2.0.
@@ -3976,6 +4095,10 @@ export const KnownStatusPayloadSchema = z.discriminatedUnion("status", [
 
 export type KnownStatusPayload = z.infer<typeof KnownStatusPayloadSchema>;
 
+// COMPAT(artifactMessage): superseded by the artifact.* RPCs, remove after 2027-09-01.
+// Never had a producer in this repo, but the protocol forbids narrowing, so the parser stays
+// until we can establish no shipped peer emits it. The whole document inline in a JSON message
+// is the shape the binary transfer channel exists to avoid — do not extend this.
 export const ArtifactMessageSchema = z.object({
   type: z.literal("artifact"),
   payload: z.object({
@@ -6210,6 +6333,97 @@ export const FileEntryDownloadResponseSchema = z.object({
   }),
 });
 
+export const ArtifactListResponseSchema = z.object({
+  type: z.literal("artifact.list.response"),
+  payload: z.object({
+    projectId: z.string(),
+    artifacts: z.array(ArtifactRecordPayloadSchema),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const ArtifactSearchMatchSchema = z.object({
+  artifactId: z.string(),
+  snippet: z.string().nullable(),
+});
+
+export const ArtifactSearchResponseSchema = z.object({
+  type: z.literal("artifact.search.response"),
+  payload: z.object({
+    projectId: z.string(),
+    matches: z.array(ArtifactSearchMatchSchema),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+// Accepting the transfer; the bytes follow over the binary channel, paced by fs.transfer.ack.
+export const ArtifactEntryDownloadResponseSchema = z.object({
+  type: z.literal("artifact.entry.download.response"),
+  payload: z.object({
+    artifactId: z.string(),
+    title: z.string().nullable(),
+    mimeType: z.string().nullable(),
+    size: z.number().int().nonnegative().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const ArtifactDeleteResponseSchema = z.object({
+  type: z.literal("artifact.delete.response"),
+  payload: z.object({
+    artifactId: z.string(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const ArtifactPinSetResponseSchema = z.object({
+  type: z.literal("artifact.pin.set.response"),
+  payload: z.object({
+    artifact: ArtifactRecordPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const ArtifactRenameResponseSchema = z.object({
+  type: z.literal("artifact.rename.response"),
+  payload: z.object({
+    artifact: ArtifactRecordPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const ArtifactPublishResponseSchema = z.object({
+  type: z.literal("artifact.publish.response"),
+  payload: z.object({
+    artifact: ArtifactRecordPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+// One-way list invalidation. No response and no requestId: it is a push, not half of an RPC
+// pair, so a client re-issues artifact.list.request when it sees one for a project it shows.
+export const ArtifactChangedMessageSchema = z.object({
+  type: z.literal("artifact.changed"),
+  payload: z.object({
+    subscriptionId: z.string().optional(),
+    projectId: z.string(),
+  }),
+});
+
 export const FileEntryUploadResponseSchema = z.object({
   type: z.literal("fs.entry.upload.response"),
   payload: z.object({
@@ -7194,6 +7408,14 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   FileEntryRenameResponseSchema,
   FileEntryDuplicateResponseSchema,
   FileEntryDeleteResponseSchema,
+  ArtifactListResponseSchema,
+  ArtifactSearchResponseSchema,
+  ArtifactEntryDownloadResponseSchema,
+  ArtifactDeleteResponseSchema,
+  ArtifactPinSetResponseSchema,
+  ArtifactRenameResponseSchema,
+  ArtifactPublishResponseSchema,
+  ArtifactChangedMessageSchema,
   FileEntryDownloadResponseSchema,
   FileEntryUploadResponseSchema,
   FileTransferAckSchema,
@@ -7645,6 +7867,23 @@ export type FileEntryDuplicateRequest = z.infer<typeof FileEntryDuplicateRequest
 export type FileEntryDuplicateResponse = z.infer<typeof FileEntryDuplicateResponseSchema>;
 export type FileEntryDeleteRequest = z.infer<typeof FileEntryDeleteRequestSchema>;
 export type FileEntryDeleteResponse = z.infer<typeof FileEntryDeleteResponseSchema>;
+export type ArtifactRecordPayload = z.infer<typeof ArtifactRecordPayloadSchema>;
+export type ArtifactListRequest = z.infer<typeof ArtifactListRequestSchema>;
+export type ArtifactListResponse = z.infer<typeof ArtifactListResponseSchema>;
+export type ArtifactSearchMatch = z.infer<typeof ArtifactSearchMatchSchema>;
+export type ArtifactSearchRequest = z.infer<typeof ArtifactSearchRequestSchema>;
+export type ArtifactSearchResponse = z.infer<typeof ArtifactSearchResponseSchema>;
+export type ArtifactEntryDownloadRequest = z.infer<typeof ArtifactEntryDownloadRequestSchema>;
+export type ArtifactEntryDownloadResponse = z.infer<typeof ArtifactEntryDownloadResponseSchema>;
+export type ArtifactDeleteRequest = z.infer<typeof ArtifactDeleteRequestSchema>;
+export type ArtifactDeleteResponse = z.infer<typeof ArtifactDeleteResponseSchema>;
+export type ArtifactPinSetRequest = z.infer<typeof ArtifactPinSetRequestSchema>;
+export type ArtifactPinSetResponse = z.infer<typeof ArtifactPinSetResponseSchema>;
+export type ArtifactRenameRequest = z.infer<typeof ArtifactRenameRequestSchema>;
+export type ArtifactRenameResponse = z.infer<typeof ArtifactRenameResponseSchema>;
+export type ArtifactPublishRequest = z.infer<typeof ArtifactPublishRequestSchema>;
+export type ArtifactPublishResponse = z.infer<typeof ArtifactPublishResponseSchema>;
+export type ArtifactChangedMessage = z.infer<typeof ArtifactChangedMessageSchema>;
 export type FileEntryDownloadRequest = z.infer<typeof FileEntryDownloadRequestSchema>;
 export type FileEntryDownloadResponse = z.infer<typeof FileEntryDownloadResponseSchema>;
 export type FileEntryUploadRequest = z.infer<typeof FileEntryUploadRequestSchema>;
@@ -7752,6 +7991,7 @@ export const WSHelloMessageSchema = z.object({
       [CLIENT_CAPS.providerSnapshotReferences]: z.boolean().optional(),
       [CLIENT_CAPS.timelineReplacementInvalidation]: z.boolean().optional(),
       [CLIENT_CAPS.timelineNotifications]: z.boolean().optional(),
+      [CLIENT_CAPS.artifactToolDetail]: z.boolean().optional(),
       [CLIENT_CAPS.browserHost]: BrowserAutomationHostCapabilitySchema.optional(),
     })
     .passthrough()
