@@ -151,8 +151,15 @@ function getCloseButtonTestId(tab: WorkspaceTabDescriptor): string {
   if (tab.target.kind === "working_diff" || tab.target.kind === "changes_tree") {
     return `workspace-working-diff-close-${encodeFilePathForPathSegment(buildDeterministicWorkspaceTabId(tab.target))}`;
   }
-  if (tab.target.kind === "files" || tab.target.kind === "pull_request") {
+  if (
+    tab.target.kind === "files" ||
+    tab.target.kind === "pull_request" ||
+    tab.target.kind === "artifacts"
+  ) {
     return `workspace-${tab.target.kind}-close`;
+  }
+  if (tab.target.kind === "artifact") {
+    return `workspace-artifact-close-${tab.target.artifactId}`;
   }
   if (tab.target.kind === "plugin") {
     return `workspace-plugin-close-${encodeFilePathForPathSegment(buildDeterministicWorkspaceTabId(tab.target))}`;

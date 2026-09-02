@@ -130,6 +130,8 @@ import type { LocalSpeechProviderConfig } from "./speech/providers/local/config.
 import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
+import { ArtifactStore } from "./artifact-store.js";
+import { createExternalArtifactRecorder } from "./artifact-capture.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
@@ -565,6 +567,27 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
   return initialConfig;
 }
 
+/**
+ * Removes a project's artifacts when the project goes.
+ *
+ * Wired twice, on purpose, and idempotent both times. Before the commit the project record is
+ * the tombstone: a crash partway through leaves it in place, so the user's next delete retries
+ * the cascade instead of orphaning what it did not reach. After the commit sweeps anything a
+ * publish landed while the first pass was running.
+ */
+function subscribeArtifactCascade(
+  projectRegistry: FileBackedProjectRegistry,
+  artifactStore: ArtifactStore,
+): void {
+  projectRegistry.subscribeToPendingRemoval?.(async (projectId) => {
+    await artifactStore.deleteProject(projectId);
+  });
+  projectRegistry.subscribeToMutations?.(async (mutation) => {
+    if (mutation.kind !== "remove") return;
+    await artifactStore.deleteProject(mutation.projectId);
+  });
+}
+
 export async function createPaseoDaemon(
   config: PaseoDaemonConfig,
   rootLogger: Logger,
@@ -869,6 +892,7 @@ export async function createPaseoDaemon(
     paseoHome: config.paseoHome,
     workspaceRegistry,
   });
+  const artifactStore = new ArtifactStore(path.join(config.paseoHome, "artifacts"), logger);
   const github = createGitHubService();
   const workspaceGitService = new WorkspaceGitServiceImpl({
     logger,
@@ -925,6 +949,11 @@ export async function createPaseoDaemon(
     providerDefinitions: initialAgentManagerState.providerDefinitions,
     registry: agentStorage,
     appendSystemPrompt: config.appendSystemPrompt,
+    onExternalArtifactPublished: createExternalArtifactRecorder({
+      artifactStore,
+      workspaceRegistry,
+      logger,
+    }),
     onWorkspaceStateMayHaveChanged: ({ cwd }) => {
       workspaceGitService.onWorkspaceStateMayHaveChanged(cwd);
     },
@@ -958,6 +987,8 @@ export async function createPaseoDaemon(
     logger,
   });
   await workspaceLabelService.initialize();
+  await artifactStore.initialize();
+  subscribeArtifactCascade(projectRegistry, artifactStore);
   logger.info({ elapsed: elapsed() }, "Workspace registries bootstrapped");
   const teardownArchivedWorkspaceRuntime = (workspaceId: string): void => {
     scriptRuntimeStore.removeForWorkspace(workspaceId);
@@ -1417,6 +1448,7 @@ export async function createPaseoDaemon(
       (runtime.callerAgentId ? agentManager.getPaseoToolPolicy(runtime.callerAgentId) : undefined),
     paseoHome: config.paseoHome,
     worktreesRoot: config.worktreesRoot,
+    artifactStore,
     callerAgentId: runtime.callerAgentId,
     enableVoiceTools: runtime.enableVoiceTools,
     voiceOnly: runtime.voiceOnly,
@@ -1717,6 +1749,7 @@ export async function createPaseoDaemon(
               pluginRuntime,
               orchestrationSkills,
               workspaceLabelService,
+              artifactStore,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
