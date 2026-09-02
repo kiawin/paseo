@@ -55,6 +55,15 @@ class StubSession implements AgentSession {
 
   async interrupt(): Promise<void> {}
 
+  /** Replayed by `hydrateTimelineFromProvider`; set by a test before it forces a hydration. */
+  history: AgentTimelineItem[] = [];
+
+  async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+    for (const item of this.history) {
+      yield { type: "timeline", item, provider: this.provider };
+    }
+  }
+
   emit(item: AgentTimelineItem): void {
     for (const callback of this.subscribers) {
       callback({ type: "timeline", item, provider: this.provider });
@@ -193,5 +202,19 @@ describe("external artifact capture from the timeline", () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(published).toEqual([]);
+  });
+
+  test("files an artifact found in provider history, not only a live tool call", async () => {
+    const { manager, agent, client, published } = await startAgent();
+    // The case this covers: a session resumed after an upgrade holds a completed Artifact call
+    // that no live capture ever saw. Hydration is the only chance to file it.
+    if (client.session) client.session.history = [artifactToolCall()];
+
+    await manager.hydrateTimelineFromProvider(agent.id, { force: true });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(published).toMatchObject([
+      { agentId: agent.id, workspaceId: WORKSPACE_ID, callId: "toolu_1", url: URL_TEXT },
+    ]);
   });
 });
