@@ -1,9 +1,15 @@
 import { memo, useMemo, useState } from "react";
-import { EnrichedMarkdownText, type LinkPressEvent } from "react-native-enriched-markdown";
+import {
+  EnrichedMarkdownText,
+  type LinkLongPressEvent,
+  type LinkPressEvent,
+} from "react-native-enriched-markdown";
 import { withUnistyles } from "react-native-unistyles";
 import {
+  classifyAssistantFileLink,
   useAssistantFileLinkActions,
   useAssistantFileLinkEnvironment,
+  useAssistantLinkContextMenu,
 } from "@/assistant-file-links";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
@@ -75,10 +81,17 @@ const MarkdownPart = memo(function MarkdownPart({
     client,
   });
   const [image, setImage] = useState<ImageLightboxSource | null>(null);
+  const openLinkMenu = useAssistantLinkContextMenu();
   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
     const source = linkSource(url, sourceType);
     if (onLinkPress && !actions.canResolveFile(source)) onLinkPress(url);
     else actions.open(source, "preferred");
+  });
+  const longPressLink = useStableEvent((event: LinkLongPressEvent) => {
+    if (!openLinkMenu || classifyAssistantFileLink(event.url)?.kind !== "external") {
+      return;
+    }
+    openLinkMenu(event.url, event);
   });
   const pressImage = useStableEvent(({ url }: { url: string }) => {
     if (url !== PENDING_MARKDOWN_IMAGE) setImage({ type: "uri", uri: url });
@@ -111,6 +124,7 @@ const MarkdownPart = memo(function MarkdownPart({
               // JS reveal owns pacing; native fade animation is a separate experiment.
               streamingAnimation={false}
               onLinkPress={pressLink}
+              onLinkLongPress={longPressLink}
               onImagePress={pressImage}
               renderers={isWeb ? WEB_RENDERERS : undefined}
             />
