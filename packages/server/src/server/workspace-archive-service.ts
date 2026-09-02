@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import type { Logger } from "pino";
 
@@ -22,6 +22,7 @@ import type {
   WorkspaceRegistry,
 } from "./workspace-registry.js";
 import { createRealpathAwarePathMatcher } from "../utils/path.js";
+import { KeyedLock, pathLockKey } from "../utils/keyed-lock.js";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
 
 export type ActiveWorkspaceRef = Pick<
@@ -287,20 +288,26 @@ async function resolveWorkspaceBackingDirectory(
   dependencies: Pick<ArchiveDependencies, "paseoHome" | "paseoWorktreesBaseRoot">,
 ): Promise<BackingDirectory> {
   if (workspace.isPaseoOwnedWorktree && workspace.worktreeRoot && workspace.mainRepoRoot) {
+    const deletionPolicy = resolveWorktreeDeletionPolicy({
+      workspace,
+      options: {
+        paseoHome: dependencies.paseoHome,
+        worktreesRoot: dependencies.paseoWorktreesBaseRoot,
+      },
+    });
     return {
       path: resolve(workspace.worktreeRoot),
       isPaseoOwnedWorktree: true,
       mainRepoRoot: workspace.mainRepoRoot,
-      paseoWorktreesRoot: null,
+      // deletePaseoWorktree checks the target is contained by this root. For a
+      // worktree outside the managed layout the hash-derived root is the wrong
+      // one and the check would refuse every removal, so hand it the holder the
+      // worktree actually sits in.
+      paseoWorktreesRoot:
+        deletionPolicy.kind === "managed" ? null : dirname(resolve(workspace.worktreeRoot)),
       // Fixed when the worktree was created. Never re-derived from the
       // project's current mode, which is mutable while placement is not.
-      deletionPolicy: resolveWorktreeDeletionPolicy({
-        workspace,
-        options: {
-          paseoHome: dependencies.paseoHome,
-          worktreesRoot: dependencies.paseoWorktreesBaseRoot,
-        },
-      }),
+      deletionPolicy,
     };
   }
   if (workspace.kind !== "worktree") {
@@ -420,54 +427,63 @@ async function maybeRemoveDirectory(
     throw error;
   }
 
-  const remainingActive = await dependencies.listActiveWorkspaces();
-  if (
-    !(await isDirectoryUnreferenced(
-      remainingActive,
-      backing.path,
-      new Set(archivedWorkspaceIds),
-      dependencies,
-    ))
-  ) {
-    return false;
-  }
+  // The reference check and the removal have to be one step. Between them a new
+  // workspace can start referencing this directory, and for managed placement
+  // the removal is forced and recursive. Serializing on the backing path keeps
+  // concurrent archives of the same directory from interleaving.
+  return worktreeRemovalLock.run(pathLockKey(backing.path), async () => {
+    const remainingActive = await dependencies.listActiveWorkspaces();
+    if (
+      !(await isDirectoryUnreferenced(
+        remainingActive,
+        backing.path,
+        new Set(archivedWorkspaceIds),
+        dependencies,
+      ))
+    ) {
+      return false;
+    }
 
-  try {
-    await deletePaseoWorktree({
-      cwd: backing.mainRepoRoot,
-      worktreePath: backing.path,
-      teardownCwds: [],
-      worktreesRoot: backing.paseoWorktreesRoot ?? undefined,
-      paseoHome: dependencies.paseoHome,
-      worktreesBaseRoot: dependencies.paseoWorktreesBaseRoot,
-      policy: backing.deletionPolicy,
-    });
-    dependencies.github.invalidate({ cwd: backing.path });
-    return true;
-  } catch (error) {
-    // An explicitly requested removal that fails is not the same as archive
-    // declining to remove. The caller asked, git refused, and the directory is
-    // still there — say so at error level with the path, since the workspace
-    // record is already archived and this log is the only trace.
-    const explicitlyRequested = request.removeWorktreeDirectory === true;
-    const log = explicitlyRequested
-      ? dependencies.sessionLogger?.error.bind(dependencies.sessionLogger)
-      : dependencies.sessionLogger?.warn.bind(dependencies.sessionLogger);
-    log?.(
-      {
-        err: error,
-        targetPath: backing.path,
-        requestId: request.requestId,
-        explicitlyRequested,
-        refusal: error instanceof WorktreeRemovalRefusedError ? error.refusal : null,
-      },
-      explicitlyRequested
-        ? "Requested worktree removal was refused; the directory is still on disk"
-        : "Worktree disk removal failed during archive; workspace already archived",
-    );
-    return false;
-  }
+    try {
+      await deletePaseoWorktree({
+        cwd: backing.mainRepoRoot,
+        worktreePath: backing.path,
+        teardownCwds: [],
+        worktreesRoot: backing.paseoWorktreesRoot ?? undefined,
+        paseoHome: dependencies.paseoHome,
+        worktreesBaseRoot: dependencies.paseoWorktreesBaseRoot,
+        policy: backing.deletionPolicy,
+      });
+      dependencies.github.invalidate({ cwd: backing.path });
+      return true;
+    } catch (error) {
+      // An explicitly requested removal that fails is not the same as archive
+      // declining to remove. The caller asked, git refused, and the directory is
+      // still there — say so at error level with the path, since the workspace
+      // record is already archived and this log is the only trace.
+      const explicitlyRequested = request.removeWorktreeDirectory === true;
+      const log = explicitlyRequested
+        ? dependencies.sessionLogger?.error.bind(dependencies.sessionLogger)
+        : dependencies.sessionLogger?.warn.bind(dependencies.sessionLogger);
+      log?.(
+        {
+          err: error,
+          targetPath: backing.path,
+          requestId: request.requestId,
+          explicitlyRequested,
+          refusal: error instanceof WorktreeRemovalRefusedError ? error.refusal : null,
+        },
+        explicitlyRequested
+          ? "Requested worktree removal was refused; the directory is still on disk"
+          : "Worktree disk removal failed during archive; workspace already archived",
+      );
+      return false;
+    }
+  });
 }
+
+/** Serializes removal per backing directory. See maybeRemoveDirectory. */
+const worktreeRemovalLock = new KeyedLock();
 
 function uniqueFilesystemPaths(paths: string[]): string[] {
   const unique: string[] = [];
