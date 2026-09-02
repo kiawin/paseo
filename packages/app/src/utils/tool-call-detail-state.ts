@@ -88,6 +88,8 @@ export function hasMeaningfulToolCallDetail(detail: ToolCallDetail | undefined):
       return hasMeaningfulPlainTextDetail(detail);
     case "plan":
       return detail.text.trim().length > 0;
+    case "artifact":
+      return detail.url.trim().length > 0;
     case "unknown":
       return hasMeaningfulUnknownDetail(detail);
   }

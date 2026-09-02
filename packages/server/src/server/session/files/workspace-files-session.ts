@@ -421,6 +421,12 @@ export class WorkspaceFilesSession {
     source?: object,
   ): Promise<void> {
     const { cwd, path: requestedPath, requestId } = request;
+    // See `hasTransfer`: two transfers cannot share one requestId, because the ack stream carries
+    // nothing else to tell them apart.
+    if (this.activeDownloads.has(requestId)) {
+      this.logger.error({ requestId, cwd }, "Refused a download reusing an active requestId");
+      return;
+    }
     const flow = new TransferFlowControl();
     this.activeDownloads.set(requestId, { flow, source });
     let streamStarted = false;
@@ -763,6 +769,17 @@ export class WorkspaceFilesSession {
    * file would sit open indefinitely and a download parked at its window would wait on an
    * ack that can no longer come.
    */
+  /**
+   * True while this subsystem owns the transfer.
+   *
+   * `fs.transfer.ack` and `fs.transfer.cancel` are keyed by requestId alone and routed to both
+   * subsystems, so an id in flight here must not also be accepted by the artifact one — an ack
+   * would pace both transfers and a cancel would kill both.
+   */
+  hasTransfer(requestId: string): boolean {
+    return this.activeDownloads.has(requestId) || this.activeUploads.has(requestId);
+  }
+
   cancelTransfersForSource(source: object): void {
     for (const [requestId, entry] of Array.from(this.activeDownloads.entries())) {
       if (entry.source === source) {
