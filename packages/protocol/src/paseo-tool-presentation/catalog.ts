@@ -390,6 +390,17 @@ export const PASEO_TOOL_CATALOG = {
     detail: { inputOrder: ["provider", "cwd", "settings"] },
   },
 
+  // Artifacts
+  publish_artifact: {
+    label: "Publish artifact",
+    completedLabel: "Published artifact",
+    context: field("title"),
+    detail: {
+      inputOrder: ["title", "artifactId", "externalUrl", "html"],
+      outputFields: ["artifactId", "title", "size"],
+    },
+  },
+
   // Browser
   browser_list_hosts: browser("List browser hosts", "Listed browser hosts"),
   browser_list_tabs: browser("List browser tabs", "Listed browser tabs"),
