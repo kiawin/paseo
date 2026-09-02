@@ -95,6 +95,7 @@ app.json
 
 # Heap snapshots dumped by --heapsnapshot-near-heap-limit; keep them for debugging.
 *.heapsnapshot
-
 # Project-local Serena configuration and memories.
 .serena/
+# QA evidence screenshots — attached to pull requests, never committed.
+qa-evidence/
