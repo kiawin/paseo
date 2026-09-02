@@ -1908,6 +1908,21 @@ export const ru: TranslationResources = {
       tooltip: "Просмотр файлов рабочего пространства",
       chooseFile: "Выберите файл",
     },
+    artifacts: {
+      linkMissing: "У этого артефакта нет ни документа, ни ссылки.",
+      label: "Артефакты",
+      subtitle: "Опубликованы агентами",
+      tooltip: "Документы, опубликованные агентами в этом проекте",
+      emptyTitle: "В этом проекте нет артефактов",
+      emptyDescription: "Агенты публикуют их через publish_artifact.",
+      loadFailed: "Не удалось загрузить артефакты",
+      hostTooOld: "Обновите хост, чтобы просматривать артефакты.",
+      openOn: "Открыть на {{host}}",
+      deleteTitle: "Удалить артефакт?",
+      deleteMessage: "Удалить «{{title}}»? Это действие нельзя отменить.",
+      deleteConfirm: "Удалить",
+      deleteFailed: "Не удалось удалить артефакт",
+    },
     pullRequest: {
       label: "PR",
       subtitle: "Сведения о PR",
@@ -1928,6 +1943,7 @@ export const ru: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Открыть на {{host}}",
     error: "Ошибка",
     empty: "Дополнительные сведения отсутствуют",
     subAgentActivity: "Активность субагента",
@@ -2111,7 +2127,7 @@ export const ru: TranslationResources = {
       },
       agentLinks: {
         label: "Ссылки агента",
-        description: "Где открывать ссылки из сообщений агента",
+        description: "Где открывать ссылки, опубликованные агентами",
         accessibilityLabel: "Выберите, где открывать ссылки агента ({{value}})",
         options: {
           inApp: "В Paseo",
