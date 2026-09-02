@@ -876,4 +876,34 @@ describe("parseClampedFontSize", () => {
     expect(parseClampedFontSize("15", { min: 11, max: 24 })).toBe(15);
     expect(parseClampedFontSize("abc", { min: 11, max: 24 })).toBeNull();
   });
+
+  it("defaults chatTranscriptStyle to cards when the key is absent", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ toolCallDetailLevel: "overview" }),
+      }),
+    });
+
+    expect((await loadAppSettingsFromStorage(deps)).chatTranscriptStyle).toBe("cards");
+  });
+
+  it("keeps a persisted trace transcript style", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ chatTranscriptStyle: "trace" }),
+      }),
+    });
+
+    expect((await loadAppSettingsFromStorage(deps)).chatTranscriptStyle).toBe("trace");
+  });
+
+  it("falls back to cards for a transcript style written by a newer app", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ chatTranscriptStyle: "timeline" }),
+      }),
+    });
+
+    expect((await loadAppSettingsFromStorage(deps)).chatTranscriptStyle).toBe("cards");
+  });
 });

@@ -22,6 +22,7 @@ import { hasMeaningfulToolCallDetail } from "@/utils/tool-call-detail-state";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { extensionFromPath, highlightToKeyedLines } from "@/utils/highlight-cache";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { HighlightedLines } from "./highlighted-content";
 import { DiffViewer } from "./diff-viewer";
 import { getCodeInsets } from "./code-insets";
@@ -40,6 +41,11 @@ interface ToolCallDetailsContentProps {
   maxHeight?: number;
   fillAvailableHeight?: boolean;
   showLoadingSkeleton?: boolean;
+  /**
+   * Clamp the card to this many lines of content. A pixel height slices whatever line it lands
+   * in, leaving a half-rendered row; truncating the text keeps the card a whole number of lines.
+   */
+  previewLines?: number;
 }
 
 interface DetailStyles {
@@ -154,11 +160,29 @@ interface ShellDetailProps {
   command: string;
   output: string | null | undefined;
   ds: DetailStyles;
+  previewLines?: number;
 }
 
-function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
-  const normalizedCommand = command.replace(/\n+$/, "");
-  const commandOutput = (output ?? "").replace(/^\n+/, "");
+/** Keeps at most `limit` whole lines, and says whether anything was dropped. */
+function takeLines(text: string, limit: number | undefined): { text: string; truncated: boolean } {
+  if (limit === undefined) {
+    return { text, truncated: false };
+  }
+  const lines = text.split("\n");
+  if (lines.length <= limit) {
+    return { text, truncated: false };
+  }
+  return { text: lines.slice(0, limit).join("\n"), truncated: true };
+}
+
+function ShellDetailSection({ command, output, ds, previewLines }: ShellDetailProps) {
+  // The gutter costs 28px of a phone's width and the sheet is already narrow, so compact goes
+  // back to the shell prompt to tell command from output.
+  const isCompact = useIsCompactFormFactor();
+  // IN and OUT are clamped independently so a long command cannot crowd out the output.
+  const normalizedCommand = takeLines(command.replace(/\n+$/, ""), previewLines).text;
+  const fullOutput = (output ?? "").replace(/^\n+/, "");
+  const commandOutput = takeLines(fullOutput, previewLines).text;
   const hasOutput = commandOutput.length > 0;
   return (
     <View style={ds.sectionFillStyle}>
@@ -176,16 +200,58 @@ function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
             contentContainerStyle={styles.codeHorizontalContent}
           >
             <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
-              <Text selectable style={styles.scrollText}>
-                <Text style={styles.shellPrompt}>$ </Text>
-                {normalizedCommand}
-                {hasOutput ? `\n\n${commandOutput}` : ""}
-              </Text>
+              <ShellStreams
+                command={normalizedCommand}
+                output={hasOutput ? commandOutput : null}
+                isCompact={isCompact}
+              />
             </View>
           </ScrollView>
         </ScrollView>
       </View>
     </View>
+  );
+}
+
+function ShellStreamRow({ label, text }: { label: string; text: string }) {
+  return (
+    <View style={styles.shellStreamRow}>
+      <Text style={styles.shellStreamLabel}>{label}</Text>
+      <Text selectable style={styles.scrollText}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+function ShellStreams({
+  command,
+  output,
+  isCompact,
+}: {
+  command: string;
+  output: string | null;
+  isCompact: boolean;
+}) {
+  const { t } = useTranslation();
+
+  if (isCompact) {
+    return (
+      <Text selectable style={styles.scrollText}>
+        <Text style={styles.shellPrompt}>$ </Text>
+        {command}
+        {output === null ? "" : `\n\n${output}`}
+      </Text>
+    );
+  }
+
+  return (
+    <>
+      <ShellStreamRow label={t("toolCallDetails.inLabel")} text={command} />
+      {output === null ? null : (
+        <ShellStreamRow label={t("toolCallDetails.outLabel")} text={output} />
+      )}
+    </>
   );
 }
 
@@ -415,6 +481,9 @@ interface EditDetailProps {
 }
 
 function EditDetailSection({ diffLines, ds }: EditDetailProps) {
+  // Two columns need width, so this follows the form factor rather than a user preference.
+  const isCompact = useIsCompactFormFactor();
+
   return (
     <View style={ds.sectionFillStyle}>
       {diffLines ? (
@@ -423,6 +492,7 @@ function EditDetailSection({ diffLines, ds }: EditDetailProps) {
             diffLines={diffLines}
             maxHeight={ds.resolvedMaxHeight}
             fillAvailableHeight={ds.shouldFill}
+            split={!isCompact}
           />
         </View>
       ) : null}
@@ -692,17 +762,41 @@ function buildPaseoUnknownSections(
   return sections.map((section) => <PaseoDetailSection key={section.title} section={section} />);
 }
 
+function exceedsPreview(
+  detail: ToolCallDetail | undefined,
+  diffLines: DiffLine[] | undefined,
+  previewLines: number | undefined,
+): boolean {
+  if (detail === undefined || previewLines === undefined) {
+    return false;
+  }
+  if (detail.type === "shell") {
+    return (
+      takeLines(detail.command.replace(/\n+$/, ""), previewLines).truncated ||
+      takeLines((detail.output ?? "").replace(/^\n+/, ""), previewLines).truncated
+    );
+  }
+  return (diffLines?.length ?? 0) > previewLines;
+}
+
 function buildDetailSections(
   toolName: string | undefined,
   detail: ToolCallDetail | undefined,
   diffLines: DiffLine[] | undefined,
   ds: DetailStyles,
   t: TFunction,
+  previewLines?: number,
 ): ReactNode[] {
   if (!detail) return [];
   if (detail.type === "shell") {
     return [
-      <ShellDetailSection key="shell" command={detail.command} output={detail.output} ds={ds} />,
+      <ShellDetailSection
+        key="shell"
+        command={detail.command}
+        output={detail.output}
+        ds={ds}
+        previewLines={previewLines}
+      />,
     ];
   }
   if (detail.type === "worktree_setup") {
@@ -817,13 +911,25 @@ export function ToolCallDetailsContent({
   maxHeight,
   fillAvailableHeight = false,
   showLoadingSkeleton = false,
+  previewLines,
 }: ToolCallDetailsContentProps) {
   const { t } = useTranslation();
   const resolvedMaxHeight = fillAvailableHeight ? undefined : (maxHeight ?? 300);
   const ds = useDetailStyles(detail, resolvedMaxHeight, fillAvailableHeight);
-  const diffLines = useDiffLines(detail);
+  const allDiffLines = useDiffLines(detail);
+  const diffLines = useMemo(
+    () => (previewLines === undefined ? allDiffLines : allDiffLines?.slice(0, previewLines)),
+    [allDiffLines, previewLines],
+  );
 
-  const sections: ReactNode[] = buildDetailSections(toolName, detail, diffLines, ds, t);
+  const sections: ReactNode[] = buildDetailSections(
+    toolName,
+    detail,
+    diffLines,
+    ds,
+    t,
+    previewLines,
+  );
 
   if (errorText) {
     sections.push(<ErrorSection key="error" errorText={errorText} ds={ds} />);
@@ -836,7 +942,16 @@ export function ToolCallDetailsContent({
     return <Text style={styles.emptyStateText}>{t("toolCallDetails.empty")}</Text>;
   }
 
-  return <View style={ds.fullBleedContainerStyle}>{sections}</View>;
+  return (
+    <View style={ds.fullBleedContainerStyle}>
+      {sections}
+      {exceedsPreview(detail, allDiffLines, previewLines) ? (
+        <View style={styles.expandPill} pointerEvents="none">
+          <Text style={styles.expandPillText}>{t("toolCallDetails.clickToExpand")}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 // ---- Styles ----
@@ -986,6 +1101,35 @@ const styles = StyleSheet.create((theme) => {
         : null),
     },
     shellPrompt: {
+      color: theme.colors.foregroundMuted,
+    },
+    shellStreamRow: {
+      flexDirection: "row" as const,
+      alignItems: "flex-start" as const,
+      gap: theme.spacing[3],
+    },
+    // Fixed width so IN and OUT content starts on the same column.
+    shellStreamLabel: {
+      width: 28,
+      fontFamily: theme.fontFamily.mono,
+      fontSize: theme.fontSize.code,
+      color: theme.colors.foregroundMuted,
+    },
+    // Sits over the bottom-right of a clamped card. Whole-line truncation is silent on its own,
+    // so without this a clamped card and a complete one look identical.
+    expandPill: {
+      position: "absolute",
+      right: theme.spacing[2],
+      bottom: theme.spacing[2],
+      paddingHorizontal: theme.spacing[2],
+      paddingVertical: theme.spacing[1],
+      borderRadius: theme.borderRadius.sm,
+      backgroundColor: theme.colors.surface3,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    expandPillText: {
+      fontSize: theme.fontSize.sm,
       color: theme.colors.foregroundMuted,
     },
     subAgentSessionText: {

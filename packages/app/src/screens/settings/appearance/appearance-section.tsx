@@ -271,6 +271,78 @@ function ChatOutlineRow({ value, onChange }: ChatOutlineRowProps) {
   );
 }
 
+const CHAT_TRANSCRIPT_STYLES: readonly AppSettings["chatTranscriptStyle"][] = ["cards", "trace"];
+
+function getChatTranscriptStyleLabel(
+  t: TFunction,
+  value: AppSettings["chatTranscriptStyle"],
+): string {
+  return t(`settings.general.chatTranscriptStyle.options.${value}`);
+}
+
+interface ChatTranscriptStyleMenuItemProps {
+  value: AppSettings["chatTranscriptStyle"];
+  selected: boolean;
+  onChange: (value: AppSettings["chatTranscriptStyle"]) => void;
+}
+
+function ChatTranscriptStyleMenuItem({
+  value,
+  selected,
+  onChange,
+}: ChatTranscriptStyleMenuItemProps) {
+  const { t } = useTranslation();
+  const handleSelect = useCallback(() => onChange(value), [onChange, value]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect}>
+      {getChatTranscriptStyleLabel(t, value)}
+    </DropdownMenuItem>
+  );
+}
+
+interface ChatTranscriptStyleRowProps {
+  value: AppSettings["chatTranscriptStyle"];
+  onChange: (value: AppSettings["chatTranscriptStyle"]) => void;
+}
+
+function ChatTranscriptStyleRow({ value, onChange }: ChatTranscriptStyleRowProps) {
+  const { t } = useTranslation();
+  const selectedLabel = getChatTranscriptStyleLabel(t, value);
+  return (
+    <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>
+          {t("settings.general.chatTranscriptStyle.label")}
+        </Text>
+        <Text style={settingsStyles.rowHint}>
+          {t("settings.general.chatTranscriptStyle.description")}
+        </Text>
+      </View>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          style={dropdownTriggerStyle}
+          accessibilityLabel={t("settings.general.chatTranscriptStyle.accessibilityLabel", {
+            value: selectedLabel,
+          })}
+        >
+          <Text style={styles.triggerText}>{selectedLabel}</Text>
+          <ThemedChevronDown size={ICON_SIZE.sm} uniProps={mutedColorMapping} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="bottom" align="end" width={200}>
+          {CHAT_TRANSCRIPT_STYLES.map((option) => (
+            <ChatTranscriptStyleMenuItem
+              key={option}
+              value={option}
+              selected={value === option}
+              onChange={onChange}
+            />
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </View>
+  );
+}
+
 const TOOL_CALL_DETAIL_LEVELS: readonly AppSettings["toolCallDetailLevel"][] = [
   "detailed",
   "overview",
@@ -581,6 +653,13 @@ export function AppearanceSection() {
     [updateSettings],
   );
 
+  const handleChatTranscriptStyleChange = useCallback(
+    (chatTranscriptStyle: AppSettings["chatTranscriptStyle"]) => {
+      void updateSettings({ chatTranscriptStyle });
+    },
+    [updateSettings],
+  );
+
   const handleChatOutlineChange = useCallback(
     (chatOutlineEnabled: boolean) => {
       void updateSettings({ chatOutlineEnabled });
@@ -700,6 +779,10 @@ export function AppearanceSection() {
           <ToolCallDetailRow
             value={settings.toolCallDetailLevel}
             onChange={handleToolCallDetailLevelChange}
+          />
+          <ChatTranscriptStyleRow
+            value={settings.chatTranscriptStyle}
+            onChange={handleChatTranscriptStyleChange}
           />
           {!isNative ? (
             <ChatOutlineRow
