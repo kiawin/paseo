@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import type { OpenFileDisposition } from "@/workspace/file-open";
 import { shouldRouteWorkspaceUrlToProxiedBrowser } from "@/desktop/browser/proxy";
-import { openExternalUrl } from "@/utils/open-external-url";
+import { isElectronRuntime } from "@/desktop/host";
+import { loadAppSettingsFromStorage } from "@/hooks/use-settings";
+import { openLink } from "@/utils/open-link";
 import { formatFileLinkTooltipPath } from "./tooltip-path";
 import type { InlinePathTarget } from "./parse";
 import {
@@ -22,6 +24,8 @@ import {
 export interface UseFileLinkResult {
   target: InlinePathTarget | null;
   tooltipPath: string | null;
+  /** Set when this link resolves to an external URL, which is the only kind with a destination choice. */
+  externalUrl: string | null;
   onHoverIn: () => void;
   onPress: () => void;
   open: (source: AssistantFileLinkSource, disposition: OpenFileDisposition) => void;
@@ -141,9 +145,17 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
   }, [query.data, resolution]);
 
   const tooltipPath = target ? formatFileLinkTooltipPath({ target, workspaceRoot }) : null;
+  const externalUrl = useMemo(
+    () =>
+      resolution.kind === "resolved" && resolution.value.kind === "external"
+        ? resolution.value.url
+        : null,
+    [resolution],
+  );
+
   return useMemo(
-    () => ({ target, tooltipPath, onHoverIn, onPress, open }),
-    [target, tooltipPath, onHoverIn, onPress, open],
+    () => ({ target, tooltipPath, externalUrl, onHoverIn, onPress, open }),
+    [target, tooltipPath, externalUrl, onHoverIn, onPress, open],
   );
 }
 
@@ -329,6 +341,9 @@ async function dispatchExternalUrl(input: {
   capturedWorkspaceRoot?: string;
   context: AssistantFileLinkResolverContextValue;
 }) {
+  // Read the preference before the staleness check so the check sees the config as it
+  // is after the await, not as it was when the press landed.
+  const settings = await loadAppSettingsFromStorage();
   const current = input.context.configRef.current;
   if (
     current.serverId !== input.capturedServerId ||
@@ -344,7 +359,13 @@ async function dispatchExternalUrl(input: {
     current.onOpenBrowserUrl(input.url);
     return;
   }
-  await openExternalUrl(input.url);
+  const openInBrowserTab = current.onOpenUrlInBrowserTab;
+  await openLink({
+    url: input.url,
+    behavior: settings.agentLinkBehavior,
+    isElectron: isElectronRuntime(),
+    openInBrowserTab,
+  });
 }
 
 async function dispatchUnresolvedError(input: {

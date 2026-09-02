@@ -6,8 +6,9 @@ import type {
   MarkdownRenderers,
 } from "react-native-enriched-markdown";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { useFileLink } from "@/assistant-file-links";
+import { useAssistantLinkContextMenu, useFileLink } from "@/assistant-file-links";
 import { MARKDOWN_COPY_RECOGNIZED_LINK_ATTRIBUTE } from "@/assistant-selection-copy/markup";
+import { suppressNativeContextMenu } from "@/components/ui/context-menu";
 import { useForgeShorthand } from "@/git/forge-shorthand";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
@@ -37,10 +38,21 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
   const forgeShorthand = useForgeShorthand();
   // A forge reference like `#12` carries its web URL so hover, copy and new-tab opens work.
   const forgeUrl = link.sourceType === "text" ? forgeShorthand?.resolve(link.url) : null;
-  const { tooltipPath, onHoverIn } = useFileLink(
+  const { tooltipPath, externalUrl, onHoverIn } = useFileLink(
     forgeUrl ? markdownLinkSource(forgeUrl) : markdownLinkSource(link.url, link.sourceType),
   );
   const tooltip = forgeUrl ?? tooltipPath;
+  const openLinkMenu = useAssistantLinkContextMenu();
+  const handleContextMenu = useCallback(
+    (event: unknown) => {
+      if (!externalUrl || !openLinkMenu) {
+        return;
+      }
+      suppressNativeContextMenu(event);
+      openLinkMenu(externalUrl, event);
+    },
+    [externalUrl, openLinkMenu],
+  );
   const [hovered, setHovered] = useState(false);
   const handleMouseEnter = useCallback(() => setHovered(true), []);
   const handleMouseLeave = useCallback(() => setHovered(false), []);
@@ -68,6 +80,7 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
       style={anchorStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onContextMenu={handleContextMenu}
     >
       {children}
     </a>

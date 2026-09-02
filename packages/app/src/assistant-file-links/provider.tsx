@@ -24,6 +24,9 @@ export interface AssistantFileLinkResolverConfig {
   workspaceRoot?: string;
   relativePathBase?: string;
   onOpenWorkspaceFile?: (target: InlinePathTarget, disposition: OpenFileDisposition) => void;
+  /** Opens an external URL as a browser tab in this workspace. Absent where that is impossible. */
+  onOpenUrlInBrowserTab?: ((url: string) => void) | null;
+  /** Routes recognized workspace URLs through the proxied workspace browser. */
   onOpenBrowserUrl?: (url: string) => void;
   toast?: ToastApi | null;
 }
@@ -58,6 +61,7 @@ export function AssistantFileLinkResolverProvider({
   workspaceRoot,
   relativePathBase,
   onOpenWorkspaceFile,
+  onOpenUrlInBrowserTab,
   onOpenBrowserUrl,
   toast,
   children,
@@ -68,6 +72,7 @@ export function AssistantFileLinkResolverProvider({
     workspaceRoot,
     relativePathBase,
     onOpenWorkspaceFile,
+    onOpenUrlInBrowserTab,
     onOpenBrowserUrl,
     toast,
   });
@@ -77,6 +82,7 @@ export function AssistantFileLinkResolverProvider({
     workspaceRoot,
     relativePathBase,
     onOpenWorkspaceFile,
+    onOpenUrlInBrowserTab,
     onOpenBrowserUrl,
     toast,
   };
