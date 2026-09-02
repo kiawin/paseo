@@ -1856,6 +1856,21 @@ export const ptBR: TranslationResources = {
       tooltip: "Explorar arquivos do espaço de trabalho",
       chooseFile: "Escolha um arquivo",
     },
+    artifacts: {
+      linkMissing: "Este artefato não tem documento nem link.",
+      label: "Artefatos",
+      subtitle: "Publicados por agentes",
+      tooltip: "Documentos que os agentes publicaram neste projeto",
+      emptyTitle: "Nenhum artefato neste projeto",
+      emptyDescription: "Os agentes os publicam com publish_artifact.",
+      loadFailed: "Falha ao carregar os artefatos",
+      hostTooOld: "Atualize o host para ver artefatos.",
+      openOn: "Abrir em {{host}}",
+      deleteTitle: "Excluir artefato?",
+      deleteMessage: 'Excluir "{{title}}"? Esta ação não pode ser desfeita.',
+      deleteConfirm: "Excluir",
+      deleteFailed: "Não foi possível excluir o artefato",
+    },
     pullRequest: {
       label: "Pull request",
       subtitle: "Detalhes do pull request",
@@ -1876,6 +1891,7 @@ export const ptBR: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Abrir em {{host}}",
     error: "Erro",
     empty: "Nenhum detalhe adicional disponível",
     subAgentActivity: "Atividade do subagente",
@@ -2056,7 +2072,7 @@ export const ptBR: TranslationResources = {
       },
       agentLinks: {
         label: "Links do agente",
-        description: "Onde abrir links das mensagens do agente",
+        description: "Onde abrir links publicados pelos agentes",
         accessibilityLabel: "Selecione onde os links do agente abrem ({{value}})",
         options: {
           inApp: "No Paseo",

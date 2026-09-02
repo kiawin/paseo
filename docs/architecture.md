@@ -414,6 +414,7 @@ $PASEO_HOME/
 ├── projects/workspaces.json                    # Workspace registry
 ├── projects/icons/                             # Custom project icon images
 ├── schedules/                                  # Scheduled-agent definitions and runs
+├── artifacts/index.json + artifacts/{projectId}/ # Agent-published HTML documents
 ├── config.json                                 # Daemon config (mutable)
 ├── daemon-keypair.json                         # Daemon identity for relay/E2EE
 ├── push-tokens.json                            # Mobile push tokens
