@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { Page, TestInfo } from "@playwright/test";
 import { test, expect } from "../support/fixtures";
 import {
@@ -16,11 +18,16 @@ import { waitForWorkspaceTabsVisible } from "../support/helpers/workspace-tabs";
  * look at rather than a summary that drops the detail they need.
  *
  * It asserts as it goes so a broken surface fails the run instead of quietly producing a
- * screenshot of the breakage. Files land under Playwright's per-test output directory, which is
- * gitignored; attach them to the pull request.
+ * screenshot of the breakage.
+ *
+ * Files land in `qa-evidence/` at the repository root, flat and stably named, so a rerun
+ * overwrites the previous set and the names can be quoted in a pull request. The directory is
+ * gitignored — screenshots are attached to the pull request, not committed.
  */
-async function shot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
-  await page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: false });
+const EVIDENCE_DIR = path.resolve(__dirname, "../../../..", "qa-evidence");
+
+async function shot(page: Page, _testInfo: TestInfo, name: string): Promise<void> {
+  await page.screenshot({ path: path.join(EVIDENCE_DIR, `${name}.png`), fullPage: false });
 }
 
 async function openWorkspaceWide(
