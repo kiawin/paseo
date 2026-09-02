@@ -53,9 +53,16 @@ async function waitForWebUi(origin: string, home: string): Promise<void> {
 
 export async function startPackagedWebDaemon(input: {
   relayEndpoint: string;
+  /**
+   * Writes into `$PASEO_HOME` before the daemon boots, for state that file-backed registries
+   * only read at startup. A test that needs a record the daemon has no inbound RPC to create
+   * has no other way in.
+   */
+  seedHome?: (home: string) => Promise<void>;
 }): Promise<PackagedWebDaemon> {
   const port = await availablePort();
   const home = await mkdtemp(path.join(tmpdir(), "paseo-relay-deployment-e2e-"));
+  await input.seedHome?.(home);
   const serverId = `relay-deployment-${Date.now().toString(36)}`;
   const paseo = path.resolve(__dirname, "../../../../../node_modules/.bin/paseo");
   const env: NodeJS.ProcessEnv = {

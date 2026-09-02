@@ -342,11 +342,7 @@ export class SessionDelivery {
 
   authorizeFileReply(frame: Uint8Array, socket: object): void {
     const owner = this.requests.getStore();
-    if (
-      owner?.active &&
-      owner.source.socket === socket &&
-      isWorkspaceFileTransferRequest(owner.request)
-    )
+    if (owner?.active && owner.source.socket === socket && isFileTransferRequest(owner.request))
       this.proofs.set(frame, owner);
   }
 
@@ -405,8 +401,12 @@ export class SessionDelivery {
   }
 }
 
-function isWorkspaceFileTransferRequest(request: SessionInboundMessage): boolean {
-  return request.type === "file_explorer_request" || request.type === "fs.entry.download.request";
+function isFileTransferRequest(request: SessionInboundMessage): boolean {
+  return (
+    request.type === "file_explorer_request" ||
+    request.type === "fs.entry.download.request" ||
+    request.type === "artifact.entry.download.request"
+  );
 }
 
 function withSubscriptionId<T extends SessionOutboundMessage>(
