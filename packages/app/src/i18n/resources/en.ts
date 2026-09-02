@@ -347,6 +347,9 @@ export const en = {
     },
     actions: {
       copyCode: "Copy code",
+      copyLink: "Copy link",
+      openLinkInBrowser: "Open in browser",
+      openLinkInPaseo: "Open in Paseo browser",
       copyTurn: "Copy turn",
       copyMessage: "Copy message",
       forkMenu: "Fork chat from here",
@@ -2399,6 +2402,9 @@ export const en = {
             label: "Clicking a pull request in the Explorer sidebar",
             description: "Open pull request details beside Changes",
           },
+          forgeLinks: {
+            label: "Clicking a pull request or check link",
+          },
           serviceUrls: {
             label: "Clicking a script's service URL",
           },
@@ -2639,6 +2645,15 @@ export const en = {
       serviceUrls: {
         options: {
           ask: "Ask",
+          inApp: "In Paseo",
+          external: "External browser",
+        },
+      },
+      agentLinks: {
+        label: "Agent links",
+        description: "Where to open links in agent messages",
+        accessibilityLabel: "Select where agent links open ({{value}})",
+        options: {
           inApp: "In Paseo",
           external: "External browser",
         },
