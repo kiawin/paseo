@@ -98,6 +98,20 @@ export async function openWorkspacePanelFromExplorerMenu(
     body: await page.screenshot({ path: testInfo.outputPath("explorer-panel-menu.png") }),
     contentType: "image/png",
   });
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    "New tab",
+    "Changes",
+    "Files",
+    "Artifacts",
+    "Other review",
+    "Other review summary",
+    "Review",
+    "Review summary",
+  ]);
+  await expect(menu.getByRole("menuitem", { name: "Review", exact: true })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
   await expect(menu.getByRole("menuitem", { name: "Review", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Other review", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Review summary", exact: true })).toBeVisible();
