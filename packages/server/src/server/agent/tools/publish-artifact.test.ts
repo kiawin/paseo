@@ -86,12 +86,16 @@ describe("publish_artifact", () => {
 
     const stored = await store.listForProject(PROJECT_ID);
     expect(stored).toHaveLength(1);
-    expect(stored[0]?.origin).toMatchObject({
+    const record = stored[0];
+    if (!record) throw new Error("Expected the published artifact");
+    expect(record.origin).toMatchObject({
       agentId: AGENT_ID,
       workspaceId: WORKSPACE_ID,
       provider: "claude",
     });
-    expect((await store.readContent(output.artifactId)).toString()).toBe("<h1>Q3</h1>");
+    expect(record.artifactId).toBe(output.artifactId);
+    // By record, not id: the content path carries the digest.
+    expect((await store.readContent(record)).toString()).toBe("<h1>Q3</h1>");
   });
 
   test("carries a companion link so a non-Claude agent can attach one", async () => {
