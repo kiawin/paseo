@@ -40,6 +40,16 @@ export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
 export type SendBehavior = ActiveTurnBehavior | "queue";
 export type ReleaseChannel = "stable" | "beta";
 export type ServiceUrlBehavior = "ask" | "in-app" | "external";
+/**
+ * Where a plain tap on an external link in an agent message goes. No `ask` state:
+ * the link context menu is the per-link chooser, so a prompt would be a second one.
+ */
+export type AgentLinkBehavior = "in-app" | "external";
+/**
+ * Where a plain tap on a pull request, CI check, or review comment link goes. Paseo renders
+ * these itself, so there is no per-link menu to carry an `ask` state the way agent links do.
+ */
+export type ForgeLinkBehavior = "in-app" | "external";
 export type WorkspaceTitleSource = "title" | "branch";
 export type PullRequestOpenLocation = "main" | "side" | "explorer";
 /** What a sidebar workspace row shows in the space to the right of its title. */
@@ -84,6 +94,8 @@ export interface AppSettings {
   language: AppLanguage;
   sendBehavior: SendBehavior;
   serviceUrlBehavior: ServiceUrlBehavior;
+  agentLinkBehavior: AgentLinkBehavior;
+  forgeLinkBehavior: ForgeLinkBehavior;
   terminalScrollbackLines: number;
   useLegacyTerminalRenderer: boolean;
   uiFontFamily: string; // "" = platform default UI stack
@@ -145,6 +157,8 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   language: "system",
   sendBehavior: "steer",
   serviceUrlBehavior: "ask",
+  agentLinkBehavior: "external",
+  forgeLinkBehavior: "external",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
   useLegacyTerminalRenderer: false,
   uiFontFamily: "",
@@ -224,6 +238,8 @@ const StoredAppSettingsSchema = z
       .catch("system"),
     sendBehavior: z.enum(["interrupt", "steer", "queue"]).catch("steer"),
     serviceUrlBehavior: z.enum(["ask", "in-app", "external"]).catch("ask"),
+    agentLinkBehavior: z.enum(["in-app", "external"]).catch("external"),
+    forgeLinkBehavior: z.enum(["in-app", "external"]).catch("external"),
     terminalScrollbackLines: clampedNumber(
       MIN_TERMINAL_SCROLLBACK_LINES,
       MAX_TERMINAL_SCROLLBACK_LINES,
