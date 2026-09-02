@@ -30,6 +30,7 @@ const STAMP = "2026-09-01T00:00:00.000Z";
  */
 async function seedArtifactHome(home: string, repoPath: string): Promise<void> {
   const html = Buffer.from(ARTIFACT_HTML, "utf8");
+  const contentSha256 = createHash("sha256").update(html).digest("hex");
   await mkdir(path.join(home, "projects"), { recursive: true });
   await mkdir(path.join(home, "artifacts", PROJECT_ID), { recursive: true });
 
@@ -82,7 +83,7 @@ async function seedArtifactHome(home: string, repoPath: string): Promise<void> {
         title: "Rendered over a relay",
         mimeType: "text/html",
         size: html.byteLength,
-        contentSha256: createHash("sha256").update(html).digest("hex"),
+        contentSha256,
         createdAt: STAMP,
         updatedAt: STAMP,
         pinned: false,
@@ -97,7 +98,12 @@ async function seedArtifactHome(home: string, repoPath: string): Promise<void> {
     ]),
   );
 
-  await writeFile(path.join(home, "artifacts", PROJECT_ID, `${ARTIFACT_ID}.html`), html);
+  // Digest in the name, matching `ArtifactStore.contentPath`. Seeding the bare id instead would
+  // leave a file no record names, and the startup sweep would reclaim it and drop the record.
+  await writeFile(
+    path.join(home, "artifacts", PROJECT_ID, `${ARTIFACT_ID}.${contentSha256}.html`),
+    html,
+  );
 }
 
 test("an artifact renders over a relay, where the HTTP download route cannot reach", async ({
