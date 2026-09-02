@@ -649,6 +649,11 @@ const ToolCallDetailPayloadSchema: z.ZodType<ToolCallDetail, unknown> = z.discri
       text: z.string(),
     }),
     z.object({
+      type: z.literal("artifact"),
+      url: z.string(),
+      title: z.string().optional(),
+    }),
+    z.object({
       type: z.literal("unknown"),
       input: UnknownValueSchema,
       output: UnknownValueSchema,
