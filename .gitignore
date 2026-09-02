@@ -95,3 +95,5 @@ app.json
 
 # Heap snapshots dumped by --heapsnapshot-near-heap-limit; keep them for debugging.
 *.heapsnapshot
+# QA evidence screenshots — attached to pull requests, never committed.
+qa-evidence/
