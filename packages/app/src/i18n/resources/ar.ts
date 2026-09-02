@@ -326,6 +326,9 @@ export const ar: TranslationResources = {
     },
     actions: {
       copyCode: "نسخ الرمز",
+      copyLink: "نسخ الرابط",
+      openLinkInBrowser: "فتح في المتصفح",
+      openLinkInPaseo: "فتح في متصفح Paseo",
       copyTurn: "نسخ بدوره",
       copyMessage: "انسخ الرسالة",
       forkMenu: "تفريع الرسالة",
@@ -2067,6 +2070,15 @@ export const ar: TranslationResources = {
       serviceUrls: {
         options: {
           ask: "بسأل",
+          inApp: "في Paseo",
+          external: "متصفح خارجي",
+        },
+      },
+      agentLinks: {
+        label: "روابط الوكيل",
+        description: "مكان فتح الروابط في رسائل الوكيل",
+        accessibilityLabel: "حدد مكان فتح روابط الوكيل ({{value}})",
+        options: {
           inApp: "في Paseo",
           external: "متصفح خارجي",
         },
