@@ -31,11 +31,20 @@ import type {
   ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
+import type { PaseoToolCatalog } from "../tools/types.js";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
 
 export const MOCK_LOAD_TEST_PROVIDER_ID = "mock";
 export const MOCK_LOAD_TEST_DEFAULT_MODEL_ID = "five-minute-stream";
 export const MOCK_LOAD_TEST_HANDLED_COMMAND = "/mock handled-command";
+/**
+ * Publishes a real artifact through the real `publish_artifact` tool, so an e2e can exercise the
+ * store, the transfer and the Artifacts view without staging files into `$PASEO_HOME`.
+ */
+export const MOCK_LOAD_TEST_PUBLISH_ARTIFACT_COMMAND = "/mock publish-artifact";
+export const MOCK_LOAD_TEST_ARTIFACT_TITLE = "Mock published artifact";
+export const MOCK_LOAD_TEST_ARTIFACT_HTML =
+  "<h1 id='heading'>Published by an agent</h1><p id='body'>Stored by the daemon, not the repo.</p>";
 const MOCK_LOAD_TEST_MODE_ID = "load-test";
 const MOCK_LOAD_TEST_DURATION_MS = 5 * 60 * 1000;
 const MOCK_LOAD_TEST_INTERVAL_MS = 40;
@@ -54,6 +63,10 @@ const CAPABILITIES: AgentCapabilityFlags = {
   supportsMcpServers: false,
   supportsReasoningStream: true,
   supportsToolInvocations: true,
+  // Takes the Paseo tool catalog natively so e2e can drive a real tool call — see
+  // MOCK_LOAD_TEST_PUBLISH_ARTIFACT_COMMAND. Nothing is launched for it; the session holds the
+  // catalog and calls it directly.
+  supportsNativePaseoTools: true,
   supportsRewindConversation: true,
   supportsRewindFiles: true,
   supportsRewindBoth: true,
@@ -648,6 +661,18 @@ function createToolCall(input: {
   };
 }
 
+async function publishMockArtifact(catalog: PaseoToolCatalog): Promise<string> {
+  try {
+    await catalog.executeTool("publish_artifact", {
+      title: MOCK_LOAD_TEST_ARTIFACT_TITLE,
+      html: MOCK_LOAD_TEST_ARTIFACT_HTML,
+    });
+    return "Mock artifact published";
+  } catch (error) {
+    return `Mock artifact publish failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
 export class MockLoadTestAgentClient implements AgentClient {
   readonly provider: AgentProvider = MOCK_LOAD_TEST_PROVIDER_ID;
   readonly capabilities = CAPABILITIES;
@@ -662,6 +687,7 @@ export class MockLoadTestAgentClient implements AgentClient {
       config,
       sessionId: randomUUID(),
       logger: this.logger,
+      paseoTools: _launchContext?.paseoTools,
     });
   }
 
@@ -733,7 +759,15 @@ export class MockLoadTestAgentSession implements AgentSession {
   private remainingPromptRejections: number;
   private remainingSteerFailures: number;
 
-  constructor(options: { config: AgentSessionConfig; sessionId: string; logger?: Logger }) {
+  private readonly paseoTools?: PaseoToolCatalog;
+
+  constructor(options: {
+    config: AgentSessionConfig;
+    sessionId: string;
+    logger?: Logger;
+    paseoTools?: PaseoToolCatalog;
+  }) {
+    this.paseoTools = options.paseoTools;
     this.id = options.sessionId;
     this.logger = options.logger;
     this.modeId = options.config.modeId ?? MOCK_LOAD_TEST_MODE_ID;
@@ -907,6 +941,21 @@ export class MockLoadTestAgentSession implements AgentSession {
   tryHandleOutOfBand(
     prompt: AgentPromptInput,
   ): { run(ctx: { emit: (event: AgentStreamEvent) => void }): Promise<void> } | null {
+    if (prompt === MOCK_LOAD_TEST_PUBLISH_ARTIFACT_COMMAND) {
+      return {
+        run: async ({ emit }) => {
+          const catalog = this.paseoTools;
+          const text = catalog
+            ? await publishMockArtifact(catalog)
+            : "Paseo tools are not available to this agent.";
+          emit({
+            type: "timeline",
+            provider: this.provider,
+            item: { type: "assistant_message", text },
+          });
+        },
+      };
+    }
     if (prompt !== MOCK_LOAD_TEST_HANDLED_COMMAND) return null;
     return {
       run: async ({ emit }) => {
