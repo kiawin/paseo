@@ -150,6 +150,10 @@ call sites use `withUnistyles` and a `uniProps` mapping such as:
 (theme) => ({ color: theme.colorScheme === "light" ? colors.light : colors.dark });
 ```
 
+Pane contributions that render a link to the forge call `useForgeLinkOpener()` from
+`git/forge-link.tsx`. Calling `openExternalUrl` directly skips the user's pull request links
+setting, which the rest of the pane honors.
+
 Facts modules use one source of truth: a Zod schema. Helpers like
 `defineForgeFacts`, `defineNativeFallbackCheck`, and `definePaneContribution`
 derive guards from `schema.safeParse` and re-parse before invoking typed
