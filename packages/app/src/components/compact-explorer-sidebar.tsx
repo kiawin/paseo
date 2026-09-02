@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, ScrollView } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
@@ -360,7 +360,18 @@ function ExplorerSidebarContent({
         testID="explorer-header"
       >
         <TitlebarDragRegion />
-        <View style={styles.tabsContainer}>
+        {/*
+          Scrolls rather than wraps or clips. A git checkout with an open pull request shows four
+          tabs, and four labels do not fit the overlay's header at phone width — before this the
+          last tab was cut off and the close button was pushed outside the viewport entirely.
+          The desktop rail solves the same problem the same way.
+        */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsScroll}
+          contentContainerStyle={styles.tabsContainer}
+        >
           {isGit && (
             <ExplorerTabButton
               tab="changes"
@@ -401,7 +412,7 @@ function ExplorerSidebarContent({
             onTabPress={onTabPress}
             testID="explorer-tab-artifacts"
           />
-        </View>
+        </ScrollView>
         <View style={styles.headerRightSection}>
           <Pressable
             onPress={onClose}
@@ -549,8 +560,17 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
+  tabsScroll: {
+    // Shrinks so the close button keeps its place; never grows past its content. `minWidth: 0`
+    // is what lets it shrink at all — a flex item's floor is its content width without it, and
+    // four tabs' worth of content would push the close button outside the viewport.
+    flexShrink: 1,
+    flexGrow: 0,
+    minWidth: 0,
+  },
   tabsContainer: {
     flexDirection: "row",
+    alignItems: "center",
     gap: theme.spacing[1],
   },
   tab: {

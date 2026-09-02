@@ -31,6 +31,7 @@ function encodeFrame(input: {
 export const OWNED_ID = "art_0000000000000001";
 export const LINKED_ID = "art_0000000000000002";
 export const LINK_ONLY_ID = "art_0000000000000003";
+export const PR_NUMBER = 42;
 export const LINK_ONLY_URL = "https://claude.ai/code/artifact/link-only";
 
 function artifactRecord(input: {
@@ -63,7 +64,12 @@ function artifactRecord(input: {
  * list, the binary download and its ack pacing, then the sandboxed render — against the real
  * app and the real daemon connection.
  */
-export async function stubArtifactRpcs(page: Page): Promise<void> {
+export async function stubArtifactRpcs(
+  page: Page,
+  options: { withOpenPullRequest?: boolean } = {},
+): Promise<void> {
+  // One handler for the whole socket: Playwright routes a pattern to a single handler, so a
+  // second `routeWebSocket` call would replace this one rather than compose with it.
   await page.routeWebSocket(daemonWsRoutePattern(), (browserSocket) => {
     const serverSocket = browserSocket.connectToServer();
     browserSocket.onMessage((message) => {
@@ -72,9 +78,20 @@ export async function stubArtifactRpcs(page: Page): Promise<void> {
         return;
       }
       const envelope = JSON.parse(message) as {
-        message?: { type?: string; projectId?: string; artifactId?: string; requestId?: string };
+        message?: {
+          type?: string;
+          projectId?: string;
+          artifactId?: string;
+          cwd?: string;
+          requestId?: string;
+        };
       };
       const inbound = envelope.message;
+
+      if (options.withOpenPullRequest && inbound?.type === "checkout_pr_status_request") {
+        browserSocket.send(JSON.stringify(openPullRequestResponse(inbound)));
+        return;
+      }
 
       if (inbound?.type === "artifact.list.request") {
         browserSocket.send(
@@ -180,4 +197,61 @@ export async function openArtifactsPanel(page: Page): Promise<void> {
   const menu = page.getByTestId("explorer-sidebar-tab-configuration");
   await expect(menu).toBeVisible({ timeout: 15_000 });
   await menu.getByText("Artifacts", { exact: true }).click();
+}
+
+/**
+ * An open pull request for any checkout, so the compact Explorer shows its PR tab.
+ *
+ * The forge fixtures need real `gh` auth, which is why the specs using them are `.real`. What is
+ * under test here is a four-tab header at phone width, not the PR pane's contents, so the one
+ * status RPC is answered directly.
+ */
+function openPullRequestResponse(inbound: { cwd?: string; requestId?: string }) {
+  return {
+    type: "session",
+    message: {
+      type: "checkout_pr_status_response",
+      payload: {
+        cwd: inbound.cwd,
+        githubFeaturesEnabled: true,
+        authState: "authenticated",
+        forge: "github",
+        error: null,
+        requestId: inbound.requestId,
+        status: {
+          forge: "github",
+          number: PR_NUMBER,
+          url: `https://github.com/acme/repo/pull/${PR_NUMBER}`,
+          title: "Add the artifacts view",
+          state: "OPEN",
+          baseRefName: "main",
+          headRefName: "feat/artifacts",
+          isMerged: false,
+          isDraft: false,
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Waits for the compact overlay's slide-in to settle.
+ *
+ * The panel animates in from the right, and `boundingBox()` reports the animated position — a
+ * geometry assertion taken too early measures the transform, not the layout.
+ */
+export async function waitForCompactExplorerSettled(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const header = document.querySelector('[data-testid="explorer-header"]');
+      if (!header) return false;
+      const x = Math.round(header.getBoundingClientRect().x);
+      const state = window as unknown as { __explorerX?: number; __explorerStable?: number };
+      state.__explorerStable = state.__explorerX === x ? (state.__explorerStable ?? 0) + 1 : 0;
+      state.__explorerX = x;
+      return (state.__explorerStable ?? 0) > 5;
+    },
+    undefined,
+    { polling: 50, timeout: 15_000 },
+  );
 }

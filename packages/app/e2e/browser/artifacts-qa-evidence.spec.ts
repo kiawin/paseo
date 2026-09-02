@@ -4,8 +4,10 @@ import {
   LINKED_ID,
   LINK_ONLY_ID,
   OWNED_ID,
+  PR_NUMBER,
   openArtifactsPanel,
   stubArtifactRpcs,
+  waitForCompactExplorerSettled,
 } from "../support/helpers/artifacts";
 import { waitForWorkspaceTabsVisible } from "../support/helpers/workspace-tabs";
 
@@ -108,4 +110,46 @@ test("evidence: launcher does not offer Artifacts in the main pane", async ({
   await expect(page.getByTestId("workspace-new-tab-menu-artifacts")).toHaveCount(0);
   await expect(page.getByTestId("workspace-new-tab-menu-files")).toHaveCount(0);
   await shot(page, testInfo, "08-main-pane-launcher-excludes-artifacts");
+});
+
+test("evidence: the compact header with all four tabs", async ({
+  page,
+  withWorkspace,
+}, testInfo) => {
+  // The plan flagged this as the crowding case: Changes, Files, a PR chip and Artifacts sharing
+  // a 390 px header. A fixture repo has no pull request, so the status RPC is stubbed.
+  await stubArtifactRpcs(page, { withOpenPullRequest: true });
+  await openWorkspaceWide(page, withWorkspace, "artifacts-evidence-four-tab-");
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await page.getByTestId("workspace-explorer-toggle").first().click();
+  for (const tab of ["changes", "files", "pr", "artifacts"]) {
+    await expect(page.getByTestId(`explorer-tab-${tab}`).first()).toBeVisible({ timeout: 30_000 });
+  }
+  await expect(page.getByTestId("explorer-tab-pr").first()).toContainText(String(PR_NUMBER));
+  await waitForCompactExplorerSettled(page);
+  await shot(page, testInfo, "09-compact-four-tab-header");
+
+  // Crowded is acceptable; a tab or the close button pushed outside the viewport is not. Four
+  // labels do not fit, so the row scrolls — the close button must still hold its place, and the
+  // last tab must still be reachable and selectable.
+  const close = page.getByTestId("explorer-close").first();
+  const closeBox = await close.boundingBox();
+  expect(closeBox).not.toBeNull();
+  if (!closeBox) throw new Error("Explorer close button has no bounding box");
+  expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(390);
+
+  const artifacts = page.getByTestId("explorer-tab-artifacts").first();
+  await artifacts.scrollIntoViewIfNeeded();
+  const box = await artifacts.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) throw new Error("Artifacts tab has no bounding box");
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+
+  await artifacts.click();
+  await expect(page.getByTestId("artifacts-list").filter({ visible: true }).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await shot(page, testInfo, "10-compact-four-tab-artifacts-selected");
 });
