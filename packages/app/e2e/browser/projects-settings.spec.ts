@@ -272,6 +272,10 @@ test.describe("Projects settings", () => {
 
     await fillCustomWorktreeRoot(page, "relative/path");
     await expectWorktreeLocationError(page, /absolute/i);
+
+    // A rejected root has no holder. Showing a preview anyway reads as a
+    // promise that worktrees will be created there.
+    await expect(page.getByTestId("worktree-location-preview")).toHaveCount(0);
   });
 
   test("user edits worktree setup from the projects page", async ({ page, editableProject }) => {

@@ -150,9 +150,11 @@ export function WorktreeLocationSection({
     mutation.mutate({ mode: "custom", root: trimmed });
   }, [customRoot, mutation]);
 
+  // A rejected root has no holder, and showing one anyway reads as a promise
+  // that worktrees will be created there.
   const preview = useMemo(
-    () => previewHolder(mode, repoRoot, customRoot),
-    [mode, repoRoot, customRoot],
+    () => (error === null ? previewHolder(mode, repoRoot, customRoot) : ""),
+    [error, mode, repoRoot, customRoot],
   );
 
   const showCustom = mode === "custom";
