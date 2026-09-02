@@ -296,6 +296,9 @@ export const en = {
     },
     actions: {
       copyCode: "Copy code",
+      copyLink: "Copy link",
+      openLinkInBrowser: "Open in browser",
+      openLinkInPaseo: "Open in Paseo browser",
       copyTurn: "Copy turn",
       copyMessage: "Copy message",
       forkMenu: "Fork chat from here",
@@ -2147,6 +2150,15 @@ export const en = {
         description: "Where to open URLs from running scripts",
         options: {
           ask: "Ask",
+          inApp: "In Paseo",
+          external: "External browser",
+        },
+      },
+      agentLinks: {
+        label: "Agent links",
+        description: "Where to open links in agent messages",
+        accessibilityLabel: "Select where agent links open ({{value}})",
+        options: {
           inApp: "In Paseo",
           external: "External browser",
         },
