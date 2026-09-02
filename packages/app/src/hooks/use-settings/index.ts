@@ -40,8 +40,10 @@ import {
   resolveContentMaxWidth,
   sanitizeFontFamily,
   saveAppSettings as saveAppSettingsPure,
+  type AgentLinkBehavior,
   type AppSettings,
   type AppSettingsUpdate,
+  type ForgeLinkBehavior,
   type OpenInSidePanePreferences,
   type PullRequestOpenLocation,
   type DesktopSettingsBridge,
@@ -82,9 +84,11 @@ export {
   sanitizeFontFamily,
 };
 export type {
+  AgentLinkBehavior,
   AppSettings,
   AppSettingsUpdate,
   AppLanguage,
+  ForgeLinkBehavior,
   OpenInSidePanePreferences,
   PullRequestOpenLocation,
   DesktopSettingsBridge,
