@@ -68,7 +68,12 @@ export function setMobilePanelTarget(
   return { target, revision: selection.revision + 1 };
 }
 
-const ExplorerTabSchema = z.enum(["changes", "files", "pr"]);
+const ExplorerTabSchema = z.enum(["changes", "files", "pr", "artifacts"]);
+// Persisted panel state is validated as one strict object and a failed parse deletes the entry
+// outright — widths, expansion, every panel preference. So a tab value this build does not
+// recognise has to degrade to the default instead of failing the object. Without it, rolling
+// back to a build that predates a new Explorer view wipes all panel state.
+const PersistedExplorerTabSchema = ExplorerTabSchema.catch("changes");
 const DesktopSidebarStorageSchema = z.strictObject({
   agentListOpen: z.boolean().optional(),
   focusModeEnabled: z.boolean().optional(),
@@ -89,8 +94,8 @@ export const PanelPersistedStateSchema = z.strictObject({
     })
     .optional(),
   desktop: DesktopSidebarStorageSchema.optional(),
-  explorerTab: ExplorerTabSchema.optional(),
-  explorerTabByCheckout: z.record(z.string(), ExplorerTabSchema).optional(),
+  explorerTab: PersistedExplorerTabSchema.optional(),
+  explorerTabByCheckout: z.record(z.string(), PersistedExplorerTabSchema).optional(),
   expandedPathsByWorkspace: z.record(z.string(), z.array(z.string())).optional(),
   // Accepted only so migration can discard the former per-file diff expansion state.
   diffExpandedPathsByWorkspace: z.record(z.string(), z.array(z.string())).optional(),
