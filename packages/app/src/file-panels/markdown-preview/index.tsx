@@ -1,3 +1,4 @@
+import { AssistantLinkContextMenu } from "@/assistant-file-links";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { useMemo } from "react";
@@ -44,13 +45,15 @@ export function FileMarkdownPreview({
             ))}
           </View>
         ) : null}
-        <MarkdownRenderer
-          text={document.body}
-          filePath={filePath}
-          workspaceRoot={workspaceRoot}
-          client={client}
-          serverId={serverId}
-        />
+        <AssistantLinkContextMenu>
+          <MarkdownRenderer
+            text={document.body}
+            filePath={filePath}
+            workspaceRoot={workspaceRoot}
+            client={client}
+            serverId={serverId}
+          />
+        </AssistantLinkContextMenu>
       </View>
     </View>
   );
