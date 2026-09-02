@@ -18,8 +18,9 @@ import {
   type GitActions,
 } from "@/git/policy";
 import { deriveMergeCapability } from "@/git/merge-capability";
+import { useOpenForgeLink } from "@/utils/use-link-behavior";
+import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import type { CheckoutPrMergeMethod } from "@getpaseo/protocol/messages";
-import { openExternalUrl } from "@/utils/open-external-url";
 import { useToast } from "@/contexts/toast-context";
 import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
 import {
@@ -75,10 +76,6 @@ function renderForgePrIcon(forge: Forge): ReactElement {
 
 function forgeVocabulary(forge: Forge): { context: "mr" | undefined } {
   return { context: getForgePresentation(forge).changeRequestContext };
-}
-
-function openURLInNewTab(url: string): void {
-  void openExternalUrl(url);
 }
 
 function isActionDisabled(actionsDisabled: boolean, status: CheckoutGitActionStatus): boolean {
@@ -312,10 +309,28 @@ function useWorkspaceScreenArchiveController({
   };
 }
 
+/**
+ * The workspace an in-app forge tab would belong to. These actions act on one checkout, and the
+ * route's selection is that checkout only while it names this host; anything else has no
+ * workspace to own a tab, so the link goes to the system browser.
+ */
+function resolveForgeLinkWorkspaceKey(
+  serverId: string,
+  selection: ActiveWorkspaceSelection | null,
+): string | null {
+  if (!selection || selection.serverId !== serverId) {
+    return null;
+  }
+  return buildWorkspaceTabPersistenceKey({ serverId, workspaceId: selection.workspaceId });
+}
+
 export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): UseGitActionsResult {
   const { t } = useTranslation();
   const toast = useToast();
   const activeWorkspaceSelection = useActiveWorkspaceSelection();
+  const openForgeLink = useOpenForgeLink(
+    resolveForgeLinkWorkspaceKey(serverId, activeWorkspaceSelection),
+  );
   const [postShipArchiveSuggested, setPostShipArchiveSuggested] = useState(false);
   const [shipDefault, setShipDefault] = useState<"merge" | "pr">("pr");
 
@@ -670,11 +685,11 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
 
   const handlePrAction = useCallback(() => {
     if (prStatus?.url) {
-      openURLInNewTab(prStatus.url);
+      openForgeLink(prStatus.url);
       return;
     }
     handleCreatePr();
-  }, [prStatus?.url, handleCreatePr]);
+  }, [prStatus?.url, handleCreatePr, openForgeLink]);
 
   // Build actions
   const gitActionsInput = useMemo<BuildGitActionsInput>(() => {
