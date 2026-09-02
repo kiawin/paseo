@@ -2653,6 +2653,31 @@ export const ru: TranslationResources = {
         failedTitle: "Не удалось загрузить paseo.json.",
         failedDescription: "Загрузите данные заново, чтобы повторить попытку.",
       },
+      worktreeLocation: {
+        title: "Расположение рабочего дерева",
+        info: "Где Paseo создаёт рабочие деревья для этого проекта",
+        label: "Расположение",
+        description: "Где создаются новые рабочие деревья.",
+        accessibilityLabel: "Расположение рабочего дерева, сейчас {{value}}",
+        noMigrationNote:
+          "Изменение не перемещает существующие рабочие деревья. Они остаются на месте; новое расположение используют только новые.",
+        modes: {
+          managed: "Управляемое",
+          managedHint: "Собственный каталог Paseo",
+          sibling: "Соседнее",
+          siblingHint: "Рядом с репозиторием",
+          nested: "Вложенное",
+          nestedHint: "Внутри репозитория",
+          custom: "Своё",
+          customHint: "Путь на ваш выбор",
+        },
+        customPathLabel: "Путь",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "Свой каталог рабочих деревьев",
+        externalRemovalNote:
+          "Архивирование рабочей области оставляет рабочее дерево на диске. Удалите его сами или выберите удаление при архивировании.",
+        saveFailed: "Не удалось изменить расположение рабочего дерева",
+      },
       worktree: {
         title: "Хуки жизненного цикла worktree",
         info: "Команды, которые выполняются при создании или удалении worktree для этого проекта.",

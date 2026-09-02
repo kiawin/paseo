@@ -1,3 +1,4 @@
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import type { ProjectDescriptor, WorkspaceDescriptor } from "@/stores/session-store";
 import type { HostProjectListItem } from "@/projects/host-project-model";
 import { buildWorkspaceStructureProjects } from "@/projects/workspace-structure";
@@ -28,6 +29,7 @@ export interface ProjectHostEntry {
   gitRuntime?: WorkspaceDescriptor["gitRuntime"];
   githubRuntime?: WorkspaceDescriptor["githubRuntime"];
   customIconRevision?: string | null;
+  worktreeLocation?: WorktreeLocation | null;
   iconRevision?: string;
 }
 
@@ -91,6 +93,7 @@ interface HostGroup {
   isOnline: boolean;
   workspaces: WorkspaceDescriptor[];
   customIconRevision?: string | null;
+  worktreeLocation?: WorktreeLocation | null;
   iconRevision?: string;
   // The project record exists before its first workspace. Keep its editable
   // root at the project boundary instead of deriving it from child rows.
@@ -107,12 +110,17 @@ interface ProjectGroup {
 function findProjectMetadata(
   host: ProjectHost,
   projectId: string,
-): { customName: string | null; displayName: string } | null {
+): {
+  customName: string | null;
+  displayName: string;
+  worktreeLocation: WorktreeLocation | null;
+} | null {
   for (const project of host.projects) {
     if (project.projectId === projectId) {
       return {
         customName: project.projectCustomName ?? null,
         displayName: project.projectDisplayName,
+        worktreeLocation: project.projectWorktreeLocation ?? null,
       };
     }
   }
@@ -182,6 +190,7 @@ function toHostEntry(group: HostGroup): ProjectHostEntry {
     gitRuntime: canonical?.gitRuntime,
     githubRuntime: canonical?.githubRuntime,
     customIconRevision: canonical?.projectCustomIconRevision ?? group.customIconRevision,
+    worktreeLocation: group.worktreeLocation ?? null,
     iconRevision: group.iconRevision,
   };
 }
@@ -247,6 +256,7 @@ function addHostProjects(
         isOnline: host.isOnline,
         workspaces: [],
         customIconRevision: placement.customIconRevision,
+        worktreeLocation: customName?.worktreeLocation ?? null,
         iconRevision: placement.iconRevision,
         projectRoot: repoRootByProjectId.get(projectId) ?? "",
       });

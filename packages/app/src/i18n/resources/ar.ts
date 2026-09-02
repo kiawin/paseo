@@ -2606,6 +2606,31 @@ export const ar: TranslationResources = {
         failedTitle: "تعذر تحميل paseo.json",
         failedDescription: "أعد التحميل للمحاولة مرة أخرى.",
       },
+      worktreeLocation: {
+        title: "موقع شجرة العمل",
+        info: "أين ينشئ Paseo أشجار العمل لهذا المشروع",
+        label: "الموقع",
+        description: "أين تُنشأ أشجار العمل الجديدة.",
+        accessibilityLabel: "موقع شجرة العمل، حاليًا {{value}}",
+        noMigrationNote:
+          "تغيير هذا لا ينقل أشجار العمل الحالية. تبقى في مكانها؛ الجديدة فقط تستخدم الموقع الجديد.",
+        modes: {
+          managed: "مُدار",
+          managedHint: "دليل Paseo الخاص",
+          sibling: "مجاور",
+          siblingHint: "بجانب المستودع",
+          nested: "متداخل",
+          nestedHint: "داخل المستودع",
+          custom: "مخصص",
+          customHint: "مسار تختاره",
+        },
+        customPathLabel: "المسار",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "دليل شجرة عمل مخصص",
+        externalRemovalNote:
+          "أرشفة مساحة العمل تترك شجرة العمل على القرص. أزلها بنفسك، أو اختر إزالتها عند الأرشفة.",
+        saveFailed: "تعذر تغيير موقع شجرة العمل",
+      },
       worktree: {
         title: "خطافات دورة حياة شجرة العمل",
         info: "الأوامر التي يتم تشغيلها عند إنشاء شجرة عمل أو هدمها لهذا المشروع",

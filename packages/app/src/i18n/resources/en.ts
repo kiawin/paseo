@@ -2709,6 +2709,33 @@ export const en = {
         failedTitle: "Couldn't load paseo.json",
         failedDescription: "Reload to try again.",
       },
+      worktreeLocation: {
+        title: "Worktree location",
+        info: "Where Paseo creates worktrees for this project",
+        label: "Location",
+        description: "Where new worktrees are created.",
+        accessibilityLabel: "Worktree location, currently {{value}}",
+        noMigrationNote:
+          "Changing this does not move existing worktrees. They stay where they are; only new ones use the new location.",
+        modes: {
+          managed: "Managed",
+          managedHint: "Paseo's own directory",
+          sibling: "Sibling",
+          siblingHint: "Next to the repository",
+          nested: "Nested",
+          nestedHint: "Inside the repository",
+          custom: "Custom",
+          customHint: "A path you choose",
+        },
+        customPathLabel: "Path",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "Custom worktree directory",
+        // Worktrees outside Paseo's own directory are left on disk when a
+        // workspace is archived, so say so before someone picks one.
+        externalRemovalNote:
+          "Archiving a workspace leaves its worktree on disk. Remove it yourself, or choose to remove it when you archive.",
+        saveFailed: "Could not change the worktree location",
+      },
       worktree: {
         title: "Worktree lifecycle hooks",
         info: "Commands that run when a worktree is created or torn down for this project",

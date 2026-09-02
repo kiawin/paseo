@@ -2647,6 +2647,31 @@ export const ptBR: TranslationResources = {
         failedTitle: "Não foi possível carregar paseo.json",
         failedDescription: "Recarregue para tentar novamente.",
       },
+      worktreeLocation: {
+        title: "Local do worktree",
+        info: "Onde o Paseo cria os worktrees deste projeto",
+        label: "Local",
+        description: "Onde novos worktrees são criados.",
+        accessibilityLabel: "Local do worktree, atualmente {{value}}",
+        noMigrationNote:
+          "Mudar isto não move os worktrees existentes. Eles permanecem onde estão; só os novos usam o novo local.",
+        modes: {
+          managed: "Gerenciado",
+          managedHint: "O diretório do próprio Paseo",
+          sibling: "Irmão",
+          siblingHint: "Ao lado do repositório",
+          nested: "Aninhado",
+          nestedHint: "Dentro do repositório",
+          custom: "Personalizado",
+          customHint: "Um caminho que você escolhe",
+        },
+        customPathLabel: "Caminho",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "Diretório de worktree personalizado",
+        externalRemovalNote:
+          "Arquivar um espaço de trabalho deixa o worktree no disco. Remova-o você mesmo, ou escolha removê-lo ao arquivar.",
+        saveFailed: "Não foi possível alterar o local do worktree",
+      },
       worktree: {
         title: "Hooks de ciclo de vida do worktree",
         info: "Comandos executados quando um worktree é criado ou desmontado para este projeto",

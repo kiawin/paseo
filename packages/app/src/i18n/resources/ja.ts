@@ -2631,6 +2631,31 @@ export const ja: TranslationResources = {
         failedTitle: "paseo.jsonを読み込めませんでした",
         failedDescription: "再読み込みして再試行してください。",
       },
+      worktreeLocation: {
+        title: "ワークツリーの場所",
+        info: "このプロジェクトのワークツリーを Paseo が作成する場所",
+        label: "場所",
+        description: "新しいワークツリーが作成される場所。",
+        accessibilityLabel: "ワークツリーの場所、現在は {{value}}",
+        noMigrationNote:
+          "変更しても既存のワークツリーは移動しません。そのまま残り、新しいものだけが新しい場所を使います。",
+        modes: {
+          managed: "マネージド",
+          managedHint: "Paseo 専用のディレクトリ",
+          sibling: "兄弟",
+          siblingHint: "リポジトリの隣",
+          nested: "ネスト",
+          nestedHint: "リポジトリの内側",
+          custom: "カスタム",
+          customHint: "任意のパス",
+        },
+        customPathLabel: "パス",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "カスタムワークツリーディレクトリ",
+        externalRemovalNote:
+          "ワークスペースをアーカイブしてもワークツリーはディスクに残ります。自分で削除するか、アーカイブ時に削除を選んでください。",
+        saveFailed: "ワークツリーの場所を変更できませんでした",
+      },
       worktree: {
         title: "ワークツリーライフサイクルフック",
         info: "このプロジェクトのワークツリーが作成または削除されたときに実行されるコマンド",
