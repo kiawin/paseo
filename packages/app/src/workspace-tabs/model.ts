@@ -42,6 +42,8 @@ export type WorkspaceTabTarget =
   | { kind: "changes_tree" }
   | { kind: "files" }
   | { kind: "pull_request" }
+  | { kind: "artifacts" }
+  | { kind: "artifact"; artifactId: string }
   | WorkspaceFileTabTarget
   | WorkspaceWorkingDiffTabTarget
   | PluginWorkspaceTabTarget
