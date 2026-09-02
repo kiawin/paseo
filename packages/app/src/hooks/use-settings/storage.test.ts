@@ -369,6 +369,52 @@ describe("loadAppSettingsFromStorage", () => {
     expect(result.useLegacyTerminalRenderer).toBe(false);
   });
 
+  it("sends forge links to the external browser by default", async () => {
+    const result = await loadAppSettingsFromStorage(makeDeps());
+
+    expect(result.forgeLinkBehavior).toBe("external");
+  });
+
+  it("loads an in-app forge link preference", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ forgeLinkBehavior: "in-app" }),
+      }),
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.forgeLinkBehavior).toBe("in-app");
+  });
+
+  it("falls back to the external browser for an invalid stored forge link behavior", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ forgeLinkBehavior: "ask" }),
+      }),
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.forgeLinkBehavior).toBe("external");
+  });
+
+  it("keeps the forge and agent link preferences independent", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          forgeLinkBehavior: "in-app",
+          agentLinkBehavior: "external",
+        }),
+      }),
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.forgeLinkBehavior).toBe("in-app");
+    expect(result.agentLinkBehavior).toBe("external");
+  });
+
   it("loads the per-device legacy terminal renderer preference", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({
