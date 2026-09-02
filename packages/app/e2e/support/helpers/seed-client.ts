@@ -52,6 +52,9 @@ export interface SeedDaemonClient {
     assigned: boolean;
   }): Promise<unknown>;
   listProjects(): Promise<{ projects: SeedProjectDescriptor[] }>;
+  listArtifacts(
+    projectId: string,
+  ): Promise<Array<{ artifactId: string; title: string; customTitle?: string; pinned: boolean }>>;
   createWorkspace(input: {
     source:
       | { kind: "directory"; path: string; projectId?: string }
