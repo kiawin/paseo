@@ -5,8 +5,7 @@ import { useStableEvent } from "@/hooks/use-stable-event";
 import type { OpenFileDisposition } from "@/workspace/file-open";
 import { isElectronRuntime } from "@/desktop/host";
 import { loadAppSettingsFromStorage } from "@/hooks/use-settings";
-import { openExternalUrl } from "@/utils/open-external-url";
-import { resolveAgentLinkDestination } from "@/utils/agent-link-destination";
+import { openAgentLink } from "@/utils/open-agent-link";
 import type { InlinePathTarget } from "./parse";
 import {
   useAssistantFileLinkResolverContext,
@@ -333,16 +332,12 @@ async function dispatchExternalUrl(input: {
     return;
   }
   const openInBrowserTab = current.onOpenUrlInBrowserTab;
-  const destination = resolveAgentLinkDestination({
+  await openAgentLink({
+    url: input.url,
     behavior: settings.agentLinkBehavior,
     isElectron: isElectronRuntime(),
-    hasInAppOpener: Boolean(openInBrowserTab),
+    openInBrowserTab,
   });
-  if (destination === "in-app" && openInBrowserTab) {
-    openInBrowserTab(input.url);
-    return;
-  }
-  await openExternalUrl(input.url);
 }
 
 async function dispatchUnresolvedError(input: {
