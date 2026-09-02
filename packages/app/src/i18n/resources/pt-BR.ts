@@ -2669,7 +2669,7 @@ export const ptBR: TranslationResources = {
         customPathPlaceholder: "~/code/worktrees",
         customPathAccessibility: "Diretório de worktree personalizado",
         externalRemovalNote:
-          "Arquivar um espaço de trabalho deixa o worktree no disco. Remova-o você mesmo, ou escolha removê-lo ao arquivar.",
+          "Arquivar um espaço de trabalho deixa o worktree no disco. Remova-o você mesmo com git worktree remove.",
         saveFailed: "Não foi possível alterar o local do worktree",
       },
       worktree: {

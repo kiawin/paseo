@@ -1,4 +1,7 @@
-import { classifyWorktreePlacementByPath } from "../../worktree/ownership.js";
+import {
+  classifyWorktreePlacementByPath,
+  type WorktreePlacement,
+} from "../../worktree/ownership.js";
 import { basename, resolve } from "node:path";
 import type { Logger } from "pino";
 import {
@@ -45,6 +48,12 @@ export interface CreateWorktreeWorkspaceInput {
   baseBranch: string | null;
   title: string | null;
   expectsInitialAgent?: boolean;
+  /**
+   * Placement derived from the location mode actually used. Falls back to path
+   * shape only for callers that do not know the mode; the path cannot tell a
+   * deliberate custom root under Paseo's base from a genuinely managed one.
+   */
+  worktreePlacement?: WorktreePlacement;
 }
 
 export interface WorkspaceProvisioningService {
@@ -231,7 +240,7 @@ export function createWorkspaceProvisioningService(deps: {
         branch: input.branch,
         baseBranch: input.baseBranch,
         mainRepoRoot: repoRoot,
-        worktreePlacement: classifyWorktreePlacementByPath(worktreeRoot),
+        worktreePlacement: input.worktreePlacement ?? classifyWorktreePlacementByPath(worktreeRoot),
       }),
       title: input.title,
       createdAt: timestamp,

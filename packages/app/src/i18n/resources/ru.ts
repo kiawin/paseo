@@ -2675,7 +2675,7 @@ export const ru: TranslationResources = {
         customPathPlaceholder: "~/code/worktrees",
         customPathAccessibility: "Свой каталог рабочих деревьев",
         externalRemovalNote:
-          "Архивирование рабочей области оставляет рабочее дерево на диске. Удалите его сами или выберите удаление при архивировании.",
+          "Архивирование рабочей области оставляет рабочее дерево на диске. Удалите его сами через git worktree remove.",
         saveFailed: "Не удалось изменить расположение рабочего дерева",
       },
       worktree: {

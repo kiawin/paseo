@@ -531,6 +531,25 @@ describe("resolveWorktreeHolderDir", () => {
     });
   });
 
+  // A custom root under Paseo's own base root produces the two-segment
+  // <hash>/<slug> shape the placement classifier reads as managed — which would
+  // arm the forced recursive delete for a mode contracted to leave files alone.
+  it("custom rejects a root inside Paseo's managed base root", () => {
+    const managedBase = join(paseoHome, "worktrees");
+    for (const candidate of [managedBase, join(managedBase, "a1b2c3d4"), paseoHome]) {
+      expect(resolveCustomWorktreeRoot(candidate, repoDir, { paseoHome })).toEqual({
+        ok: false,
+        rejection: "inside_managed_root",
+      });
+    }
+
+    // Unrelated roots are still accepted.
+    expect(resolveCustomWorktreeRoot(join(tempDir, "elsewhere"), repoDir, { paseoHome })).toEqual({
+      ok: true,
+      root: join(tempDir, "elsewhere"),
+    });
+  });
+
   it("custom rejection surfaces as a thrown error from the resolver", async () => {
     await expect(
       resolveWorktreeHolderDir({

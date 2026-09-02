@@ -52,6 +52,8 @@ export interface CreateWorktreeCoreResult {
   intent: WorktreeCreationIntent;
   repoRoot: string;
   created: boolean;
+  /** The location actually used. Null means managed. */
+  location?: WorktreeLocation | null;
 }
 
 export async function createWorktreeCore(
@@ -122,6 +124,8 @@ async function createWorktreeCoreWithPriority(
     }
   }
 
+  const location = (await input.resolveWorktreeLocation?.(repoRoot)) ?? null;
+
   return {
     worktree: await createWorktree({
       cwd: repoRoot,
@@ -130,11 +134,15 @@ async function createWorktreeCoreWithPriority(
       runSetup: input.runSetup ?? true,
       paseoHome: input.paseoHome,
       worktreesRoot: input.worktreesRoot,
-      location: (await input.resolveWorktreeLocation?.(repoRoot)) ?? null,
+      location,
     }),
     intent,
     repoRoot,
     created: true,
+    // Returned so downstream records placement from the mode that was actually
+    // used, rather than re-deriving it from the resulting path — a custom root
+    // can sit anywhere, and path shape cannot tell intent from coincidence.
+    location,
   };
 }
 

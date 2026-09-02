@@ -2643,7 +2643,7 @@ export const ko: TranslationResources = {
         customPathPlaceholder: "~/code/worktrees",
         customPathAccessibility: "사용자 지정 워크트리 디렉터리",
         externalRemovalNote:
-          "워크스페이스를 보관해도 워크트리는 디스크에 남습니다. 직접 삭제하거나 보관할 때 삭제를 선택하세요.",
+          "워크스페이스를 보관해도 워크트리는 디스크에 남습니다. git worktree remove로 직접 삭제하세요.",
         saveFailed: "워크트리 위치를 변경하지 못했습니다",
       },
       worktree: {

@@ -638,10 +638,28 @@ async function inferRepoRootPathFromWorktreePath(worktreePath: string): Promise<
   }
 }
 
+/**
+ * The recursive fallback is only safe inside Paseo's private root. Elsewhere the
+ * holder is a directory people also use, and setup can have produced ignored
+ * files worth more than this cleanup, so the directory is left for the caller's
+ * rollback to report.
+ */
+function cleanUpFailedWorktreeSetup(options: {
+  worktreePath: string;
+  allowRecursiveCleanup?: boolean;
+}): void {
+  if (options.allowRecursiveCleanup === false) {
+    return;
+  }
+  rmSync(options.worktreePath, { recursive: true, force: true });
+}
+
 export async function runWorktreeSetupCommands(options: {
   worktreePath: string;
   branchName: string;
   cleanupOnFailure: boolean;
+  /** Defaults to true. False outside Paseo's private root, where a recursive delete is unsafe. */
+  allowRecursiveCleanup?: boolean;
   repoRootPath?: string;
   runtimeEnv?: WorktreeRuntimeEnv;
   signal?: AbortSignal;
@@ -688,7 +706,7 @@ export async function runWorktreeSetupCommands(options: {
             timeout: 120_000,
           });
         } catch {
-          rmSync(options.worktreePath, { recursive: true, force: true });
+          cleanUpFailedWorktreeSetup(options);
         }
       }
       throw new WorktreeSetupError(
@@ -886,7 +904,8 @@ export type CustomWorktreeRootRejection =
   | "relative"
   | "is_repo_root"
   | "inside_repo"
-  | "contains_repo";
+  | "contains_repo"
+  | "inside_managed_root";
 
 export type CustomWorktreeRootResult =
   | { ok: true; root: string }
@@ -904,6 +923,7 @@ export type CustomWorktreeRootResult =
 export function resolveCustomWorktreeRoot(
   root: string,
   repoRoot: string,
+  options?: WorktreeRootOptions,
 ): CustomWorktreeRootResult {
   const expanded = expandTilde(root.trim());
   if (!isAbsolute(expanded)) {
@@ -912,6 +932,19 @@ export function resolveCustomWorktreeRoot(
 
   const resolvedRoot = resolve(expanded);
   const resolvedRepoRoot = resolve(repoRoot);
+
+  // A custom root under Paseo's own base root produces the two-segment
+  // <hash>/<slug> shape the placement classifier reads as `managed`, silently
+  // arming the forced recursive delete for a mode whose contract is that the
+  // directory is left alone. Containing the base root is refused for the same
+  // reason in reverse.
+  const managedBaseRoot = resolvePaseoWorktreesBaseRoot(options);
+  if (
+    getRealpathAwareRelativePath(managedBaseRoot, resolvedRoot) !== null ||
+    isPathInsideRoot(resolvedRoot, managedBaseRoot)
+  ) {
+    return { ok: false, rejection: "inside_managed_root" };
+  }
 
   if (getRealpathAwareRelativePath(resolvedRepoRoot, resolvedRoot) === "") {
     return { ok: false, rejection: "is_repo_root" };
@@ -939,6 +972,8 @@ export function describeCustomWorktreeRootRejection(
       return "That is inside the repository. Choose Nested instead.";
     case "contains_repo":
       return "That directory contains the repository. Choose a different one.";
+    case "inside_managed_root":
+      return "That is inside Paseo's own worktree directory. Choose Managed instead.";
   }
 }
 
@@ -1018,7 +1053,10 @@ export async function resolveWorktreeHolderDir(input: WorktreeHolderDirInput): P
     return join(repoRoot, ".worktrees");
   }
 
-  const custom = resolveCustomWorktreeRoot(location.root, repoRoot);
+  const custom = resolveCustomWorktreeRoot(location.root, repoRoot, {
+    ...(input.paseoHome === undefined ? {} : { paseoHome: input.paseoHome }),
+    ...(input.worktreesBaseRoot === undefined ? {} : { worktreesRoot: input.worktreesBaseRoot }),
+  });
   if (!custom.ok) {
     throw new Error(`Invalid custom worktree root (${custom.rejection}): ${location.root}`);
   }
@@ -1597,6 +1635,7 @@ export const createWorktree = async ({
       worktreePath,
       branchName: sourcePlan.branchName,
       cleanupOnFailure: true,
+      allowRecursiveCleanup: (location?.mode ?? "managed") === "managed",
     });
   }
 

@@ -2628,7 +2628,7 @@ export const ar: TranslationResources = {
         customPathPlaceholder: "~/code/worktrees",
         customPathAccessibility: "دليل شجرة عمل مخصص",
         externalRemovalNote:
-          "أرشفة مساحة العمل تترك شجرة العمل على القرص. أزلها بنفسك، أو اختر إزالتها عند الأرشفة.",
+          "أرشفة مساحة العمل تترك شجرة العمل على القرص. أزلها بنفسك عبر git worktree remove.",
         saveFailed: "تعذر تغيير موقع شجرة العمل",
       },
       worktree: {

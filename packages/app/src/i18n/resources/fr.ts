@@ -2692,7 +2692,7 @@ export const fr: TranslationResources = {
         customPathPlaceholder: "~/code/worktrees",
         customPathAccessibility: "Répertoire de worktree personnalisé",
         externalRemovalNote:
-          "Archiver un espace de travail laisse son worktree sur le disque. Supprimez-le vous-même, ou choisissez de le supprimer lors de l'archivage.",
+          "Archiver un espace de travail laisse son worktree sur le disque. Supprimez-le vous-même avec git worktree remove.",
         saveFailed: "Impossible de changer l'emplacement du worktree",
       },
       worktree: {

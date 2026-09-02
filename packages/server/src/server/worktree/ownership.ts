@@ -103,11 +103,20 @@ export async function resolveProjectWorktreeLocation(
   repoRoot: string,
 ): Promise<WorktreeLocation | null> {
   try {
-    const projects = await projectRegistry.list();
-    const match = projects.find(
-      (project) => !project.archivedAt && areEquivalentPaths(project.rootPath, repoRoot),
-    );
-    return match?.worktreeLocation ?? null;
+    const active = (await projectRegistry.list()).filter((project) => !project.archivedAt);
+
+    // A project can be registered at a subdirectory of its repository, so an
+    // exact match would miss it and silently fall back to the managed layout.
+    // Prefer the exact root, then the deepest project inside this repo.
+    const exact = active.find((project) => areEquivalentPaths(project.rootPath, repoRoot));
+    if (exact) {
+      return exact.worktreeLocation ?? null;
+    }
+
+    const inside = active
+      .filter((project) => getRealpathAwareRelativePath(repoRoot, project.rootPath) !== null)
+      .sort((left, right) => right.rootPath.length - left.rootPath.length);
+    return inside[0]?.worktreeLocation ?? null;
   } catch {
     return null;
   }

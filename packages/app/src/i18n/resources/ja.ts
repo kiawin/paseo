@@ -2653,7 +2653,7 @@ export const ja: TranslationResources = {
         customPathPlaceholder: "~/code/worktrees",
         customPathAccessibility: "カスタムワークツリーディレクトリ",
         externalRemovalNote:
-          "ワークスペースをアーカイブしてもワークツリーはディスクに残ります。自分で削除するか、アーカイブ時に削除を選んでください。",
+          "ワークスペースをアーカイブしてもワークツリーはディスクに残ります。git worktree remove で自分で削除してください。",
         saveFailed: "ワークツリーの場所を変更できませんでした",
       },
       worktree: {

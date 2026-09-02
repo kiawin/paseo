@@ -1,6 +1,8 @@
 import { join } from "node:path";
 
 import type { WorktreeLocation } from "@getpaseo/protocol/messages";
+import { getRealpathAwareRelativePath } from "../../utils/path.js";
+import { isPaseoCreatedWorkspace } from "./ownership.js";
 import { getPaseoWorktreesRoot, isPaseoOwnedWorktreeCwd } from "../../utils/worktree.js";
 import {
   archiveByScope,
@@ -140,7 +142,20 @@ export async function archiveCommand(
   });
 
   if (scope === "worktree") {
-    if (!ownership.allowed) {
+    // Ownership by path only recognises Paseo's private root, so a worktree cut
+    // into a sibling, nested or custom holder fails it. `paseo worktree ls`
+    // lists those, so gating archive on the path alone made ls show worktrees
+    // archive then refused. Fall back to the workspace record's provenance.
+    const recordedAsPaseoCreated = ownership.allowed
+      ? true
+      : (await dependencies.listActiveWorkspaces()).some(
+          (workspace) =>
+            isPaseoCreatedWorkspace(workspace) &&
+            getRealpathAwareRelativePath(workspace.worktreeRoot ?? workspace.cwd, targetPath) ===
+              "",
+        );
+
+    if (!recordedAsPaseoCreated) {
       return {
         ok: false,
         code: "NOT_ALLOWED",

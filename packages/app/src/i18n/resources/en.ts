@@ -2733,7 +2733,7 @@ export const en = {
         // Worktrees outside Paseo's own directory are left on disk when a
         // workspace is archived, so say so before someone picks one.
         externalRemovalNote:
-          "Archiving a workspace leaves its worktree on disk. Remove it yourself, or choose to remove it when you archive.",
+          "Archiving a workspace leaves its worktree on disk. Remove it yourself with git worktree remove.",
         saveFailed: "Could not change the worktree location",
       },
       worktree: {

@@ -2595,7 +2595,8 @@ export const zhCN: TranslationResources = {
         customPathLabel: "路径",
         customPathPlaceholder: "~/code/worktrees",
         customPathAccessibility: "自定义工作树目录",
-        externalRemovalNote: "归档工作区会将工作树留在磁盘上。请自行删除，或在归档时选择删除。",
+        externalRemovalNote:
+          "归档工作区会将工作树留在磁盘上。请使用 git worktree remove 自行删除。",
         saveFailed: "无法更改工作树位置",
       },
       worktree: {

@@ -3199,7 +3199,10 @@ export class Session {
       const next = request.location?.mode === "managed" ? null : (request.location ?? null);
 
       if (next?.mode === "custom") {
-        const custom = resolveCustomWorktreeRoot(next.root, existing.rootPath);
+        const custom = resolveCustomWorktreeRoot(next.root, existing.rootPath, {
+          paseoHome: this.paseoHome,
+          ...(this.worktreesRoot === undefined ? {} : { worktreesRoot: this.worktreesRoot }),
+        });
         if (!custom.ok) {
           respond(false, null, describeCustomWorktreeRootRejection(custom.rejection));
           return;
@@ -3278,6 +3281,13 @@ export class Session {
       }
       if (!isPaseoCreatedWorkspace(workspace)) {
         failed("Paseo did not create this worktree");
+        return;
+      }
+      // Removing the directory out from under an active workspace would leave a
+      // live record pointing at nothing. Archive first; this is the retry path
+      // for a removal that archive already declined or that git refused.
+      if (!workspace.archivedAt) {
+        failed("Archive the workspace before removing its worktree");
         return;
       }
 
