@@ -1191,10 +1191,20 @@ export function createDefaultLayout(): WorkspaceLayout {
   };
 }
 
+const DEFAULT_EXPLORER_SIDEBAR_TARGETS = [
+  { kind: "files" },
+  { kind: "changes_tree" },
+  { kind: "artifacts" },
+] as const satisfies readonly WorkspaceTabTarget[];
+
+/** Seeded into every Explorer sidebar, so no migration may re-add these tabs elsewhere. */
+export const DEFAULT_EXPLORER_SIDEBAR_TAB_KINDS: ReadonlySet<WorkspaceTabTarget["kind"]> = new Set(
+  DEFAULT_EXPLORER_SIDEBAR_TARGETS.map((target) => target.kind),
+);
+
 function createDefaultExplorerSidebarTabs(): WorkspaceTab[] {
   const createdAt = Date.now();
-  const targets = [{ kind: "files" }, { kind: "changes_tree" }] as const;
-  return targets.map((target) => ({
+  return DEFAULT_EXPLORER_SIDEBAR_TARGETS.map((target) => ({
     tabId: buildDeterministicWorkspaceTabId(target),
     target,
     createdAt,
@@ -1203,6 +1213,7 @@ function createDefaultExplorerSidebarTabs(): WorkspaceTab[] {
 
 /** The desktop companion pane exists before it is first shown. */
 export function createWorkspaceLayoutWithExplorerSidebar(): WorkspaceLayout {
+  const explorerSidebarTabs = createDefaultExplorerSidebarTabs();
   return {
     root: createGroupNode({
       id: DEFAULT_LAYOUT_GROUP_ID,
@@ -1211,7 +1222,10 @@ export function createWorkspaceLayoutWithExplorerSidebar(): WorkspaceLayout {
         createPaneNode({ id: DEFAULT_PANE_ID, tabs: [createNewWorkspaceTab()] }),
         createPaneNode({
           id: EXPLORER_SIDEBAR_PANE_ID,
-          tabs: createDefaultExplorerSidebarTabs(),
+          tabs: explorerSidebarTabs,
+          // Artifacts trails Changes in the strip, but Changes is what opens focused.
+          focusedTabId: explorerSidebarTabs.find((tab) => tab.target.kind === "changes_tree")
+            ?.tabId,
           hidden: true,
         }),
       ],

@@ -14,7 +14,10 @@ import { usePanelStore } from "@/stores/panel-store";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { useWorkspaceCheckoutStatus } from "@/screens/workspace/use-workspace-checkout-status";
-import { openWorkspaceFileFromExplorer } from "@/screens/workspace/workspace-file-open-command";
+import {
+  openWorkspaceFileFromExplorer,
+  openWorkspaceTargetFromExplorer,
+} from "@/screens/workspace/workspace-file-open-command";
 import { isWeb } from "@/constants/platform";
 import { DiffDocumentWorkspaceCacheProvider } from "@/git/diff-document/workspace-cache";
 import {
@@ -147,6 +150,23 @@ export function CompactExplorerSidebarHost({
     [focusWorkspaceTab, model, openWorkspaceTabInFocusedPane, presentation, showMobileAgent],
   );
 
+  const handleOpenArtifact = useCallback(
+    (artifactId: string) => {
+      if (!model) {
+        return;
+      }
+      openWorkspaceTargetFromExplorer({
+        target: { kind: "artifact", artifactId },
+        persistenceKey: model.persistenceKey,
+        closeExplorerAfterOpen: presentation === "overlay",
+        showMobileAgent,
+        openWorkspaceTabInFocusedPane,
+        focusWorkspaceTab,
+      });
+    },
+    [focusWorkspaceTab, model, openWorkspaceTabInFocusedPane, presentation, showMobileAgent],
+  );
+
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const nextWidth = event.nativeEvent.layout.width;
     setContainerWidth((current) => (current === nextWidth ? current : nextWidth));
@@ -164,6 +184,7 @@ export function CompactExplorerSidebarHost({
             persistenceKey={model.persistenceKey}
             containerWidth={containerWidth}
             onOpenFile={handleOpenFile}
+            onOpenArtifact={handleOpenArtifact}
           />
         ) : (
           <CompactExplorerSidebar
@@ -172,6 +193,7 @@ export function CompactExplorerSidebarHost({
             workspaceRoot={model.workspaceRoot}
             isGit={model.isGit}
             onOpenFile={handleOpenFile}
+            onOpenArtifact={handleOpenArtifact}
           />
         )}
       </DiffDocumentWorkspaceCacheProvider>
