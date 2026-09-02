@@ -37,10 +37,15 @@ import {
   resolveContentMaxWidth,
   sanitizeFontFamily,
   saveAppSettings as saveAppSettingsPure,
+  type AgentLinkBehavior,
   type AppSettings,
   type AppSettingsUpdate,
   type ChatDisplay,
+<<<<<<< HEAD
   type ContentWidthPreset,
+=======
+  type ForgeLinkBehavior,
+>>>>>>> d1d3452c0 (feat(app): let agent message links open in the Paseo browser (#17))
   type OpenInSidePanePreferences,
   type PullRequestOpenLocation,
   type DesktopSettingsBridge,
@@ -79,11 +84,13 @@ export {
   sanitizeFontFamily,
 };
 export type {
+  AgentLinkBehavior,
   AppSettings,
   AppSettingsUpdate,
   ChatDisplay,
   ContentWidthPreset,
   AppLanguage,
+  ForgeLinkBehavior,
   OpenInSidePanePreferences,
   PullRequestOpenLocation,
   DesktopSettingsBridge,
