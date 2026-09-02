@@ -15,6 +15,7 @@ interface MarkdownTextSpanProps {
   copyTag?: MarkdownCopyInlineTag;
   children: ReactNode;
   onPress?: TextProps["onPress"];
+  onLongPress?: TextProps["onLongPress"];
   accessibilityRole?: TextProps["accessibilityRole"];
 }
 
@@ -26,10 +27,17 @@ export function MarkdownTextSpan({
   style,
   children,
   onPress,
+  onLongPress,
   accessibilityRole,
 }: MarkdownTextSpanProps) {
   return (
-    <Text selectable style={style} onPress={onPress} accessibilityRole={accessibilityRole}>
+    <Text
+      selectable
+      style={style}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityRole={accessibilityRole}
+    >
       {children}
     </Text>
   );
