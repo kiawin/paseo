@@ -57,6 +57,7 @@ import { SendingSection } from "@/screens/settings/general/sending-section";
 import {
   useAppSettings,
   useSettings,
+  type AgentLinkBehavior,
   type AppSettings,
   type Settings as EffectiveSettings,
 } from "@/hooks/use-settings";
@@ -291,13 +292,48 @@ function getActiveLocale(language: string | undefined): SupportedLocale {
   return parsed && parsed !== "system" ? parsed : "en";
 }
 
+function getAgentLinkBehaviorLabel(t: TFunction, value: AgentLinkBehavior): string {
+  const labels: Record<AgentLinkBehavior, string> = {
+    "in-app": t("settings.general.agentLinks.options.inApp"),
+    external: t("settings.general.agentLinks.options.external"),
+  };
+  return labels[value];
+}
+
+const AGENT_LINK_BEHAVIOR_VALUES: AgentLinkBehavior[] = ["external", "in-app"];
+
 // ---------------------------------------------------------------------------
 // Section components
 // ---------------------------------------------------------------------------
 
 interface GeneralSectionProps {
   settings: AppSettings;
+  isDesktopApp: boolean;
+  handleAgentLinkBehaviorChange: (behavior: AgentLinkBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
+}
+
+interface AgentLinkBehaviorMenuItemProps {
+  value: AgentLinkBehavior;
+  label: string;
+  selected: boolean;
+  onChange: (value: AgentLinkBehavior) => void;
+}
+
+function AgentLinkBehaviorMenuItem({
+  value,
+  label,
+  selected,
+  onChange,
+}: AgentLinkBehaviorMenuItemProps) {
+  const handleSelect = useCallback(() => {
+    onChange(value);
+  }, [onChange, value]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect}>
+      {label}
+    </DropdownMenuItem>
+  );
 }
 
 interface LanguageMenuItemProps {
@@ -324,7 +360,12 @@ function LanguageMenuItem({ value, activeLocale, selected, onChange }: LanguageM
   );
 }
 
-function GeneralSection({ settings, handleLanguageChange }: GeneralSectionProps) {
+function GeneralSection({
+  settings,
+  isDesktopApp,
+  handleAgentLinkBehaviorChange,
+  handleLanguageChange,
+}: GeneralSectionProps) {
   const { t, i18n } = useTranslation();
   const activeLocale = getActiveLocale(i18n.language);
   const selectedLanguageOption = LANGUAGE_OPTIONS.find(
@@ -362,6 +403,37 @@ function GeneralSection({ settings, handleLanguageChange }: GeneralSectionProps)
             </DropdownMenuContent>
           </DropdownMenu>
         </View>
+        {isDesktopApp ? (
+          <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+            <View style={settingsStyles.rowContent}>
+              <Text style={settingsStyles.rowTitle}>{t("settings.general.agentLinks.label")}</Text>
+              <Text style={settingsStyles.rowHint}>
+                {t("settings.general.agentLinks.description")}
+              </Text>
+            </View>
+            <DropdownMenu>
+              <DropdownTrigger
+                accessibilityRole="button"
+                accessibilityLabel={t("settings.general.agentLinks.accessibilityLabel", {
+                  value: getAgentLinkBehaviorLabel(t, settings.agentLinkBehavior),
+                })}
+              >
+                {getAgentLinkBehaviorLabel(t, settings.agentLinkBehavior)}
+              </DropdownTrigger>
+              <DropdownMenuContent side="bottom" align="end" width={200}>
+                {AGENT_LINK_BEHAVIOR_VALUES.map((value) => (
+                  <AgentLinkBehaviorMenuItem
+                    key={value}
+                    value={value}
+                    label={getAgentLinkBehaviorLabel(t, value)}
+                    selected={settings.agentLinkBehavior === value}
+                    onChange={handleAgentLinkBehaviorChange}
+                  />
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </View>
+        ) : null}
       </View>
     </SettingsSection>
   );
@@ -1135,6 +1207,13 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleAgentLinkBehaviorChange = useCallback(
+    (behavior: AgentLinkBehavior) => {
+      void updateSettings({ agentLinkBehavior: behavior });
+    },
+    [updateSettings],
+  );
+
   const handleUseLegacyTerminalRendererChange = useCallback(
     (useLegacyTerminalRenderer: boolean) => {
       void updateSettings({ useLegacyTerminalRenderer });
@@ -1357,7 +1436,12 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
         case "general":
           return (
             <>
-              <GeneralSection settings={settings} handleLanguageChange={handleLanguageChange} />
+              <GeneralSection
+                settings={settings}
+                isDesktopApp={isDesktopApp}
+                handleAgentLinkBehaviorChange={handleAgentLinkBehaviorChange}
+                handleLanguageChange={handleLanguageChange}
+              />
               <SendingSection />
               {isDesktopApp ? <OpenLocationSection /> : null}
             </>
