@@ -122,6 +122,7 @@ import type {
 } from "@getpaseo/protocol/agent-types";
 import type {
   AgentConfigApply,
+  ArtifactRecordPayload,
   MutableDaemonConfig,
   MutableDaemonConfigPatch,
 } from "@getpaseo/protocol/messages";
@@ -874,6 +875,20 @@ export interface DownloadEntryResult {
   fileName: string;
   mimeType: string;
   /** Null for a streamed archive, whose length is not known before it is written. */
+  size: number | null;
+}
+
+export interface DownloadArtifactInput {
+  artifactId: string;
+  sink: DownloadEntrySink;
+  signal?: AbortSignal;
+  requestId?: string;
+}
+
+export interface DownloadArtifactResult {
+  artifactId: string;
+  title: string | null;
+  mimeType: string;
   size: number | null;
 }
 
@@ -4675,6 +4690,52 @@ export class DaemonClient {
    */
   async downloadEntry(input: DownloadEntryInput): Promise<DownloadEntryResult> {
     const requestId = this.createRequestId(input.requestId);
+    return this.streamBinaryDownload({
+      requestId,
+      sink: input.sink,
+      signal: input.signal,
+      message: { type: "fs.entry.download.request", cwd: input.cwd, path: input.path, requestId },
+      responseType: "fs.entry.download.response",
+      accept: (payload) => {
+        if (!payload.success || !payload.kind || payload.fileName === null) {
+          throw new Error(payload.error ?? "Download failed.");
+        }
+        return {
+          kind: payload.kind,
+          fileName: payload.fileName,
+          mimeType: payload.mimeType ?? "application/octet-stream",
+          size: payload.size,
+        };
+      },
+    });
+  }
+
+  /**
+   * Transport lifecycle for one daemon -> client binary transfer, shared by every operation
+   * that streams over the binary channel.
+   *
+   * What lives here is only what is the same for all of them: registering the sink before the
+   * request is sent so the metadata response and the frames behind it land on a receiver that
+   * already exists, acking every 2 MiB and at end-of-stream, wiring the abort signal to a
+   * `fs.transfer.cancel`, and tearing all of it down. Response validation and result mapping
+   * stay with the caller — `kind`, `fileName` and the rest are its semantics, not the
+   * transport's.
+   */
+  private async streamBinaryDownload<TResponseType extends CorrelatedResponseType, TResult>(input: {
+    requestId: string;
+    message: SessionInboundMessage;
+    responseType: TResponseType;
+    sink: DownloadEntrySink;
+    signal?: AbortSignal;
+    accept: (payload: CorrelatedResponsePayload<TResponseType>) => TResult;
+  }): Promise<TResult> {
+    const { requestId } = input;
+    // `downloadEntry` and `downloadArtifact` share these registries, and both let the caller
+    // supply the id. A second registration under a live id would overwrite the first sink —
+    // frames to the wrong consumer — and its cleanup would then unregister the survivor.
+    if (this.binaryFileSinks.has(requestId) || this.activeDownloadAborts.has(requestId)) {
+      throw new Error(`Download request id ${requestId} is already in flight.`);
+    }
 
     let receivedBytes = 0;
     let ackedBytes = 0;
@@ -4734,28 +4795,89 @@ export class DaemonClient {
 
       const payload = await this.sendCorrelatedRequest({
         requestId,
-        message: { type: "fs.entry.download.request", cwd: input.cwd, path: input.path, requestId },
-        responseType: "fs.entry.download.response",
+        message: input.message,
+        responseType: input.responseType,
         options: { skipQueue: true },
       });
 
-      if (!payload.success || !payload.kind || payload.fileName === null) {
-        throw new Error(payload.error ?? "Download failed.");
-      }
-
+      const result = input.accept(payload);
       await completion;
-
-      return {
-        kind: payload.kind,
-        fileName: payload.fileName,
-        mimeType: payload.mimeType ?? "application/octet-stream",
-        size: payload.size,
-      };
+      return result;
     } finally {
       input.signal?.removeEventListener("abort", onAbortSignal);
       this.binaryFileSinks.delete(requestId);
       this.activeDownloadAborts.delete(requestId);
     }
+  }
+
+  /**
+   * Lists a project's artifacts. Metadata only — the documents themselves never travel inline.
+   *
+   * Gate on `server_info.features.artifacts` before calling.
+   */
+  async listArtifacts(projectId: string): Promise<ArtifactRecordPayload[]> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "artifact.list.request", projectId, requestId },
+      responseType: "artifact.list.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to list artifacts.");
+    return payload.artifacts;
+  }
+
+  /**
+   * Streams one artifact's HTML over the binary channel.
+   *
+   * There is no HTTP alternative: a relay answers only its own `/ws`, `/health`, `/ready` and
+   * `/metrics`, so `GET /api/files/download` cannot reach the daemon over a relay at all — and
+   * remote access is what this feature is for.
+   *
+   * Gate on `server_info.features.artifacts` before calling.
+   */
+  async downloadArtifact(input: DownloadArtifactInput): Promise<DownloadArtifactResult> {
+    const requestId = this.createRequestId(input.requestId);
+    return this.streamBinaryDownload({
+      requestId,
+      sink: input.sink,
+      signal: input.signal,
+      message: { type: "artifact.entry.download.request", artifactId: input.artifactId, requestId },
+      responseType: "artifact.entry.download.response",
+      accept: (payload) => {
+        if (!payload.success) throw new Error(payload.error ?? "Artifact download failed.");
+        return {
+          artifactId: payload.artifactId,
+          title: payload.title,
+          mimeType: payload.mimeType ?? "text/html",
+          size: payload.size,
+        };
+      },
+    });
+  }
+
+  /** Gate on `server_info.features.artifacts` before calling. */
+  async deleteArtifact(artifactId: string): Promise<void> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "artifact.delete.request", artifactId, requestId },
+      responseType: "artifact.delete.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to delete the artifact.");
+  }
+
+  /** Gate on `server_info.features.artifacts` before calling. */
+  async setArtifactPinned(artifactId: string, pinned: boolean): Promise<ArtifactRecordPayload> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "artifact.pin.set.request", artifactId, pinned, requestId },
+      responseType: "artifact.pin.set.response",
+    });
+    if (!payload.success || !payload.artifact) {
+      throw new Error(payload.error ?? "Failed to update the artifact.");
+    }
+    return payload.artifact;
   }
 
   /**

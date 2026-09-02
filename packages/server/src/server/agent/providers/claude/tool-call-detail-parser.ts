@@ -211,8 +211,60 @@ const ClaudeToolDetailPass2Schema = z.union([
       } satisfies ToolCallDetail;
     },
   ),
+  // Claude Code's Artifact tool. `action` selects among publish / list / read / comments / …,
+  // and only a publish produces a URL worth surfacing; a missing action means publish.
+  //
+  // The URL is scraped out of the result text rather than read from a field. The tool's result
+  // shape is not part of any contract Paseo can pin, and the tool is withheld entirely unless
+  // CLAUDE_CODE_ARTIFACT=1 (#3561), so there is no sample to code against. A URL match is the
+  // one thing that is stable; no match falls through to the generic unknown card.
+  toolDetailBranchByName(
+    "Artifact",
+    z
+      .object({
+        action: z.string().optional().nullable(),
+        title: z.string().optional().nullable(),
+        file_path: z.string().optional().nullable(),
+      })
+      .passthrough(),
+    z
+      .union([
+        z.string(),
+        z
+          .object({ output: z.string() })
+          .passthrough()
+          .transform((value) => value.output),
+      ])
+      .nullable(),
+    (input, output) => {
+      const action = input?.action?.trim().toLowerCase();
+      if (action && action !== "publish") return undefined;
+      const url = firstHttpUrl(output);
+      if (!url) return undefined;
+      const title = input?.title?.trim();
+      return {
+        type: "artifact" as const,
+        url,
+        ...(title ? { title } : {}),
+      } satisfies ToolCallDetail;
+    },
+  ),
   ClaudeSpeakToolDetailSchema,
 ]);
+
+/** First absolute http(s) URL in a tool result, or null. Trailing punctuation is not part of it. */
+function firstHttpUrl(text: string | null): string | null {
+  if (!text) return null;
+  const match = text.match(/https?:\/\/[^\s<>"')\]]+/);
+  if (!match) return null;
+  const candidate = match[0].replace(/[.,;:]+$/, "");
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
 export function deriveClaudeToolDetail(
   name: string,

@@ -1834,6 +1834,17 @@ export const en = {
       tooltip: "Browse workspace files",
       chooseFile: "Choose a file",
     },
+    artifacts: {
+      linkMissing: "This artifact has no document and no link.",
+      label: "Artifacts",
+      subtitle: "Published by agents",
+      tooltip: "Documents agents published in this project",
+      emptyTitle: "No artifacts in this project",
+      emptyDescription: "Agents publish them with publish_artifact.",
+      loadFailed: "Failed to load artifacts",
+      hostTooOld: "Update the host to view artifacts.",
+      openOn: "Open on {{host}}",
+    },
     pullRequest: {
       label: "Pull request",
       subtitle: "Pull request details",
@@ -1854,6 +1865,7 @@ export const en = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Open on {{host}}",
     error: "Error",
     empty: "No additional details available",
     subAgentActivity: "Sub-agent activity",
