@@ -1850,6 +1850,7 @@ export const ja: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "{{host}} で開く",
     error: "エラー",
     empty: "追加の詳細はありません",
     subAgentActivity: "サブエージェントアクティビティ",

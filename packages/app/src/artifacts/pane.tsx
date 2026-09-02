@@ -7,6 +7,7 @@ import type { ArtifactRecordPayload } from "@getpaseo/protocol/messages";
 
 import { useProjectArtifacts, useWorkspaceProjectId } from "@/artifacts/hooks";
 import { formatBytes } from "@/components/transfer-status";
+import { externalLinkHost } from "@/utils/external-link-host";
 import { formatTimeAgo } from "@/utils/time";
 import { openExternalUrl } from "@/utils/open-external-url";
 
@@ -14,15 +15,6 @@ const ThemedExternalLink = withUnistyles(ExternalLink, (theme) => ({
   color: theme.colors.mutedForeground,
 }));
 const ThemedPin = withUnistyles(Pin, (theme) => ({ color: theme.colors.mutedForeground }));
-
-/** The destination is shown before the tap; that is the mitigation for an agent-supplied URL. */
-export function artifactLinkHost(externalUrl: string): string | null {
-  try {
-    return new URL(externalUrl).hostname;
-  } catch {
-    return null;
-  }
-}
 
 function ArtifactRow({
   artifact,
@@ -34,7 +26,7 @@ function ArtifactRow({
   onOpenLink: (externalUrl: string) => void;
 }) {
   const { artifactId, externalUrl } = artifact;
-  const host = externalUrl ? artifactLinkHost(externalUrl) : null;
+  const host = externalUrl ? externalLinkHost(externalUrl) : null;
   const meta = `${formatBytes(artifact.size)} · ${formatTimeAgo(new Date(artifact.updatedAt))}`;
   const handleOpen = useCallback(() => onOpen(artifactId), [artifactId, onOpen]);
   const handleOpenLink = useCallback(() => {

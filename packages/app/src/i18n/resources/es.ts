@@ -1878,6 +1878,7 @@ export const es: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Abrir en {{host}}",
     error: "Error",
     empty: "No hay detalles adicionales disponibles",
     subAgentActivity: "Actividad de subagente",

@@ -7,7 +7,7 @@ import invariant from "tiny-invariant";
 
 import { useArtifactContent, useArtifactRecord } from "@/artifacts/hooks";
 import { FileHtmlPreview } from "@/file-pane/html-preview";
-import { artifactLinkHost } from "@/artifacts/pane";
+import { externalLinkHost } from "@/utils/external-link-host";
 import { usePaneContext } from "@/panels/pane-context";
 import { definePanel } from "@/panels/panel-registry";
 import { openExternalUrl } from "@/utils/open-external-url";
@@ -47,7 +47,7 @@ function ArtifactPanel() {
   const record = useArtifactRecord(serverId, target.artifactId);
   const content = useArtifactContent(serverId, target.artifactId, record?.contentSha256 ?? null);
   const externalUrl = record?.externalUrl ?? null;
-  const host = externalUrl ? artifactLinkHost(externalUrl) : null;
+  const host = externalUrl ? externalLinkHost(externalUrl) : null;
   const onOpenLink = useCallback(() => {
     if (externalUrl) void openExternalUrl(externalUrl);
   }, [externalUrl]);

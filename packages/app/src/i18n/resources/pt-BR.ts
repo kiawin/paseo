@@ -1864,6 +1864,7 @@ export const ptBR: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Abrir em {{host}}",
     error: "Erro",
     empty: "Nenhum detalhe adicional disponível",
     subAgentActivity: "Atividade do subagente",

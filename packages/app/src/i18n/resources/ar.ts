@@ -1832,6 +1832,7 @@ export const ar: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "فتح على {{host}}",
     error: "خطأ",
     empty: "لا توجد تفاصيل إضافية متاحة",
     subAgentActivity: "نشاط الوكيل الفرعي",

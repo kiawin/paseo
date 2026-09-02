@@ -1811,6 +1811,7 @@ export const zhCN: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "在 {{host}} 上打开",
     error: "错误",
     empty: "没有可用的更多详情",
     subAgentActivity: "Sub-agent 活动",

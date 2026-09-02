@@ -1883,6 +1883,7 @@ export const fr: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Ouvrir sur {{host}}",
     error: "Erreur",
     empty: "Aucun détail supplémentaire disponible",
     subAgentActivity: "Activité du sous-agent",

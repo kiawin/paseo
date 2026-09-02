@@ -1863,6 +1863,7 @@ export const ru: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Открыть на {{host}}",
     error: "Ошибка",
     empty: "Дополнительные сведения отсутствуют",
     subAgentActivity: "Активность субагента",

@@ -1842,6 +1842,7 @@ export const en = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Open on {{host}}",
     error: "Error",
     empty: "No additional details available",
     subAgentActivity: "Sub-agent activity",
