@@ -13,8 +13,10 @@ import {
   useSidebarAgentListModel,
 } from "@/components/sidebar/workspace-agent-list";
 import { WorkspaceHoverCard } from "@/components/workspace-hover-card";
+import { ForgeLinkProvider } from "@/git/forge-link";
 import type { HostBadgeModel } from "@/hosts/appearance";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
+import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import {
   hasSidebarWorkspaceTrailing,
   type SidebarWorkspaceTrailing,
@@ -75,19 +77,26 @@ export function SidebarWorkspaceRowFrame({
   );
 
   return (
-    <WorkspaceHoverCard
-      workspace={workspace}
-      prHint={workspace.prHint}
-      isDragging={isDragging}
-      disabled={contextMenuOpen}
-    >
-      {children({
-        isHovered: isHovered && !contextMenuOpen && !isDragging,
-        contextMenuOpen,
-        onContextMenuOpenChange: handleContextMenuOpenChange,
-        hoverHandlers,
+    <ForgeLinkProvider
+      workspaceKey={buildWorkspaceTabPersistenceKey({
+        serverId: workspace.serverId,
+        workspaceId: workspace.workspaceId,
       })}
-    </WorkspaceHoverCard>
+    >
+      <WorkspaceHoverCard
+        workspace={workspace}
+        prHint={workspace.prHint}
+        isDragging={isDragging}
+        disabled={contextMenuOpen}
+      >
+        {children({
+          isHovered: isHovered && !contextMenuOpen && !isDragging,
+          contextMenuOpen,
+          onContextMenuOpenChange: handleContextMenuOpenChange,
+          hoverHandlers,
+        })}
+      </WorkspaceHoverCard>
+    </ForgeLinkProvider>
   );
 }
 

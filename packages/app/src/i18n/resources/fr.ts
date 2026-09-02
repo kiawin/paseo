@@ -334,6 +334,9 @@ export const fr: TranslationResources = {
     actions: {
       copyCode: "Copier le code",
       copyTurn: "Copier l’échange",
+      copyLink: "Copier le lien",
+      openLinkInBrowser: "Ouvrir dans le navigateur",
+      openLinkInPaseo: "Ouvrir dans le navigateur Paseo",
       copyMessage: "Copier le message",
       forkMenu: "Forker la conversation à partir d’ici",
       forkInNewTab: "Forker dans un nouvel onglet",
@@ -2210,6 +2213,15 @@ export const fr: TranslationResources = {
         options: {
           ask: "Demander",
           inApp: "Dans Paseo",
+          external: "Navigateur externe",
+        },
+      },
+      agentLinks: {
+        label: "Liens de l’agent",
+        description: "Où ouvrir les liens des messages de l’agent",
+        accessibilityLabel: "Sélectionner où s’ouvrent les liens de l’agent ({{value}})",
+        options: {
+          inApp: "DansPaseo",
           external: "Navigateur externe",
         },
       },
