@@ -2576,12 +2576,12 @@ export const zhCN: TranslationResources = {
         failedDescription: "重新加载以重试。",
       },
       worktreeLocation: {
-        title: "工作树位置",
-        info: "Paseo 为此项目创建工作树的位置",
+        title: "worktree 位置",
+        info: "Paseo 为此项目创建 worktree 的位置",
         label: "位置",
-        description: "新工作树的创建位置。",
-        accessibilityLabel: "工作树位置，当前为 {{value}}",
-        noMigrationNote: "更改此项不会移动现有工作树。它们保持原位，只有新建的才使用新位置。",
+        description: "新 worktree 的创建位置。",
+        accessibilityLabel: "worktree 位置，当前为 {{value}}",
+        noMigrationNote: "更改此项不会移动现有 worktree。它们保持原位，只有新建的才使用新位置。",
         modes: {
           managed: "托管",
           managedHint: "Paseo 自己的目录",
@@ -2594,10 +2594,10 @@ export const zhCN: TranslationResources = {
         },
         customPathLabel: "路径",
         customPathPlaceholder: "~/code/worktrees",
-        customPathAccessibility: "自定义工作树目录",
+        customPathAccessibility: "自定义 worktree 目录",
         externalRemovalNote:
-          "归档工作区会将工作树留在磁盘上。请使用 git worktree remove 自行删除。",
-        saveFailed: "无法更改工作树位置",
+          "归档工作区会将其 worktree 留在磁盘上。请使用 git worktree remove 自行删除。",
+        saveFailed: "无法更改 worktree 位置",
       },
       worktree: {
         title: "Worktree 生命周期 hooks",
