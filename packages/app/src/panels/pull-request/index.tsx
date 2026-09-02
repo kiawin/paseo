@@ -11,6 +11,7 @@ import {
   PullRequestPaneSkeleton,
 } from "@/git/pull-request-panel";
 import type { UsePrPaneDataResult } from "@/git/pull-request-panel/use-data";
+import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 
 import { resolvePullRequestContentState } from "./state";
 export {
@@ -46,6 +47,10 @@ export function PullRequestContent(input: {
           serverId: input.serverId,
           workspaceId: input.workspaceId,
           cwd: input.cwd,
+        })}
+        workspaceKey={buildWorkspaceTabPersistenceKey({
+          serverId: input.serverId,
+          workspaceId: input.workspaceId ?? "",
         })}
       />
     );

@@ -4,7 +4,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, MessageSquarePlus } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
-import { openExternalUrl } from "@/utils/open-external-url";
+import { useForgeLinkOpener } from "@/git/forge-link";
 import { ICON_SIZE } from "@/styles/theme";
 import { classifyCheck, type CheckPresentation } from "@/git/check-presentation";
 import { CheckPresentationIcon } from "@/git/check-presentation.view";
@@ -190,9 +190,10 @@ function CheckRow({
   onAddLogsToChat: (check: PrPaneCheck) => void;
 }) {
   const { t } = useTranslation();
+  const openForgeLink = useForgeLinkOpener();
   const handlePress = useCallback(() => {
-    void openExternalUrl(check.url);
-  }, [check.url]);
+    openForgeLink(check.url);
+  }, [check.url, openForgeLink]);
   const handleAddLogsToChat = useCallback(
     (event: GestureResponderEvent) => {
       event.stopPropagation();

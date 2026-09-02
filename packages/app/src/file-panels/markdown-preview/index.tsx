@@ -1,3 +1,4 @@
+import { AssistantLinkContextMenu } from "@/assistant-file-links";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { resolveMarkdownFileDirectory } from "@/components/markdown/image-source";
 import {
@@ -55,13 +56,15 @@ export function FileMarkdownPreview({
           {...environment}
           relativePathBase={relativePathBase ?? undefined}
         >
-          <MarkdownRenderer
-            text={document.body}
-            filePath={filePath}
-            workspaceRoot={workspaceRoot}
-            client={client}
-            serverId={serverId}
-          />
+          <AssistantLinkContextMenu>
+            <MarkdownRenderer
+              text={document.body}
+              filePath={filePath}
+              workspaceRoot={workspaceRoot}
+              client={client}
+              serverId={serverId}
+            />
+          </AssistantLinkContextMenu>
         </AssistantFileLinkResolverProvider>
       </View>
     </View>
