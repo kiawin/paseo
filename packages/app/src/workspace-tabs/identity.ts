@@ -58,7 +58,12 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
     case "changes_tree":
     case "files":
     case "pull_request":
+    case "artifacts":
       return { kind: value.kind };
+    case "artifact": {
+      const artifactId = trimNonEmpty(value.artifactId);
+      return artifactId ? { kind: "artifact", artifactId } : null;
+    }
     case "setup": {
       const workspaceId = trimNonEmpty(value.workspaceId);
       return workspaceId ? { kind: "setup", workspaceId } : null;
@@ -127,6 +132,14 @@ export function workspaceTabTargetsEqual(
   return secondaryWorkspaceTabTargetsEqual(left, right);
 }
 
+/** Targets a workspace holds at most one of, so identity is the kind alone. */
+const SINGLETON_TARGET_KINDS: ReadonlySet<WorkspaceTabTarget["kind"]> = new Set([
+  "files",
+  "changes_tree",
+  "pull_request",
+  "artifacts",
+]);
+
 function secondaryWorkspaceTabTargetsEqual(
   left: WorkspaceTabTarget,
   right: WorkspaceTabTarget,
@@ -140,14 +153,11 @@ function secondaryWorkspaceTabTargetsEqual(
   if (left.kind === "working_diff" && right.kind === "working_diff") {
     return left.focusPath === right.focusPath && left.focusRequestId === right.focusRequestId;
   }
-  if (left.kind === "files" && right.kind === "files") {
-    return true;
+  if (SINGLETON_TARGET_KINDS.has(left.kind)) {
+    return left.kind === right.kind;
   }
-  if (left.kind === "changes_tree" && right.kind === "changes_tree") {
-    return true;
-  }
-  if (left.kind === "pull_request" && right.kind === "pull_request") {
-    return true;
+  if (left.kind === "artifact" && right.kind === "artifact") {
+    return left.artifactId === right.artifactId;
   }
   if (left.kind === "setup" && right.kind === "setup") {
     return left.workspaceId === right.workspaceId;
@@ -219,8 +229,16 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
   if (target.kind === "working_diff") {
     return "working_diff";
   }
-  if (target.kind === "changes_tree" || target.kind === "files" || target.kind === "pull_request") {
+  if (
+    target.kind === "changes_tree" ||
+    target.kind === "files" ||
+    target.kind === "pull_request" ||
+    target.kind === "artifacts"
+  ) {
     return target.kind;
+  }
+  if (target.kind === "artifact") {
+    return `artifact_${target.artifactId}`;
   }
   if (target.kind === "plugin") {
     const identity = `${target.pluginId.length}_${target.pluginId}_${target.panelId.length}_${target.panelId}`;
