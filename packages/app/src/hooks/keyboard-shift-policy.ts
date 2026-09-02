@@ -1,3 +1,5 @@
+import type { ExplorerTab } from "@/stores/explorer-tab-memory";
+
 export const DEFAULT_IOS_KEYBOARD_INSET_MIN_HEIGHT = 120;
 
 export function resolveStreamKeyboardInset(input: {
@@ -22,7 +24,7 @@ export function resolveStreamKeyboardInset(input: {
 
 export function shouldUseCompactExplorerKeyboardPadding(input: {
   isGit: boolean;
-  explorerTab: "changes" | "files" | "pr";
+  explorerTab: ExplorerTab;
 }): boolean {
   return !input.isGit || input.explorerTab !== "changes";
 }

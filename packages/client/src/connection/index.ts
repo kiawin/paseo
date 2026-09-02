@@ -137,6 +137,7 @@ export const DEFAULT_CLIENT_CAPABILITIES = {
   [CLIENT_CAPS.providerSnapshotReferences]: true,
   [CLIENT_CAPS.timelineReplacementInvalidation]: true,
   [CLIENT_CAPS.timelineNotifications]: true,
+  [CLIENT_CAPS.artifactToolDetail]: true,
   [CLIENT_CAPS.pluginTimelineItems]: true,
   [CLIENT_CAPS.workspaceSetupBlocked]: true,
   [CLIENT_CAPS.explicitEventSubscriptions]: true,

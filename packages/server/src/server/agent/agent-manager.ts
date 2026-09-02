@@ -297,6 +297,21 @@ export interface AgentManagerOptions {
   registry?: AgentStorage;
   onAgentAttention?: AgentAttentionCallback;
   onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
+  /**
+   * A completed tool call reported publishing a document to a URL of its own. Provider-agnostic
+   * on purpose: the hook fires on the `artifact` tool-call detail, so any provider that grows a
+   * publishing tool is captured without touching this class.
+   */
+  onExternalArtifactPublished?: (params: {
+    agentId: string;
+    workspaceId: string;
+    provider: AgentProvider;
+    callId: string;
+    url: string;
+    title: string | null;
+    /** Where the tool published from, when it said. Capture reads the document itself from it. */
+    filePath: string | null;
+  }) => void;
   durableTimelineStore?: AgentTimelineStore;
   terminalManager?: TerminalManager | null;
   mcpBaseUrl?: string;
@@ -725,6 +740,7 @@ export class AgentManager {
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
   private onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
+  private onExternalArtifactPublished?: AgentManagerOptions["onExternalArtifactPublished"];
   private logger: Logger;
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
   private readonly beforeSteerUnavailableFallback?: AgentManagerOptions["beforeSteerUnavailableFallback"];
@@ -737,10 +753,11 @@ export class AgentManager {
     this.durableTimelineStore = options?.durableTimelineStore;
     this.onAgentAttention = options?.onAgentAttention;
     this.onWorkspaceStateMayHaveChanged = options?.onWorkspaceStateMayHaveChanged;
+    this.onExternalArtifactPublished = options?.onExternalArtifactPublished;
     this.mcpBaseUrl = options?.mcpBaseUrl ?? null;
     this.mcpAuthToken = options?.mcpAuthToken ?? null;
     this.configurePaseoTools(options);
-    this.resolvePaseoToolPolicy = options.resolvePaseoToolPolicy ?? (() => undefined);
+    this.resolvePaseoToolPolicy = this.createPaseoToolPolicyResolver(options);
     this.appendSystemPrompt = options.appendSystemPrompt ?? "";
     this.logger = options.logger.child({ module: "agent", component: "agent-manager" });
     this.rescueTimeouts = {
@@ -767,6 +784,12 @@ export class AgentManager {
   private configurePaseoTools(options: AgentManagerOptions): void {
     this.paseoToolsEnabled = options.paseoToolsEnabled ?? true;
     this.paseoToolCatalogFactory = options.paseoToolCatalogFactory ?? null;
+  }
+
+  private createPaseoToolPolicyResolver(
+    options: AgentManagerOptions,
+  ): (provider: AgentProvider) => ProviderPaseoToolsPolicy | undefined {
+    return options.resolvePaseoToolPolicy ?? (() => undefined);
   }
 
   registerClient(provider: AgentProvider, client: AgentClient): void {
@@ -3960,6 +3983,7 @@ export class AgentManager {
         event.item,
         event.timestamp ? { timestamp: event.timestamp } : undefined,
       );
+      this.captureExternalArtifact(agent.id, event.item, event.provider);
       if (broadcastTimeline) {
         this.dispatchStream(agent.id, event, {
           seq: row.seq,
@@ -4007,6 +4031,7 @@ export class AgentManager {
           event.item,
           event.timestamp ? { timestamp: event.timestamp } : undefined,
         );
+        this.captureExternalArtifact(agent.id, event.item, event.provider);
         if (deferredBroadcast) {
           timelineEvents.push({ event, row });
         } else if (broadcast) {
@@ -4334,6 +4359,7 @@ export class AgentManager {
         event.item,
         event.timestamp ? { timestamp: event.timestamp } : undefined,
       );
+      this.captureExternalArtifact(agent.id, event.item, event.provider);
       flags.shouldDispatchEvent = false;
       flags.shouldNotifyWaiters = false;
       return;
@@ -4581,7 +4607,40 @@ export class AgentManager {
       }
     }
 
+    this.captureExternalArtifact(agentId, item, provider);
+
     return event;
+  }
+
+  /**
+   * Files a completed publish-to-a-URL tool call as an artifact.
+   *
+   * Called from every path that records a timeline item, hydration included: a session resumed
+   * after an upgrade holds completed artifact calls in provider history that no live capture ever
+   * saw, and a capture that failed once is retried on the next load. That is safe because the
+   * store keys publication on `(agentId, callId)` — a replay resolves to the record it already
+   * produced instead of adding another.
+   */
+  private captureExternalArtifact(
+    agentId: string,
+    item: AgentTimelineItem,
+    provider: AgentProvider,
+  ): void {
+    if (item.type !== "tool_call" || item.status !== "completed") return;
+    if (item.detail?.type !== "artifact") return;
+    const agent = this.agents.get(agentId);
+    // A workspace is what resolves the project the artifact belongs to; without one there is
+    // nowhere to file it.
+    if (!agent?.workspaceId) return;
+    this.onExternalArtifactPublished?.({
+      agentId,
+      workspaceId: agent.workspaceId,
+      provider,
+      callId: item.callId,
+      url: item.detail.url,
+      title: item.detail.title ?? null,
+      filePath: item.detail.filePath ?? null,
+    });
   }
 
   private recordSubmittedPrompt(

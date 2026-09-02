@@ -1887,6 +1887,21 @@ export const es: TranslationResources = {
       tooltip: "Explorar archivos del espacio de trabajo",
       chooseFile: "Elige un archivo",
     },
+    artifacts: {
+      linkMissing: "Este artefacto no tiene documento ni enlace.",
+      label: "Artefactos",
+      subtitle: "Publicados por agentes",
+      tooltip: "Documentos que los agentes publicaron en este proyecto",
+      emptyTitle: "No hay artefactos en este proyecto",
+      emptyDescription: "Los agentes los publican con publish_artifact.",
+      loadFailed: "No se pudieron cargar los artefactos",
+      hostTooOld: "Actualiza el host para ver artefactos.",
+      openOn: "Abrir en {{host}}",
+      deleteTitle: "¿Eliminar artefacto?",
+      deleteMessage: '¿Eliminar "{{title}}"? Esta acción no se puede deshacer.',
+      deleteConfirm: "Eliminar",
+      deleteFailed: "No se pudo eliminar el artefacto",
+    },
     pullRequest: {
       label: "Solicitud de extracción",
       subtitle: "Detalles de la solicitud de extracción",
@@ -1907,6 +1922,7 @@ export const es: TranslationResources = {
     },
   },
   toolCallDetails: {
+    artifactOpenOn: "Abrir en {{host}}",
     error: "Error",
     empty: "No hay detalles adicionales disponibles",
     subAgentActivity: "Actividad de subagente",
@@ -2089,7 +2105,7 @@ export const es: TranslationResources = {
       },
       agentLinks: {
         label: "Enlaces del agente",
-        description: "Dónde abrir los enlaces de los mensajes del agente",
+        description: "Dónde abrir los enlaces publicados por los agentes",
         accessibilityLabel: "Selecciona dónde se abren los enlaces del agente ({{value}})",
         options: {
           inApp: "EnPaseo",
