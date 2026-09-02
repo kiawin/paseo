@@ -1,10 +1,11 @@
-import { getRealpathAwareRelativePath } from "../../utils/path.js";
+import { areEquivalentPaths, getRealpathAwareRelativePath } from "../../utils/path.js";
 import {
   resolvePaseoWorktreesBaseRoot,
   type WorktreeDeletionPolicy,
   type WorktreeRootOptions,
 } from "../../utils/worktree.js";
-import type { PersistedWorkspaceRecord } from "../workspace-registry.js";
+import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../workspace-registry.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 
 /**
  * Where a Paseo-created worktree lives, which decides how its directory may be
@@ -41,11 +42,14 @@ export function classifyWorktreePlacementByPath(
 /**
  * The deletion policy for a workspace's worktree.
  *
- * The persisted placement wins when present, but it cannot be the sole
- * authority: zod strips unknown keys and the registry re-parses records on every
- * mutation, so a daemon predating the field erases it. Absence therefore falls
- * back to the path rather than defaulting to `managed`, which would let a
- * downgrade round-trip point the forced recursive delete at a shared directory.
+ * `managed` — the forced, unconditional recursive delete — requires the
+ * persisted placement and the path to agree. Neither is sufficient alone.
+ *
+ * The path alone is not, because outside Paseo's private root it proves
+ * nothing. The persisted value alone is not, because zod strips unknown keys
+ * and the registry re-parses records on every mutation, so a daemon predating
+ * the field erases it — and because nothing re-checks the value after creation.
+ * Any disagreement, in either direction, resolves to `git-validated`.
  *
  * `force` is only ever set from an explicit second confirmation by a person.
  */
@@ -54,14 +58,19 @@ export function resolveWorktreeDeletionPolicy(input: {
   force?: boolean;
   options?: WorktreeRootOptions;
 }): WorktreeDeletionPolicy {
-  const placement =
-    input.workspace.worktreePlacement ??
-    classifyWorktreePlacementByPath(
-      input.workspace.worktreeRoot ?? input.workspace.cwd,
-      input.options,
-    );
+  const byPath = classifyWorktreePlacementByPath(
+    input.workspace.worktreeRoot ?? input.workspace.cwd,
+    input.options,
+  );
 
-  if (placement === "managed") {
+  // Both have to agree before the destructive policy applies. The persisted
+  // value alone is not enough: it is written once at creation and nothing
+  // re-checks it afterwards, so a worktree that moved, a hand-edited registry,
+  // or any future bug writing "managed" would otherwise aim the forced
+  // recursive delete at a shared directory. Disagreement falls to the policy
+  // that cannot destroy anything git has not vouched for.
+  const persisted = input.workspace.worktreePlacement;
+  if (byPath === "managed" && (persisted ?? "managed") === "managed") {
     return { kind: "managed" };
   }
   return { kind: "git-validated", ...(input.force === true ? { force: true } : {}) };
@@ -80,4 +89,26 @@ export function isPaseoCreatedWorkspace(
   workspace: Pick<PersistedWorkspaceRecord, "kind" | "isPaseoOwnedWorktree">,
 ): boolean {
   return workspace.kind === "worktree" && workspace.isPaseoOwnedWorktree;
+}
+
+/**
+ * Where the project owning `repoRoot` cuts worktrees.
+ *
+ * Keyed by repo root rather than projectId because callers such as worktree
+ * listing and MCP entry points only have a path. An unknown repository resolves
+ * to null, which means the managed layout.
+ */
+export async function resolveProjectWorktreeLocation(
+  projectRegistry: { list: () => Promise<PersistedProjectRecord[]> },
+  repoRoot: string,
+): Promise<WorktreeLocation | null> {
+  try {
+    const projects = await projectRegistry.list();
+    const match = projects.find(
+      (project) => !project.archivedAt && areEquivalentPaths(project.rootPath, repoRoot),
+    );
+    return match?.worktreeLocation ?? null;
+  } catch {
+    return null;
+  }
 }

@@ -48,13 +48,28 @@ describe("classifyWorktreePlacementByPath", () => {
 describe("resolveWorktreeDeletionPolicy", () => {
   const options = { paseoHome: PASEO_HOME };
 
-  it("uses the persisted placement when present", () => {
+  it("requires the persisted placement and the path to agree before destroying", () => {
+    // A persisted "managed" on an external path must NOT authorize the forced
+    // recursive delete. Nothing re-checks the field after creation, so a moved
+    // worktree or a hand-edited registry would otherwise aim it at a shared
+    // directory.
     expect(
       resolveWorktreeDeletionPolicy({
         workspace: {
           worktreePlacement: "managed",
           worktreeRoot: "/home/dev/repo-worktrees/feat",
           cwd: "/home/dev/repo-worktrees/feat",
+        },
+        options,
+      }),
+    ).toEqual({ kind: "git-validated" });
+
+    expect(
+      resolveWorktreeDeletionPolicy({
+        workspace: {
+          worktreePlacement: "managed",
+          worktreeRoot: join(MANAGED_BASE, "a1b2c3d4", "feat"),
+          cwd: join(MANAGED_BASE, "a1b2c3d4", "feat"),
         },
         options,
       }),

@@ -10,6 +10,7 @@ import type { ForgeService } from "../services/forge-service.js";
 import {
   deletePaseoWorktree,
   isPaseoOwnedWorktreeCwd,
+  WorktreeRemovalRefusedError,
   type WorktreeDeletionPolicy,
   runWorktreeTeardownCommands,
   WorktreeTeardownError,
@@ -444,9 +445,25 @@ async function maybeRemoveDirectory(
     dependencies.github.invalidate({ cwd: backing.path });
     return true;
   } catch (error) {
-    dependencies.sessionLogger?.warn(
-      { err: error, targetPath: backing.path, requestId: request.requestId },
-      "Worktree disk removal failed during archive; workspace already archived",
+    // An explicitly requested removal that fails is not the same as archive
+    // declining to remove. The caller asked, git refused, and the directory is
+    // still there — say so at error level with the path, since the workspace
+    // record is already archived and this log is the only trace.
+    const explicitlyRequested = request.removeWorktreeDirectory === true;
+    const log = explicitlyRequested
+      ? dependencies.sessionLogger?.error.bind(dependencies.sessionLogger)
+      : dependencies.sessionLogger?.warn.bind(dependencies.sessionLogger);
+    log?.(
+      {
+        err: error,
+        targetPath: backing.path,
+        requestId: request.requestId,
+        explicitlyRequested,
+        refusal: error instanceof WorktreeRemovalRefusedError ? error.refusal : null,
+      },
+      explicitlyRequested
+        ? "Requested worktree removal was refused; the directory is still on disk"
+        : "Worktree disk removal failed during archive; workspace already archived",
     );
     return false;
   }

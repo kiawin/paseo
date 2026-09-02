@@ -202,7 +202,7 @@ import {
   matchesAgentUpdatesFilter,
   type AgentUpdatesService,
 } from "./session/agent-updates/agent-updates-service.js";
-import { areEquivalentPaths, expandTilde, getRealpathAwareRelativePath } from "../utils/path.js";
+import { expandTilde, getRealpathAwareRelativePath } from "../utils/path.js";
 import {
   searchDirectoryEntries,
   WORKSPACE_SEARCH_HIDDEN_DIRECTORIES,
@@ -253,7 +253,11 @@ import {
   WorktreeRemovalRefusedError,
   type WorktreeRemovalRefusal,
 } from "../utils/worktree.js";
-import { isPaseoCreatedWorkspace, resolveWorktreeDeletionPolicy } from "./worktree/ownership.js";
+import {
+  isPaseoCreatedWorkspace,
+  resolveProjectWorktreeLocation,
+  resolveWorktreeDeletionPolicy,
+} from "./worktree/ownership.js";
 import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { WorkspaceSetupRuntime } from "./workspace-setup-runtime.js";
 import { SessionAuthorization, type DaemonPermission } from "./authorization/index.js";
@@ -3166,22 +3170,8 @@ export class Session {
    * create_agent among them — only have a cwd. Returns null for an unknown
    * repository, which resolves to the managed layout.
    */
-  private async resolveWorktreeLocationForRepoRoot(
-    repoRoot: string,
-  ): Promise<WorktreeLocation | null> {
-    try {
-      const projects = await this.projectRegistry.list();
-      const match = projects.find(
-        (project) => !project.archivedAt && areEquivalentPaths(project.rootPath, repoRoot),
-      );
-      return match?.worktreeLocation ?? null;
-    } catch (error) {
-      this.sessionLogger.warn(
-        { err: error, repoRoot },
-        "Failed to resolve worktree location; falling back to the managed layout",
-      );
-      return null;
-    }
+  private resolveWorktreeLocationForRepoRoot(repoRoot: string): Promise<WorktreeLocation | null> {
+    return resolveProjectWorktreeLocation(this.projectRegistry, repoRoot);
   }
 
   private async handleProjectWorktreeLocationSetRequest(
