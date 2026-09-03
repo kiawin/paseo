@@ -426,6 +426,16 @@ export const ja: TranslationResources = {
         unarchiveAction: "アーカイブを解除",
         restoringTitle: "ワークスペースを復元中",
         restoringAction: "復元中...",
+        removeWorktreeAction: "ワークツリーを削除",
+        removeWorktreeInProgress: "削除中...",
+        removeWorktreeTitle: "ワークツリーを削除しますか？",
+        removeWorktreeMessage:
+          "{{path}} とその中身をすべて削除します。node_modules や .env など、Git が無視するファイルも含まれます。未コミットの変更がある場合、Git は削除を拒否します。",
+        removeWorktreeConfirm: "削除",
+        removeWorktreeDone: "ワークツリーを削除しました",
+        removeWorktreeRefused: "Git がワークツリーの削除を拒否しました",
+        removeWorktreeTerminal:
+          "Git がこのディレクトリを認識しなくなったため、Paseo からは削除できません。手動で削除してください：",
         unavailableTitle: "ワークスペースを利用できません",
         checkFailedTitle: "ワークスペースを確認できませんでした",
       },
@@ -1222,12 +1232,18 @@ export const ja: TranslationResources = {
         hideFromSidebar: "サイドバーから非表示",
         archiving: "アーカイブ中...",
         hiding: "非表示にしています...",
+        delete: "削除",
+        deleteUnavailable: "このワークスペースには削除する worktree がありません",
       },
       confirmations: {
         hideTitle: "ワークスペースを非表示にしますか？",
         hideMessage:
           '"{{workspaceName}}"をサイドバーから非表示にしますか？\n\nディスク上のファイルは変更されません。',
         hideConfirm: "非表示",
+        deleteTitle: "ワークスペースを削除しますか？",
+        deleteMessage:
+          "「{{workspaceName}}」をアーカイブし、node_modules や .env などの無視されたファイルを含む worktree ディレクトリを削除します。\n\nコミットされていない変更がある場合、Git は拒否します。",
+        deleteConfirm: "削除",
         cancel: "キャンセル",
       },
       rename: {
@@ -1242,6 +1258,13 @@ export const ja: TranslationResources = {
         hostDisconnected: "ホストが接続されていません",
         hideFailed: "ワークスペースの非表示に失敗しました",
         archiveFailed: "ワークスペースのアーカイブに失敗しました",
+        worktreeKeptDirty:
+          "アーカイブしました。worktree にコミットされていない変更があるため、Git は削除しませんでした。",
+        worktreeKeptLocked:
+          "アーカイブしました。worktree がロックされているため、Git は削除しませんでした。",
+        worktreeKeptUnrecognised:
+          "アーカイブしました。Git は worktree ディレクトリを認識できないため、手動で削除してください。",
+        worktreeKeptUnknown: "アーカイブしましたが、Git は worktree を削除しませんでした。",
       },
     },
   },
@@ -2686,6 +2709,31 @@ export const ja: TranslationResources = {
         transportFallback: "ホストが応答しませんでした。",
         failedTitle: "paseo.jsonを読み込めませんでした",
         failedDescription: "再読み込みして再試行してください。",
+      },
+      worktreeLocation: {
+        title: "ワークツリーの場所",
+        info: "このプロジェクトのワークツリーを Paseo が作成する場所",
+        label: "場所",
+        description: "新しいワークツリーが作成される場所。",
+        accessibilityLabel: "ワークツリーの場所、現在は {{value}}",
+        noMigrationNote:
+          "変更しても既存のワークツリーは移動しません。そのまま残り、新しいものだけが新しい場所を使います。",
+        modes: {
+          managed: "管理",
+          managedHint: "Paseo 専用のディレクトリ",
+          sibling: "同じ階層",
+          siblingHint: "リポジトリの隣",
+          nested: "ネスト",
+          nestedHint: "リポジトリの内側",
+          custom: "カスタム",
+          customHint: "任意のパス",
+        },
+        customPathLabel: "パス",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "カスタムワークツリーディレクトリ",
+        externalRemovalNote:
+          "ワークスペースをアーカイブしてもワークツリーはディスクに残ります。git worktree remove で自分で削除してください。",
+        saveFailed: "ワークツリーの場所を変更できませんでした",
       },
       worktree: {
         title: "ワークツリーライフサイクルフック",
