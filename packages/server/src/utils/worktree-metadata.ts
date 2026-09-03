@@ -22,6 +22,7 @@ const PaseoWorktreeMetadataV1Schema = z.object({
   baseRefName: z.string().min(1),
   baseRef: z.string().min(1).optional(),
   changeRequestLookupTarget: ChangeRequestLookupTargetSchema.optional(),
+  managedPlacement: z.boolean().optional(),
 });
 
 const PaseoWorktreeMetadataV2Schema = z.object({
@@ -29,6 +30,7 @@ const PaseoWorktreeMetadataV2Schema = z.object({
   baseRefName: z.string().min(1),
   baseRef: z.string().min(1).optional(),
   changeRequestLookupTarget: ChangeRequestLookupTargetSchema.optional(),
+  managedPlacement: z.boolean().optional(),
   firstAgentBranchAutoName: z
     .discriminatedUnion("status", [
       z.object({
@@ -227,6 +229,7 @@ export async function writePaseoWorktreeMetadata(
     baseRefName: string;
     baseRef?: string;
     changeRequestLookupTarget?: PaseoWorktreeChangeRequestHint;
+    managedPlacement?: boolean;
   },
 ): Promise<void> {
   return mutateMetadata(worktreeRoot, async (root) => {
@@ -244,6 +247,9 @@ export async function writePaseoWorktreeMetadata(
       ...(options.changeRequestLookupTarget
         ? { changeRequestLookupTarget: options.changeRequestLookupTarget }
         : {}),
+      ...(options.managedPlacement === undefined
+        ? {}
+        : { managedPlacement: options.managedPlacement }),
     };
     await writePaseoWorktreeMetadataFile(root, metadata);
   });
