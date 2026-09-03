@@ -16,6 +16,7 @@ import {
 import type { ChangeRequestCheckoutSource, FirstAgentContext } from "@getpaseo/protocol/messages";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 
 export interface CreateWorktreeCoreInput {
   cwd: string;
@@ -29,6 +30,12 @@ export interface CreateWorktreeCoreInput {
   paseoHome?: string;
   worktreesRoot?: string;
   runSetup?: boolean;
+  /**
+   * Resolves where this project cuts worktrees. Injected rather than looked up
+   * by each caller because some entry points (MCP create_agent, for one) only
+   * have a cwd and no projectId.
+   */
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
 }
 
 export interface CreateWorktreeCoreDeps {
@@ -45,6 +52,8 @@ export interface CreateWorktreeCoreResult {
   intent: WorktreeCreationIntent;
   repoRoot: string;
   created: boolean;
+  /** The location actually used. Null means managed. */
+  location?: WorktreeLocation | null;
 }
 
 export async function createWorktreeCore(
@@ -115,6 +124,8 @@ async function createWorktreeCoreWithPriority(
     }
   }
 
+  const location = (await input.resolveWorktreeLocation?.(repoRoot)) ?? null;
+
   return {
     worktree: await createWorktree({
       cwd: repoRoot,
@@ -123,10 +134,15 @@ async function createWorktreeCoreWithPriority(
       runSetup: input.runSetup ?? true,
       paseoHome: input.paseoHome,
       worktreesRoot: input.worktreesRoot,
+      location,
     }),
     intent,
     repoRoot,
     created: true,
+    // Returned so downstream records placement from the mode that was actually
+    // used, rather than re-deriving it from the resulting path — a custom root
+    // can sit anywhere, and path shape cannot tell intent from coincidence.
+    location,
   };
 }
 
