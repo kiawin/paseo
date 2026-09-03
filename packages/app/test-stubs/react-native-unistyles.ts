@@ -1,6 +1,5 @@
 import { lightHighlightColors } from "@getpaseo/highlight";
 import { lightTheme } from "../src/styles/theme";
-
 const testTheme = {
   colorScheme: "light",
   colors: {

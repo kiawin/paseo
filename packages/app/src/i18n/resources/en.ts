@@ -2179,6 +2179,11 @@ export const en = {
     empty: "No additional details available",
     input: "Input",
     output: "Output",
+    clickToExpand: "Click to expand",
+    inLabel: "IN",
+    outLabel: "OUT",
+    copyCommand: "Copy command",
+    copyOutput: "Copy output",
   },
   turnSummary: {
     details: "View turn details",
@@ -2665,6 +2670,15 @@ export const en = {
           full: "Full",
           collapseToolCalls: "Collapse tool calls",
           collapseTurns: "Collapse turns",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "Chat transcript style",
+        description: "How a completed turn is laid out",
+        accessibilityLabel: "Select chat transcript style ({{value}})",
+        options: {
+          cards: "Cards",
+          trace: "Trace",
         },
       },
       language: {
