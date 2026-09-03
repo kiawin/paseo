@@ -77,6 +77,7 @@ import {
   createFileObserver,
 } from "./file-observer/index.js";
 import { checkoutLiteFromGitSnapshot } from "./workspace-registry-model.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { createWatcherLivenessCanary } from "./watcher-liveness-canary.js";
 
 const WORKSPACE_GIT_WATCH_DEBOUNCE_MS = 1_000;
@@ -376,6 +377,12 @@ interface WorkspaceGitServiceOptions {
   logger: pino.Logger;
   paseoHome: string;
   worktreesRoot?: string;
+  /**
+   * Where the project owning a repo cuts worktrees. Without it, listing filters
+   * against the managed root and every worktree cut elsewhere disappears from
+   * list RPCs and from branch-based archive selection.
+   */
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   fileObserver?: FileObserver;
   deps?: Partial<WorkspaceGitServiceDependencies>;
 }
@@ -531,6 +538,9 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   private readonly logger: pino.Logger;
   private readonly paseoHome: string;
   private readonly worktreesRoot: string | undefined;
+  private readonly resolveWorktreeLocation:
+    | ((repoRoot: string) => Promise<WorktreeLocation | null>)
+    | undefined;
   private readonly fileObserver: FileObserver;
   private readonly deps: WorkspaceGitServiceDependencies;
   private readonly forgeResolver: ForgeResolver;
@@ -585,6 +595,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     this.logger = options.logger.child({ module: "workspace-git-service" });
     this.paseoHome = options.paseoHome;
     this.worktreesRoot = options.worktreesRoot;
+    this.resolveWorktreeLocation = options.resolveWorktreeLocation;
     this.fileObserver = options.fileObserver ?? createFileObserver();
     this.deps = resolveWorkspaceGitServiceDeps(
       this.fileObserver.subscribe.bind(this.fileObserver),
@@ -855,12 +866,16 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   ): Promise<WorkspaceGitWorktreeInfo[]> {
     this.assertNotDisposed();
     const repoRoot = await this.resolveRepoRoot(cwdOrRepoRoot, options);
-    const key = JSON.stringify(["worktrees", repoRoot]);
+    const location = (await this.resolveWorktreeLocation?.(repoRoot)) ?? null;
+    // The holder is part of the identity of this result, so it belongs in the
+    // cache key: changing a project's location changes what listing returns.
+    const key = JSON.stringify(["worktrees", repoRoot, location]);
     return this.readAuxiliaryCache(this.worktreeListCache, key, options, () =>
       this.deps.listPaseoWorktrees({
         cwd: repoRoot,
         paseoHome: this.paseoHome,
         worktreesRoot: this.worktreesRoot,
+        location,
       }),
     );
   }
