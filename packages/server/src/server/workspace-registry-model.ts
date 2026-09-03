@@ -48,6 +48,7 @@ export type PersistedWorkspacePlacement = Pick<
   | "worktreeRoot"
   | "baseBranch"
   | "isPaseoOwnedWorktree"
+  | "worktreePlacement"
   | "mainRepoRoot"
 >;
 
@@ -69,6 +70,8 @@ export type InitialWorkspacePlacementInput =
       branch: string | null;
       baseBranch: string | null;
       mainRepoRoot: string;
+      /** Fixed at creation. "external" means the worktree is outside Paseo's managed root. */
+      worktreePlacement: "managed" | "external";
     };
 
 export interface WorkspacePlacementUpdate {
@@ -89,6 +92,7 @@ export function initialWorkspacePlacement(
       worktreeRoot: input.worktreeRoot,
       baseBranch: input.baseBranch,
       isPaseoOwnedWorktree: true,
+      worktreePlacement: input.worktreePlacement,
       mainRepoRoot: input.mainRepoRoot,
     };
   }
@@ -102,6 +106,9 @@ export function initialWorkspacePlacement(
     worktreeRoot: input.checkout.isGit ? (input.checkout.worktreeRoot ?? input.cwd) : null,
     baseBranch: null,
     isPaseoOwnedWorktree: input.checkout.isGit && input.checkout.isPaseoOwnedWorktree,
+    // Discovered rather than created by Paseo, so there is no creation-time
+    // placement to record. Deletion policy falls back to the path.
+    worktreePlacement: null,
     mainRepoRoot: input.checkout.isGit ? input.checkout.mainRepoRoot : null,
   };
 }
@@ -125,7 +132,12 @@ export function reconcileWorkspacePlacement(input: {
   if (input.workspace.branch !== observed.branch) fields.branch = observed.branch;
   if (input.workspace.worktreeRoot !== observed.worktreeRoot)
     fields.worktreeRoot = observed.worktreeRoot;
-  if (input.workspace.isPaseoOwnedWorktree !== observed.isPaseoOwnedWorktree)
+  // Creation-time provenance, so reconcile may confirm it but never withdraw it.
+  // `observed` derives this from path shape, which only recognises Paseo's
+  // private root — so every worktree cut into a sibling, nested or custom
+  // holder would otherwise be downgraded to false on the next reconcile, and
+  // with it lose auto-archive, teardown, and any route to removal.
+  if (!input.workspace.isPaseoOwnedWorktree && observed.isPaseoOwnedWorktree)
     fields.isPaseoOwnedWorktree = observed.isPaseoOwnedWorktree;
   if (input.workspace.mainRepoRoot !== observed.mainRepoRoot)
     fields.mainRepoRoot = observed.mainRepoRoot;

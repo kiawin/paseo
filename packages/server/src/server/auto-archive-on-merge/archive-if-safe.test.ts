@@ -83,7 +83,20 @@ function createHarness(overrides?: {
   snapshot?: WorkspaceGitRuntimeSnapshot;
   isPaseoOwnedWorktreeCwd?: ArchiveIfSafeDependencies["isPaseoOwnedWorktreeCwd"];
   archiveByScope?: ArchiveIfSafeDependencies["archiveByScope"];
+  activeWorkspaces?: ActiveWorkspaceRef[];
 }) {
+  // Lifecycle authority comes from the persisted record, so the harness has to
+  // supply one; an empty registry means "already archived", not "not owned".
+  const activeWorkspaces: ActiveWorkspaceRef[] = overrides?.activeWorkspaces ?? [
+    {
+      workspaceId: "ws-auto-archive",
+      cwd: CWD,
+      kind: "worktree",
+      worktreeRoot: CWD,
+      isPaseoOwnedWorktree: true,
+      mainRepoRoot: "/tmp/repo",
+    },
+  ];
   const getSnapshot = vi.fn(async () =>
     createSnapshot(),
   ) as unknown as AutoArchiveArchiveOptions["workspaceGitService"]["getSnapshot"];
@@ -101,7 +114,7 @@ function createHarness(overrides?: {
     agentStorage: {} as AutoArchiveArchiveOptions["agentStorage"],
     terminalManager: {} as AutoArchiveArchiveOptions["terminalManager"],
     findWorkspaceIdForCwd: vi.fn(async () => "ws-auto-archive"),
-    listActiveWorkspaces: vi.fn(async () => []),
+    listActiveWorkspaces: vi.fn(async () => activeWorkspaces),
     getAutoArchivedChangeRequestUrl: vi.fn(
       async () => overrides?.autoArchivedChangeRequestUrl ?? null,
     ),
@@ -366,7 +379,6 @@ describe("archiveIfSafe", () => {
 
     await runArchiveIfSafe(harness);
 
-    expect(harness.deps.isPaseoOwnedWorktreeCwd).not.toHaveBeenCalled();
     expect(harness.deps.archiveByScope).not.toHaveBeenCalled();
   });
 
@@ -377,7 +389,6 @@ describe("archiveIfSafe", () => {
 
     await runArchiveIfSafe(harness);
 
-    expect(harness.deps.isPaseoOwnedWorktreeCwd).not.toHaveBeenCalled();
     expect(harness.deps.archiveByScope).not.toHaveBeenCalled();
   });
 
@@ -391,17 +402,54 @@ describe("archiveIfSafe", () => {
     expect(harness.deps.archiveByScope).toHaveBeenCalledTimes(1);
   });
 
-  test("does nothing when the cwd is not a Paseo-owned worktree", async () => {
+  test("does nothing when Paseo did not create the workspace", async () => {
     const harness = createHarness({
-      isPaseoOwnedWorktreeCwd: async () => ({ allowed: false, worktreePath: CWD }),
+      activeWorkspaces: [
+        {
+          workspaceId: "ws-auto-archive",
+          cwd: CWD,
+          kind: "worktree",
+          worktreeRoot: CWD,
+          isPaseoOwnedWorktree: false,
+          mainRepoRoot: "/tmp/repo",
+        },
+      ],
     });
 
     await runArchiveIfSafe(harness);
 
-    expect(harness.deps.isPaseoOwnedWorktreeCwd).toHaveBeenCalledWith(CWD, {
-      paseoHome: PASEO_HOME,
-    });
     expect(harness.deps.archiveByScope).not.toHaveBeenCalled();
+  });
+
+  test("does nothing when the workspace is already archived", async () => {
+    const harness = createHarness({ activeWorkspaces: [] });
+
+    await runArchiveIfSafe(harness);
+
+    expect(harness.deps.archiveByScope).not.toHaveBeenCalled();
+  });
+
+  // A worktree cut outside the managed root has no <hash>/<slug> path shape, so
+  // the old path-based gate skipped auto-archive for it entirely.
+  test("archives a worktree that lives outside the managed root", async () => {
+    const externalCwd = "/home/dev/repo-worktrees/branch";
+    const harness = createHarness({
+      snapshot: createSnapshot({ cwd: externalCwd }),
+      activeWorkspaces: [
+        {
+          workspaceId: "ws-auto-archive",
+          cwd: externalCwd,
+          kind: "worktree",
+          worktreeRoot: externalCwd,
+          isPaseoOwnedWorktree: true,
+          mainRepoRoot: "/home/dev/repo",
+        },
+      ],
+    });
+
+    await runArchiveIfSafe(harness);
+
+    expect(harness.deps.archiveByScope).toHaveBeenCalledTimes(1);
   });
 
   test("logs and does not throw when archiving fails", async () => {
@@ -488,7 +536,12 @@ describe("archiveIfSafe", () => {
   test("archives only the supplied workspace id and does not iterate siblings", async () => {
     const harness = createHarness();
     harness.options.listActiveWorkspaces = vi.fn(async () => [
-      { workspaceId: "ws-merged-worktree", cwd: CWD, kind: "worktree" as const },
+      {
+        workspaceId: "ws-merged-worktree",
+        cwd: CWD,
+        kind: "worktree" as const,
+        isPaseoOwnedWorktree: true,
+      },
       { workspaceId: "ws-sibling", cwd: CWD, kind: "local_checkout" as const },
     ]);
 
@@ -516,7 +569,12 @@ describe("archiveIfSafe", () => {
       repoDir,
       worktreePath: worktree.worktreePath,
       activeWorkspaces: [
-        { workspaceId: workspaceA, cwd: worktree.worktreePath, kind: "worktree" },
+        {
+          workspaceId: workspaceA,
+          cwd: worktree.worktreePath,
+          kind: "worktree" as const,
+          isPaseoOwnedWorktree: true,
+        },
         { workspaceId: workspaceB, cwd: worktree.worktreePath, kind: "local_checkout" },
       ],
       archivedWorkspaceIds,
@@ -545,7 +603,14 @@ describe("archiveIfSafe", () => {
       paseoHome,
       repoDir,
       worktreePath: worktree.worktreePath,
-      activeWorkspaces: [{ workspaceId: workspaceA, cwd: worktree.worktreePath, kind: "worktree" }],
+      activeWorkspaces: [
+        {
+          workspaceId: workspaceA,
+          cwd: worktree.worktreePath,
+          kind: "worktree" as const,
+          isPaseoOwnedWorktree: true,
+        },
+      ],
       archivedWorkspaceIds,
     });
 
@@ -568,6 +633,7 @@ describe("archiveIfSafe", () => {
       workspaceId: "ws-merged-then-unarchived",
       cwd: worktree.worktreePath,
       kind: "worktree" as const,
+      isPaseoOwnedWorktree: true,
     };
     const sibling = {
       workspaceId: "ws-directory-preserving-sibling",

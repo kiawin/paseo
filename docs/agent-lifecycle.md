@@ -89,6 +89,46 @@ children.
 
 `create_agent_request` can opt an agent into `autoArchive`. In that mode the daemon archives the agent after the first terminal turn event (`turn_completed`, `turn_failed`, or `turn_canceled`). When the agent owns an isolated workspace, auto-archive archives that workspace too; the managed worktree is removed when its final workspace reference is gone.
 
+### Archive removes the directory only for managed worktrees
+
+A project chooses where its worktrees are cut. Only the `managed` layout —
+`<base>/<hash8>/<slug>` under Paseo's own root — is a namespace nothing else
+writes to, so only there does archive delete the directory.
+
+`sibling`, `nested`, and `custom` put worktrees in directories people also use
+by hand. Archive leaves those on disk. Removing one is an explicit request
+(`removeWorktreeDirectory` on the archive, or `workspace.worktree.remove`
+afterwards) and runs through `git worktree remove` without `--force`, so git
+refuses a path that is not a worktree of this repo, and refuses one holding
+uncommitted work.
+
+Git proves repository membership and cleanliness, not that Paseo created the
+directory. Two gaps follow, and both are asserted in tests so they stay known:
+a clean worktree a person made in the same holder is indistinguishable and will
+be removed, and ignored files — `.env`, `node_modules` — are destroyed without a
+refusal.
+
+Which policy applies is fixed on the workspace record when the worktree is
+created, never re-derived from the project's current mode. Mode is mutable and
+placement is not, so re-deriving would let switching a project to `managed`
+point the forced recursive delete at a shared directory. When the field is
+absent — a daemon predating it strips unknown keys on re-parse — the policy
+falls back to the worktree's path, which can only ever select `managed` for a
+path inside Paseo's own root.
+
+Archive decides a directory is unreferenced by listing the active workspaces,
+then removes it. Provisioning writes the record that would have made it
+referenced. Both take the same lock on the backing directory
+(`packages/server/src/server/worktree/backing-directory.ts`), so one of two
+orderings always holds: provisioning registers first and archive declines, or
+archive finishes and provisioning finds the directory gone and refuses to
+register a record pointing at nothing. A workspace can share a worktree with
+its siblings, so "create a workspace on a directory that already exists" is
+ordinary traffic, not a corner case.
+
+The lock is in-process. It orders work inside one daemon and says nothing about
+two daemons sharing a `PASEO_HOME`.
+
 Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/agent/agent-manager.ts`):
 
 1. Snapshot the current session into the registry
