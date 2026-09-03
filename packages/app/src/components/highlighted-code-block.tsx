@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Pressable,
   View,
@@ -8,7 +8,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import * as Clipboard from "expo-clipboard";
+import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import { Check, Copy } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import type { HighlightToken } from "@getpaseo/highlight";
@@ -173,31 +173,9 @@ interface CopyButtonProps {
   visible: boolean;
 }
 
-const COPIED_RESET_MS = 1500;
-
 const CopyButton = React.memo(function CopyButton({ getCode, visible }: CopyButtonProps) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (resetRef.current) clearTimeout(resetRef.current);
-    },
-    [],
-  );
-
-  const handlePress = useCallback(async () => {
-    const content = getCode();
-    if (!content) return;
-    await Clipboard.setStringAsync(content);
-    setCopied(true);
-    if (resetRef.current) clearTimeout(resetRef.current);
-    resetRef.current = setTimeout(() => {
-      setCopied(false);
-      resetRef.current = null;
-    }, COPIED_RESET_MS);
-  }, [getCode]);
+  const { copied, copy } = useCopyFeedback({ getContent: getCode });
 
   const visibilityStyle = visible
     ? copyButtonStyles.containerVisible
@@ -209,7 +187,7 @@ const CopyButton = React.memo(function CopyButton({ getCode, visible }: CopyButt
 
   return (
     <Pressable
-      onPress={handlePress}
+      onPress={copy}
       style={wrapperStyle}
       pointerEvents={visible ? "auto" : "none"}
       accessibilityRole="button"
