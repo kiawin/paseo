@@ -7,6 +7,7 @@ import {
   type FirstAgentContext,
   type ChangeRequestCheckoutSource,
   type SessionInboundMessage,
+  type WorktreeLocation,
   type SessionOutboundMessage,
   type WorkspaceSetupSnapshot,
   type WorkspaceDescriptorPayload,
@@ -83,6 +84,7 @@ type AgentWorktreeSetupTimelineWriter = (input: {
 interface BuildAgentSessionConfigDependencies {
   paseoHome?: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   sessionLogger: Logger;
   workspaceGitService?: WorkspaceGitService;
   createPaseoWorktree: (
@@ -103,6 +105,7 @@ interface BuildAgentSessionConfigDependencies {
 interface CreatePaseoWorktreeInBackgroundDependencies {
   paseoHome?: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   emitWorkspaceUpdateForWorkspaceId: (workspaceId: string) => Promise<void>;
   cacheWorkspaceSetupSnapshot: (workspaceId: string, snapshot: WorkspaceSetupSnapshot) => void;
   emit: EmitSessionMessage;
@@ -177,6 +180,7 @@ interface HandleWorkspaceSetupRunRequestDependencies extends CreatePaseoWorktree
 interface HandleCreatePaseoWorktreeRequestDependencies {
   paseoHome?: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   describeWorkspaceRecord: (
     result: CreatePaseoWorktreeResult,
   ) => Promise<WorkspaceDescriptorPayload>;
@@ -247,6 +251,7 @@ export async function buildAgentSessionConfig(
         runSetup: false,
         paseoHome: dependencies.paseoHome,
         worktreesRoot: dependencies.worktreesRoot,
+        resolveWorktreeLocation: dependencies.resolveWorktreeLocation,
       },
       {
         resolveDefaultBranch: normalized.baseBranch
@@ -540,6 +545,7 @@ export async function handleCreatePaseoWorktreeRequest(
       {
         paseoHome: dependencies.paseoHome,
         worktreesRoot: dependencies.worktreesRoot,
+        resolveWorktreeLocation: dependencies.resolveWorktreeLocation,
         createPaseoWorktreeWorkflow: dependencies.createPaseoWorktreeWorkflow,
       },
       {
@@ -630,6 +636,8 @@ export async function createPaseoWorktreeWorkflow(
       runSetup: false,
       paseoHome: input.paseoHome ?? dependencies.paseoHome,
       worktreesRoot: input.worktreesRoot ?? dependencies.worktreesRoot,
+      resolveWorktreeLocation:
+        input.resolveWorktreeLocation ?? dependencies.resolveWorktreeLocation,
     },
     options?.resolveDefaultBranch
       ? { resolveDefaultBranch: options.resolveDefaultBranch }
