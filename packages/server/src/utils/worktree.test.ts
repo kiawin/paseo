@@ -3,17 +3,23 @@ import {
   createWorktree as createWorktreePrimitive,
   deriveWorktreeProjectHash,
   deletePaseoWorktree,
-  isPaseoOwnedWorktreeCwd,
   listPaseoWorktrees,
+  classifyWorktreeRemovalRefusal,
+  getPaseoWorktreesRoot,
+  resolveCustomWorktreeRoot,
+  resolveWorktreeHolderDir,
+  isPaseoOwnedWorktreeCwd,
   listRepoWorktrees,
   mapWorkspaceCwdToWorktree,
   slugify,
   type CreateWorktreeOptions,
   type WorktreeConfig,
 } from "./worktree";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { execFileSync } from "child_process";
 import {
   mkdtempSync,
+  readFileSync,
   mkdirSync,
   rmSync,
   existsSync,
@@ -21,7 +27,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "fs";
-import { join } from "path";
+import { isAbsolute, join, relative, sep } from "path";
 import { tmpdir } from "os";
 import { createRealpathAwarePathMatcher } from "./path";
 
@@ -383,5 +389,452 @@ describe("slugify", () => {
       const slug = slugify(input);
       expect(slugify(slug)).toBe(slug);
     }
+  });
+});
+
+describe("resolveWorktreeHolderDir", () => {
+  let tempDir: string;
+  let repoDir: string;
+  let paseoHome: string;
+
+  beforeEach(() => {
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-holder-test-")));
+    repoDir = join(tempDir, "test-repo");
+    paseoHome = join(tempDir, "paseo-home");
+
+    mkdirSync(repoDir, { recursive: true });
+    execFileSync("git", ["init", "-b", "main"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "file.txt"), "hello\n");
+    execFileSync("git", ["add", "."], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "initial"], {
+      cwd: repoDir,
+    });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  // The regression bar for the whole refactor: managed must keep producing the
+  // exact path the pre-existing builder produced, hash and all.
+  it("managed is byte-identical to the pre-existing worktrees root", async () => {
+    const expected = await getPaseoWorktreesRoot(repoDir, paseoHome);
+
+    await expect(resolveWorktreeHolderDir({ cwd: repoDir, paseoHome })).resolves.toBe(expected);
+    await expect(
+      resolveWorktreeHolderDir({ cwd: repoDir, location: { mode: "managed" }, paseoHome }),
+    ).resolves.toBe(expected);
+    await expect(
+      resolveWorktreeHolderDir({ cwd: repoDir, location: null, paseoHome }),
+    ).resolves.toBe(expected);
+  });
+
+  it("managed honours a custom base root", async () => {
+    const worktreesBaseRoot = join(tempDir, "elsewhere");
+    const expected = await getPaseoWorktreesRoot(repoDir, paseoHome, worktreesBaseRoot);
+
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        location: { mode: "managed" },
+        paseoHome,
+        worktreesBaseRoot,
+      }),
+    ).resolves.toBe(expected);
+  });
+
+  it("sibling sits next to the repo", async () => {
+    await expect(
+      resolveWorktreeHolderDir({ cwd: repoDir, location: { mode: "sibling" }, paseoHome }),
+    ).resolves.toBe(join(tempDir, "test-repo-worktrees"));
+  });
+
+  it("nested sits inside the repo", async () => {
+    await expect(
+      resolveWorktreeHolderDir({ cwd: repoDir, location: { mode: "nested" }, paseoHome }),
+    ).resolves.toBe(join(repoDir, ".worktrees"));
+  });
+
+  // path.basename/dirname already tolerate a trailing separator, so this only
+  // pins the behaviour rather than guarding a bug.
+  it("sibling tolerates a repo root with a trailing separator", async () => {
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        repoRoot: `${repoDir}${sep}`,
+        location: { mode: "sibling" },
+        paseoHome,
+      }),
+    ).resolves.toBe(join(tempDir, "test-repo-worktrees"));
+  });
+
+  // This is what the resolve() in the sibling branch is actually for: without
+  // it a relative repoRoot yields a relative holder, and the worktree lands
+  // wherever the daemon's cwd happens to be.
+  it("sibling absolutises a relative repo root", async (ctx) => {
+    const relativeRepoRoot = relative(process.cwd(), repoDir);
+    // A relative form only exists when the repo shares a drive with the daemon's
+    // cwd. Windows CI puts the temp dir on another drive, where `relative` hands
+    // back an absolute path and there is nothing to absolutise.
+    if (isAbsolute(relativeRepoRoot)) ctx.skip();
+    expect(isAbsolute(relativeRepoRoot)).toBe(false);
+
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        repoRoot: relativeRepoRoot,
+        location: { mode: "sibling" },
+        paseoHome,
+      }),
+    ).resolves.toBe(join(tempDir, "test-repo-worktrees"));
+  });
+
+  it("resolves from a subdirectory of the repo", async () => {
+    const nestedCwd = join(repoDir, "packages", "app");
+    mkdirSync(nestedCwd, { recursive: true });
+
+    await expect(
+      resolveWorktreeHolderDir({ cwd: nestedCwd, location: { mode: "sibling" }, paseoHome }),
+    ).resolves.toBe(join(tempDir, "test-repo-worktrees"));
+  });
+
+  it("custom expands a tilde and returns an absolute root", async () => {
+    const home = process.env.HOME ?? "";
+    const result = resolveCustomWorktreeRoot("~/code/worktrees", repoDir);
+    expect(result).toEqual({ ok: true, root: join(home, "code", "worktrees") });
+
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        location: { mode: "custom", root: join(tempDir, "custom-holder") },
+        paseoHome,
+      }),
+    ).resolves.toBe(join(tempDir, "custom-holder"));
+  });
+
+  it("custom rejects relative, repo-root, inside-repo and containing roots", () => {
+    expect(resolveCustomWorktreeRoot("relative/path", repoDir)).toEqual({
+      ok: false,
+      rejection: "relative",
+    });
+    expect(resolveCustomWorktreeRoot(repoDir, repoDir)).toEqual({
+      ok: false,
+      rejection: "is_repo_root",
+    });
+    // Inside the repo is `nested`, which also writes .git/info/exclude.
+    expect(resolveCustomWorktreeRoot(join(repoDir, ".worktrees"), repoDir)).toEqual({
+      ok: false,
+      rejection: "inside_repo",
+    });
+    // A slug equal to the repo's own directory name would resolve to the repo.
+    expect(resolveCustomWorktreeRoot(tempDir, repoDir)).toEqual({
+      ok: false,
+      rejection: "contains_repo",
+    });
+  });
+
+  // A custom root under Paseo's own base root produces the two-segment
+  // <hash>/<slug> shape the placement classifier reads as managed — which would
+  // arm the forced recursive delete for a mode contracted to leave files alone.
+  it("custom rejects a root inside Paseo's managed base root", () => {
+    const managedBase = join(paseoHome, "worktrees");
+    for (const candidate of [managedBase, join(managedBase, "a1b2c3d4"), paseoHome]) {
+      expect(resolveCustomWorktreeRoot(candidate, repoDir, { paseoHome })).toEqual({
+        ok: false,
+        rejection: "inside_managed_root",
+      });
+    }
+
+    // Unrelated roots are still accepted.
+    expect(resolveCustomWorktreeRoot(join(tempDir, "elsewhere"), repoDir, { paseoHome })).toEqual({
+      ok: true,
+      root: join(tempDir, "elsewhere"),
+    });
+  });
+
+  it("custom rejection surfaces as a thrown error from the resolver", async () => {
+    await expect(
+      resolveWorktreeHolderDir({
+        cwd: repoDir,
+        location: { mode: "custom", root: "relative/path" },
+        paseoHome,
+      }),
+    ).rejects.toThrow(/relative/);
+  });
+});
+
+describe("git-validated worktree deletion", () => {
+  let tempDir: string;
+  let repoDir: string;
+  let holderDir: string;
+  let paseoHome: string;
+
+  function git(args: string[], cwd: string): void {
+    execFileSync("git", args, { cwd, stdio: "pipe" });
+  }
+
+  function initRepo(dir: string): void {
+    mkdirSync(dir, { recursive: true });
+    git(["init", "-b", "main"], dir);
+    git(["config", "user.email", "test@test.com"], dir);
+    git(["config", "user.name", "Test"], dir);
+    writeFileSync(join(dir, "file.txt"), "hello\n");
+    git(["add", "."], dir);
+    git(["-c", "commit.gpgsign=false", "commit", "-m", "initial"], dir);
+  }
+
+  /** A worktree cut outside the managed root, the way sibling/nested/custom do. */
+  function addWorktree(slug: string, branch: string): string {
+    const path = join(holderDir, slug);
+    git(["worktree", "add", path, "-b", branch], repoDir);
+    return path;
+  }
+
+  function removeGitValidated(worktreePath: string, force?: boolean): Promise<void> {
+    return deletePaseoWorktree({
+      cwd: repoDir,
+      worktreePath,
+      teardownCwds: [],
+      worktreesRoot: holderDir,
+      paseoHome,
+      policy: { kind: "git-validated", ...(force === undefined ? {} : { force }) },
+    });
+  }
+
+  beforeEach(() => {
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-git-validated-")));
+    repoDir = join(tempDir, "test-repo");
+    holderDir = join(tempDir, "test-repo-worktrees");
+    paseoHome = join(tempDir, "paseo-home");
+    initRepo(repoDir);
+    mkdirSync(holderDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("removes a clean worktree", async () => {
+    const worktreePath = addWorktree("clean", "clean-branch");
+    expect(existsSync(worktreePath)).toBe(true);
+
+    await removeGitValidated(worktreePath);
+
+    expect(existsSync(worktreePath)).toBe(false);
+  });
+
+  // The whole point of the policy: a directory nobody registered as a worktree
+  // is left alone instead of being recursively deleted.
+  it("refuses a plain directory and leaves it on disk", async () => {
+    const plainDir = join(holderDir, "not-a-worktree");
+    mkdirSync(plainDir, { recursive: true });
+    writeFileSync(join(plainDir, "important.txt"), "user data\n");
+
+    await expect(removeGitValidated(plainDir)).rejects.toMatchObject({
+      name: "WorktreeRemovalRefusedError",
+      refusal: "not_a_worktree",
+      worktreePath: plainDir,
+      recoverableWithForce: false,
+    });
+
+    expect(existsSync(join(plainDir, "important.txt"))).toBe(true);
+  });
+
+  it("refuses a worktree belonging to another repo and leaves it on disk", async () => {
+    const otherRepo = join(tempDir, "other-repo");
+    initRepo(otherRepo);
+    const foreignWorktree = join(holderDir, "foreign");
+    git(["worktree", "add", foreignWorktree, "-b", "foreign-branch"], otherRepo);
+    expect(existsSync(join(foreignWorktree, "file.txt"))).toBe(true);
+
+    await expect(removeGitValidated(foreignWorktree)).rejects.toMatchObject({
+      refusal: "not_a_worktree",
+    });
+
+    expect(existsSync(join(foreignWorktree, "file.txt"))).toBe(true);
+  });
+
+  it("refuses a worktree holding uncommitted work, and force overrides", async () => {
+    const worktreePath = addWorktree("dirty", "dirty-branch");
+    writeFileSync(join(worktreePath, "scratch.txt"), "unsaved work\n");
+
+    await expect(removeGitValidated(worktreePath)).rejects.toMatchObject({
+      refusal: "dirty",
+      recoverableWithForce: true,
+    });
+    expect(existsSync(worktreePath)).toBe(true);
+
+    await removeGitValidated(worktreePath, true);
+    expect(existsSync(worktreePath)).toBe(false);
+  });
+
+  // A lock is a deliberate act by whoever placed it, and git needs `-f -f` to
+  // override it. A single --force must not silently defeat it.
+  it("refuses a locked worktree even with force", async () => {
+    const worktreePath = addWorktree("locked", "locked-branch");
+    git(["worktree", "lock", worktreePath], repoDir);
+
+    for (const force of [false, true]) {
+      await expect(removeGitValidated(worktreePath, force)).rejects.toMatchObject({
+        refusal: "locked",
+        recoverableWithForce: false,
+      });
+      expect(existsSync(worktreePath)).toBe(true);
+    }
+  });
+
+  // Known, accepted gap: git proves repository membership and cleanliness, not
+  // that Paseo created the directory. Asserted so it stays a known gap rather
+  // than becoming an unnoticed one.
+  it("removes a clean worktree a human created, because git cannot prove authorship", async () => {
+    const handMade = join(holderDir, "hand-made");
+    git(["worktree", "add", handMade, "-b", "hand-made-branch"], repoDir);
+
+    await removeGitValidated(handMade);
+
+    expect(existsSync(handMade)).toBe(false);
+  });
+
+  // Known, accepted gap: ignored files are not protected by git's cleanliness
+  // check, so removal destroys them. The UI copy has to say so.
+  it("destroys ignored files such as .env without refusing", async () => {
+    writeFileSync(join(repoDir, ".gitignore"), ".env\nnode_modules/\n");
+    git(["add", "."], repoDir);
+    git(["-c", "commit.gpgsign=false", "commit", "-m", "ignore"], repoDir);
+
+    const worktreePath = addWorktree("ignored", "ignored-branch");
+    writeFileSync(join(worktreePath, ".env"), "SECRET=1\n");
+    mkdirSync(join(worktreePath, "node_modules"), { recursive: true });
+
+    await removeGitValidated(worktreePath);
+
+    expect(existsSync(worktreePath)).toBe(false);
+  });
+
+  it("requires a cwd so git has a repository to validate against", async () => {
+    const worktreePath = addWorktree("no-cwd", "no-cwd-branch");
+
+    await expect(
+      deletePaseoWorktree({
+        cwd: null,
+        worktreePath,
+        teardownCwds: [],
+        worktreesRoot: holderDir,
+        paseoHome,
+        policy: { kind: "git-validated" },
+      }),
+    ).rejects.toThrow(/cwd is required/);
+    expect(existsSync(worktreePath)).toBe(true);
+  });
+
+  it("classifies git's refusal messages", () => {
+    expect(classifyWorktreeRemovalRefusal(new Error("fatal: '/x' is not a working tree"))).toBe(
+      "not_a_worktree",
+    );
+    expect(
+      classifyWorktreeRemovalRefusal(
+        new Error("fatal: '/x' contains modified or untracked files, use --force to delete it"),
+      ),
+    ).toBe("dirty");
+    expect(
+      classifyWorktreeRemovalRefusal(new Error("fatal: cannot remove a locked working tree;")),
+    ).toBe("locked");
+    expect(classifyWorktreeRemovalRefusal(new Error("some other failure"))).toBe("unknown");
+  });
+});
+
+describe("creating and listing worktrees per location mode", () => {
+  let tempDir: string;
+  let repoDir: string;
+  let paseoHome: string;
+
+  beforeEach(() => {
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-location-create-")));
+    repoDir = join(tempDir, "test-repo");
+    paseoHome = join(tempDir, "paseo-home");
+    mkdirSync(repoDir, { recursive: true });
+    execFileSync("git", ["init", "-b", "main"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "file.txt"), "hello\n");
+    execFileSync("git", ["add", "."], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "initial"], {
+      cwd: repoDir,
+    });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function create(slug: string, branch: string, location: WorktreeLocation | null) {
+    return createWorktreePrimitive({
+      cwd: repoDir,
+      worktreeSlug: slug,
+      source: { kind: "branch-off", baseBranch: "main", branchName: branch },
+      runSetup: false,
+      paseoHome,
+      ...(location ? { location } : {}),
+    });
+  }
+
+  it("creates under the holder each mode resolves to", async () => {
+    const managed = await create("m", "m-branch", { mode: "managed" });
+    expect(managed.worktreePath.startsWith(join(paseoHome, "worktrees"))).toBe(true);
+
+    const sibling = await create("s", "s-branch", { mode: "sibling" });
+    expect(sibling.worktreePath).toBe(join(tempDir, "test-repo-worktrees", "s"));
+
+    const nested = await create("n", "n-branch", { mode: "nested" });
+    expect(nested.worktreePath).toBe(join(repoDir, ".worktrees", "n"));
+
+    const customRoot = join(tempDir, "custom-holder");
+    const custom = await create("c", "c-branch", { mode: "custom", root: customRoot });
+    expect(custom.worktreePath).toBe(join(customRoot, "c"));
+  });
+
+  // Not tidiness: the workspace watcher builds its ignore set from
+  // --exclude-standard, so without this the main workspace's recursive watcher
+  // descends into an entire second checkout.
+  it("excludes the nested holder from git, idempotently", async () => {
+    await create("n1", "n1-branch", { mode: "nested" });
+
+    const excludePath = join(repoDir, ".git", "info", "exclude");
+    const contents = readFileSync(excludePath, "utf8");
+    expect(contents).toContain(".worktrees/");
+    expect(
+      execFileSync("git", ["status", "--porcelain"], { cwd: repoDir }).toString(),
+    ).not.toContain(".worktrees");
+
+    await create("n2", "n2-branch", { mode: "nested" });
+    const after = readFileSync(excludePath, "utf8");
+    expect(after.split("\n").filter((line) => line.trim() === ".worktrees/")).toHaveLength(1);
+  });
+
+  it("does not write the exclude for other modes", async () => {
+    await create("s", "s-branch", { mode: "sibling" });
+    const excludePath = join(repoDir, ".git", "info", "exclude");
+    const contents = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+    expect(contents).not.toContain(".worktrees/");
+  });
+
+  // Listing filtered against the managed root would match nothing here, so the
+  // worktree would vanish from list RPCs and from archive-by-branch selection.
+  it("lists worktrees from the project's own holder", async () => {
+    const location: WorktreeLocation = { mode: "sibling" };
+    const created = await create("listed", "listed-branch", location);
+
+    // Compared through the realpath-aware matcher rather than by string: on
+    // Windows the temp path git reports differs from the one we built by 8.3
+    // short names and separators.
+    const matchesCreated = createRealpathAwarePathMatcher(created.worktreePath);
+
+    const listed = await listPaseoWorktrees({ cwd: repoDir, paseoHome, location });
+    expect(listed.some((entry) => matchesCreated(entry.path))).toBe(true);
+
+    const listedAsManaged = await listPaseoWorktrees({ cwd: repoDir, paseoHome });
+    expect(listedAsManaged.some((entry) => matchesCreated(entry.path))).toBe(false);
   });
 });

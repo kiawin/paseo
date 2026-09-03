@@ -1,3 +1,8 @@
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
+import {
+  isPaseoCreatedWorkspace,
+  resolveWorktreeDeletionPolicy,
+} from "../../worktree/ownership.js";
 import { basename } from "node:path";
 
 import { createRealpathAwarePathMatcher } from "../../../utils/path.js";
@@ -24,6 +29,8 @@ export type WorkspaceRecoveryState =
       workspaceName: string;
       action: WorkspaceRecoveryAction;
       branch: string | null;
+      /** Set when archive left this worktree on disk; the client may offer to remove it. */
+      removableWorktreePath?: string | null;
     }
   | {
       kind: "unavailable";
@@ -61,6 +68,7 @@ type UnavailableRecoveryState = Extract<WorkspaceRecoveryState, { kind: "unavail
 export function createWorkspaceRecoveryService(deps: {
   paseoHome: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   getWorkspace: (workspaceId: string) => Promise<PersistedWorkspaceRecord | null>;
   getProject: (projectId: string) => Promise<PersistedProjectRecord | null>;
   isDirectory: (path: string) => Promise<boolean>;
@@ -98,7 +106,20 @@ export function createWorkspaceRecoveryService(deps: {
     }
 
     if (await deps.isDirectory(workspace.cwd)) {
-      return createRecoveryPlan({ action: "unarchive", workspace });
+      // Archive leaves worktrees outside the managed root on disk, so this is
+      // the one state where the client has something to offer removing.
+      const policy = resolveWorktreeDeletionPolicy({
+        workspace,
+        options: {
+          ...(deps.paseoHome === undefined ? {} : { paseoHome: deps.paseoHome }),
+          ...(deps.worktreesRoot === undefined ? {} : { worktreesRoot: deps.worktreesRoot }),
+        },
+      });
+      const removableWorktreePath =
+        isPaseoCreatedWorkspace(workspace) && policy.kind === "git-validated"
+          ? (workspace.worktreeRoot ?? workspace.cwd)
+          : null;
+      return createRecoveryPlan({ action: "unarchive", workspace, removableWorktreePath });
     }
 
     if (workspace.kind !== "worktree") {
@@ -193,6 +214,9 @@ export function createWorkspaceRecoveryService(deps: {
         runSetup: false,
         paseoHome: deps.paseoHome,
         worktreesRoot: deps.worktreesRoot,
+        // Without this a non-managed worktree is restored under the managed
+        // root, and the divergence check below then rejects the restore.
+        location: (await deps.resolveWorktreeLocation?.(sourceRepoRoot)) ?? null,
       });
       recreatedWorktreePath = result.worktreePath;
     } catch (error) {
@@ -236,7 +260,11 @@ export function createWorkspaceRecoveryService(deps: {
 
 function createRecoveryPlan(
   input:
-    | { action: "unarchive"; workspace: PersistedWorkspaceRecord }
+    | {
+        action: "unarchive";
+        workspace: PersistedWorkspaceRecord;
+        removableWorktreePath?: string | null;
+      }
     | { action: "restore"; workspace: PersistedWorkspaceRecord; sourceRepoRoot: string },
 ): RecoveryPlan {
   const state = {
@@ -258,6 +286,7 @@ function createRecoveryPlan(
     state: {
       ...state,
       action: input.action,
+      removableWorktreePath: input.removableWorktreePath ?? null,
     },
     workspace: input.workspace,
   };

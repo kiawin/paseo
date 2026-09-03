@@ -1,11 +1,13 @@
+import { useCallback } from "react";
 import { Text, View } from "react-native";
-import { ArrowLeftToLine, RotateCw, Settings } from "lucide-react-native";
+import { ArrowLeftToLine, RotateCw, Settings, Trash2 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatConnectionStatus } from "@/utils/daemons";
+import { confirmDialog } from "@/utils/confirm-dialog";
 import type { WorkspaceRouteState } from "@/screens/workspace/workspace-route-state";
 import type { Theme } from "@/styles/theme";
 
@@ -20,6 +22,8 @@ interface WorkspaceRouteStateActions {
   onDismissMissingWorkspace: () => void;
   onRecoverWorkspace: () => void;
   onRetryRecoveryInspection: () => void;
+  onRemoveWorktree: (input: { workspaceId: string; worktreePath: string }) => void;
+  isRemovingWorktree: boolean;
 }
 
 export function renderWorkspaceRouteGate(input: {
@@ -42,6 +46,8 @@ export function renderWorkspaceRouteGate(input: {
         <ArchivedWorkspaceRecovery
           state={input.state}
           onRecover={input.actions.onRecoverWorkspace}
+          onRemoveWorktree={input.actions.onRemoveWorktree}
+          isRemovingWorktree={input.actions.isRemovingWorktree}
         />
       );
     case "needsHostUpgrade":
@@ -109,12 +115,67 @@ function WorkspaceConnecting({ hostName }: { hostName: string }) {
   );
 }
 
+/**
+ * Removing is a separate, explicit act from archiving. Archive already ran and
+ * deliberately left this directory alone, so the only thing that should delete
+ * it is someone choosing to.
+ */
+function RemoveWorktreeAction({
+  workspaceId,
+  worktreePath,
+  onRemove,
+  disabled,
+  isRemoving,
+}: {
+  workspaceId: string;
+  worktreePath: string;
+  onRemove: (input: { workspaceId: string; worktreePath: string }) => void;
+  disabled: boolean;
+  isRemoving: boolean;
+}) {
+  const { t } = useTranslation();
+
+  const handlePress = useCallback(() => {
+    void (async () => {
+      // Git refuses a dirty worktree, but it does not protect ignored files —
+      // node_modules and .env go with it — so say that before, not after.
+      const confirmed = await confirmDialog({
+        title: t("workspace.route.recovery.removeWorktreeTitle"),
+        message: t("workspace.route.recovery.removeWorktreeMessage", { path: worktreePath }),
+        confirmLabel: t("workspace.route.recovery.removeWorktreeConfirm"),
+        destructive: true,
+      });
+      if (!confirmed) return;
+      onRemove({ workspaceId, worktreePath });
+    })();
+  }, [onRemove, t, workspaceId, worktreePath]);
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      leftIcon={isRemoving ? undefined : Trash2}
+      onPress={handlePress}
+      disabled={disabled}
+      testID="workspace-recovery-remove-worktree"
+    >
+      {isRemoving
+        ? t("workspace.route.recovery.removeWorktreeInProgress")
+        : t("workspace.route.recovery.removeWorktreeAction")}
+    </Button>
+  );
+}
+
 function ArchivedWorkspaceRecovery({
   state,
   onRecover,
+  onRemoveWorktree,
+  isRemovingWorktree,
 }: {
   state: Extract<WorkspaceRouteState, { kind: "archived" }>;
   onRecover: () => void;
+  onRemoveWorktree: (input: { workspaceId: string; worktreePath: string }) => void;
+  isRemovingWorktree: boolean;
 }) {
   const { t } = useTranslation();
   const { recovery } = state;
@@ -126,6 +187,9 @@ function ArchivedWorkspaceRecovery({
   if (recovery.phase === "failed") {
     actionLabel = t("common.actions.retry");
   }
+  // Only set when archive left the worktree on disk, which is the one case
+  // where there is something for the person to clean up.
+  const removableWorktreePath = recovery.recovery.removableWorktreePath ?? null;
   const description =
     recovery.recovery.action === "restore"
       ? t("workspace.route.recovery.restoreDescription", {
@@ -165,7 +229,21 @@ function ArchivedWorkspaceRecovery({
         >
           {isRestoring ? t("workspace.route.recovery.restoringAction") : actionLabel}
         </Button>
+        {removableWorktreePath ? (
+          <RemoveWorktreeAction
+            workspaceId={recovery.recovery.workspaceId}
+            worktreePath={removableWorktreePath}
+            onRemove={onRemoveWorktree}
+            disabled={isRestoring || isRemovingWorktree}
+            isRemoving={isRemovingWorktree}
+          />
+        ) : null}
       </View>
+      {removableWorktreePath ? (
+        <Text style={styles.description} testID="workspace-recovery-worktree-path">
+          {removableWorktreePath}
+        </Text>
+      ) : null}
     </View>
   );
 }

@@ -1850,6 +1850,10 @@ describe("WorkspaceGitServiceImpl D2 read methods", () => {
       expect(listPaseoWorktrees).toHaveBeenCalledWith({
         cwd: realpathSync.native(repoDir).replace(/\\/g, "/"),
         paseoHome: "/tmp/paseo-test",
+        // Listing is location-aware now: null means the project has no override,
+        // so the managed holder is used.
+        location: null,
+        worktreesRoot: undefined,
       });
     } finally {
       service.dispose();
