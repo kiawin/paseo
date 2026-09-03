@@ -1871,6 +1871,9 @@ export const ko: TranslationResources = {
     subAgentActivity: "서브에이전트 활동",
     input: "입력",
     output: "출력",
+    clickToExpand: "클릭하여 펼치기",
+    inLabel: "입력",
+    outLabel: "출력",
   },
   toolCallGroup: {
     editedFiles: {
@@ -2060,6 +2063,15 @@ export const ko: TranslationResources = {
         options: {
           overview: "요약",
           detailed: "전체 세부정보",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "대화 기록 스타일",
+        description: "완료된 턴의 배치 방식",
+        accessibilityLabel: "대화 기록 스타일 선택 ({{value}})",
+        options: {
+          cards: "카드",
+          trace: "트레이스",
         },
       },
       language: {
