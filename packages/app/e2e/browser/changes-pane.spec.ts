@@ -1985,7 +1985,8 @@ async function changeCodeTypographyFromSettings(
   await page.getByLabel("Code font family").press("Enter");
   await expect(page.locator("[data-e2e-before-font-family]")).toHaveCount(0);
   await sizeField.fill(String(typography.fontSize));
-  await page.getByLabel("Code font size").press("Enter");
+  await page.waitForTimeout(100);
+  await page.getByLabel("Code font size").press("Tab");
   await expect(page.getByLabel("Code font family")).toHaveValue(typography.fontFamily);
   await expect(page.getByLabel("Code font size")).toHaveValue(String(typography.fontSize));
   await expectStoredCodeFontSize(page, typography.fontSize);
