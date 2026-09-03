@@ -1,13 +1,15 @@
-import React, { useCallback, useMemo, type ReactNode } from "react";
+import React, { useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   Pressable,
   View,
   Text,
   ScrollView as RNScrollView,
+  type GestureResponderEvent,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
 import { ScrollView as GHScrollView } from "react-native-gesture-handler";
+import { Check, Copy } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -22,6 +24,16 @@ import { hasMeaningfulToolCallDetail } from "@/utils/tool-call-detail-state";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { extensionFromPath, highlightToKeyedLines } from "@/utils/highlight-cache";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { isNative } from "@/constants/platform";
+import { useCopyFeedback } from "@/hooks/use-copy-feedback";
+import {
+  buildShellStreams,
+  takeLines,
+  type ShellStream,
+  type ShellStreams as ShellStreamsModel,
+} from "./shell-streams";
+import { diffPreviewIsClamped, selectDiffPreviewLines } from "@/utils/diff-preview";
 import { HighlightedLines } from "./highlighted-content";
 import { DiffViewer } from "./diff-viewer";
 import { getCodeInsets } from "./code-insets";
@@ -40,6 +52,11 @@ interface ToolCallDetailsContentProps {
   maxHeight?: number;
   fillAvailableHeight?: boolean;
   showLoadingSkeleton?: boolean;
+  /**
+   * Clamp the card to this many lines of content. A pixel height slices whatever line it lands
+   * in, leaving a half-rendered row; truncating the text keeps the card a whole number of lines.
+   */
+  previewLines?: number;
 }
 
 interface DetailStyles {
@@ -150,16 +167,30 @@ function useDiffLines(detail: ToolCallDetail | undefined): DiffLine[] | undefine
   }, [detail]);
 }
 
+/** Sized to the gutter's mono line rather than the app's icon scale, which is taller. */
+const SHELL_COPY_ICON_SIZE = 12;
+
 interface ShellDetailProps {
   command: string;
   output: string | null | undefined;
   ds: DetailStyles;
+  previewLines?: number;
 }
 
-function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
-  const normalizedCommand = command.replace(/\n+$/, "");
-  const commandOutput = (output ?? "").replace(/^\n+/, "");
-  const hasOutput = commandOutput.length > 0;
+function ShellDetailSection({ command, output, ds, previewLines }: ShellDetailProps) {
+  const isCompact = useIsCompactFormFactor();
+  const streams = useMemo(
+    () => buildShellStreams(command, output, previewLines),
+    [command, output, previewLines],
+  );
+  // A preview on a phone is a teaser for the sheet behind it, so it clips and ellipsises rather
+  // than handing the reader a sideways scroller to fight inside the transcript list.
+  const isCompactPreview = isCompact && previewLines !== undefined;
+  const body = (
+    <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
+      <ShellStreamsView streams={streams} isCompact={isCompact} clip={isCompactPreview} />
+    </View>
+  );
   return (
     <View style={ds.sectionFillStyle}>
       <View style={ds.codeBlockFillStyle}>
@@ -168,24 +199,174 @@ function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
           contentContainerStyle={styles.codeVerticalContent}
           nestedScrollEnabled
           showsVerticalScrollIndicator
+          scrollEnabled={!isCompactPreview}
         >
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            showsHorizontalScrollIndicator
-            contentContainerStyle={styles.codeHorizontalContent}
-          >
-            <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
-              <Text selectable style={styles.scrollText}>
-                <Text style={styles.shellPrompt}>$ </Text>
-                {normalizedCommand}
-                {hasOutput ? `\n\n${commandOutput}` : ""}
-              </Text>
-            </View>
-          </ScrollView>
+          {isCompactPreview ? (
+            <View style={styles.codeHorizontalClip}>{body}</View>
+          ) : (
+            <ScrollView
+              horizontal
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator
+              contentContainerStyle={styles.codeHorizontalContent}
+            >
+              {body}
+            </ScrollView>
+          )}
         </ScrollView>
       </View>
     </View>
+  );
+}
+
+/**
+ * Copies one stream whole. It lives in the label gutter because that column is what names the
+ * stream — the card's own right edge belongs to whatever line is longest, and scrolls with it.
+ */
+function ShellStreamCopyButton({
+  text,
+  accessibilityLabel,
+  visible,
+}: {
+  text: string;
+  accessibilityLabel: string;
+  visible: boolean;
+}) {
+  const { t } = useTranslation();
+  const getContent = useCallback(() => text, [text]);
+  const { copied, copy } = useCopyFeedback({ getContent });
+  // The card toggles on press, so copying out of it must not also close it.
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation?.();
+      void copy();
+    },
+    [copy],
+  );
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      style={[styles.shellStreamCopy, visible ? styles.copyVisible : styles.copyHidden]}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={copied ? t("message.actions.copied") : accessibilityLabel}
+      testID="tool-call-shell-copy"
+    >
+      {({ hovered }) => {
+        const color = hovered ? styles.copyIconHovered.color : styles.copyIcon.color;
+        return copied ? (
+          <Check size={SHELL_COPY_ICON_SIZE} color={color} />
+        ) : (
+          <Copy size={SHELL_COPY_ICON_SIZE} color={color} />
+        );
+      }}
+    </Pressable>
+  );
+}
+
+function ShellStreamRow({
+  label,
+  stream,
+  copyLabel,
+}: {
+  label: string;
+  stream: ShellStream;
+  copyLabel: string;
+}) {
+  // Hover tracking sits on a plain View wrapping the button, per docs/hover.md: a Pressable that
+  // owns hover would hand it to the button the moment the cursor arrived, and flicker.
+  const [isHovered, setIsHovered] = useState(false);
+  const handlePointerEnter = useCallback(() => setIsHovered(true), []);
+  const handlePointerLeave = useCallback(() => setIsHovered(false), []);
+
+  return (
+    <View
+      style={styles.shellStreamRow}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+    >
+      <View style={styles.shellStreamGutter}>
+        <Text style={styles.shellStreamLabel}>{label}</Text>
+        <ShellStreamCopyButton
+          text={stream.full}
+          accessibilityLabel={copyLabel}
+          visible={isHovered || isNative}
+        />
+      </View>
+      <Text selectable style={styles.scrollText}>
+        {stream.shown}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * One `Text` per line, because `numberOfLines` truncates a block as a whole — a single Text
+ * holding newlines would drop whole trailing lines instead of ellipsising each one.
+ */
+function ClippedLines({ text, prompt }: { text: string; prompt?: boolean }) {
+  return (
+    <>
+      {text.split("\n").map((line, index) => (
+        // Lines have no identity of their own here, and the list is re-clamped on every render.
+        // eslint-disable-next-line react/no-array-index-key
+        <Text key={index} numberOfLines={1} ellipsizeMode="tail" style={styles.scrollText}>
+          {prompt && index === 0 ? <Text style={styles.shellPrompt}>$ </Text> : null}
+          {line}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+function ShellStreamsView({
+  streams,
+  isCompact,
+  clip = false,
+}: {
+  streams: ShellStreamsModel;
+  isCompact: boolean;
+  clip?: boolean;
+}) {
+  const { t } = useTranslation();
+  const { command, output } = streams;
+
+  if (isCompact) {
+    if (clip) {
+      return (
+        <>
+          <ClippedLines text={command.shown} prompt />
+          {output === null ? null : <ClippedLines text={output.shown} />}
+        </>
+      );
+    }
+    // The gutter costs width a phone does not have, so compact goes back to the shell prompt to
+    // tell command from output — and with no gutter there is nowhere to hang a copy button.
+    return (
+      <Text selectable style={styles.scrollText}>
+        <Text style={styles.shellPrompt}>$ </Text>
+        {command.shown}
+        {output === null ? "" : `\n\n${output.shown}`}
+      </Text>
+    );
+  }
+
+  return (
+    <>
+      <ShellStreamRow
+        label={t("toolCallDetails.inLabel")}
+        stream={command}
+        copyLabel={t("toolCallDetails.copyCommand")}
+      />
+      {output === null ? null : (
+        <ShellStreamRow
+          label={t("toolCallDetails.outLabel")}
+          stream={output}
+          copyLabel={t("toolCallDetails.copyOutput")}
+        />
+      )}
+    </>
   );
 }
 
@@ -412,9 +593,13 @@ function SubAgentDetailSection({
 interface EditDetailProps {
   diffLines: DiffLine[] | undefined;
   ds: DetailStyles;
+  previewLines?: number;
 }
 
-function EditDetailSection({ diffLines, ds }: EditDetailProps) {
+function EditDetailSection({ diffLines, ds, previewLines }: EditDetailProps) {
+  // Two columns need width, so this follows the form factor rather than a user preference.
+  const isCompact = useIsCompactFormFactor();
+
   return (
     <View style={ds.sectionFillStyle}>
       {diffLines ? (
@@ -423,6 +608,8 @@ function EditDetailSection({ diffLines, ds }: EditDetailProps) {
             diffLines={diffLines}
             maxHeight={ds.resolvedMaxHeight}
             fillAvailableHeight={ds.shouldFill}
+            split={!isCompact}
+            clipHorizontally={isCompact && previewLines !== undefined}
           />
         </View>
       ) : null}
@@ -500,9 +687,14 @@ function FetchDetailSection({ url, result, ds }: FetchDetailProps) {
 function ArtifactDetailSection({ url, title }: { url: string; title?: string }) {
   const { t } = useTranslation();
   const host = useMemo(() => externalLinkHost(url), [url]);
-  const handlePress = useCallback(() => {
-    void openExternalUrl(url);
-  }, [url]);
+  // The card around this link toggles on press, so opening the link must not also close the card.
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation?.();
+      void openExternalUrl(url);
+    },
+    [url],
+  );
 
   return (
     <View style={styles.section}>
@@ -692,17 +884,41 @@ function buildPaseoUnknownSections(
   return sections.map((section) => <PaseoDetailSection key={section.title} section={section} />);
 }
 
+function exceedsPreview(
+  detail: ToolCallDetail | undefined,
+  diffLines: DiffLine[] | undefined,
+  previewLines: number | undefined,
+): boolean {
+  if (detail === undefined || previewLines === undefined) {
+    return false;
+  }
+  if (detail.type === "shell") {
+    return (
+      takeLines(detail.command.replace(/\n+$/, ""), previewLines).truncated ||
+      takeLines((detail.output ?? "").replace(/^\n+/, ""), previewLines).truncated
+    );
+  }
+  return diffLines !== undefined && diffPreviewIsClamped(diffLines, previewLines);
+}
+
 function buildDetailSections(
   toolName: string | undefined,
   detail: ToolCallDetail | undefined,
   diffLines: DiffLine[] | undefined,
   ds: DetailStyles,
   t: TFunction,
+  previewLines?: number,
 ): ReactNode[] {
   if (!detail) return [];
   if (detail.type === "shell") {
     return [
-      <ShellDetailSection key="shell" command={detail.command} output={detail.output} ds={ds} />,
+      <ShellDetailSection
+        key="shell"
+        command={detail.command}
+        output={detail.output}
+        ds={ds}
+        previewLines={previewLines}
+      />,
     ];
   }
   if (detail.type === "worktree_setup") {
@@ -729,7 +945,9 @@ function buildDetailSections(
     ];
   }
   if (detail.type === "edit") {
-    return [<EditDetailSection key="edit" diffLines={diffLines} ds={ds} />];
+    return [
+      <EditDetailSection key="edit" diffLines={diffLines} ds={ds} previewLines={previewLines} />,
+    ];
   }
   if (detail.type === "write") {
     return [
@@ -817,13 +1035,29 @@ export function ToolCallDetailsContent({
   maxHeight,
   fillAvailableHeight = false,
   showLoadingSkeleton = false,
+  previewLines,
 }: ToolCallDetailsContentProps) {
   const { t } = useTranslation();
+  const isCompactLayout = useIsCompactFormFactor();
   const resolvedMaxHeight = fillAvailableHeight ? undefined : (maxHeight ?? 300);
   const ds = useDetailStyles(detail, resolvedMaxHeight, fillAvailableHeight);
-  const diffLines = useDiffLines(detail);
+  const allDiffLines = useDiffLines(detail);
+  const diffLines = useMemo(() => {
+    if (previewLines === undefined || allDiffLines === undefined) return allDiffLines;
+    return selectDiffPreviewLines(allDiffLines, previewLines);
+  }, [allDiffLines, previewLines]);
 
-  const sections: ReactNode[] = buildDetailSections(toolName, detail, diffLines, ds, t);
+  const sections: ReactNode[] = buildDetailSections(
+    toolName,
+    detail,
+    diffLines,
+    ds,
+    t,
+    previewLines,
+  );
+  // Compact routes the whole row to the sheet on tap, so the pill would be a second affordance
+  // for a gesture the row already has.
+  const showExpandPill = !isCompactLayout && exceedsPreview(detail, allDiffLines, previewLines);
 
   if (errorText) {
     sections.push(<ErrorSection key="error" errorText={errorText} ds={ds} />);
@@ -836,7 +1070,16 @@ export function ToolCallDetailsContent({
     return <Text style={styles.emptyStateText}>{t("toolCallDetails.empty")}</Text>;
   }
 
-  return <View style={ds.fullBleedContainerStyle}>{sections}</View>;
+  return (
+    <View style={ds.fullBleedContainerStyle}>
+      {sections}
+      {showExpandPill ? (
+        <View style={styles.expandPill} pointerEvents="none">
+          <Text style={styles.expandPillText}>{t("toolCallDetails.clickToExpand")}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 // ---- Styles ----
@@ -956,6 +1199,9 @@ const styles = StyleSheet.create((theme) => {
       flexGrow: 1,
       paddingBottom: insets.extraBottom,
     },
+    codeHorizontalClip: {
+      overflow: "hidden" as const,
+    },
     codeHorizontalContent: {
       paddingRight: insets.extraRight,
     },
@@ -986,6 +1232,63 @@ const styles = StyleSheet.create((theme) => {
         : null),
     },
     shellPrompt: {
+      color: theme.colors.foregroundMuted,
+    },
+    shellStreamRow: {
+      flexDirection: "row" as const,
+      alignItems: "flex-start" as const,
+      gap: theme.spacing[3],
+    },
+    // Fixed width so IN and OUT content starts on the same column.
+    shellStreamLabel: {
+      width: 28,
+      fontFamily: theme.fontFamily.mono,
+      fontSize: theme.fontSize.code,
+      color: theme.colors.foregroundMuted,
+    },
+    // The button is always mounted so the gutter is one width, hovered or not — a column that
+    // widened under the cursor would shift the code beside it on every hover.
+    shellStreamGutter: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: theme.spacing[1],
+    },
+    shellStreamCopy: {
+      width: SHELL_COPY_ICON_SIZE,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+    // Hidden by opacity rather than unmounted: mounting on hover would reflow the gutter under
+    // the cursor. `pointerEvents` rides on the style so the deprecated prop form stays out.
+    copyVisible: {
+      opacity: 1,
+      pointerEvents: "auto" as const,
+    },
+    copyHidden: {
+      opacity: 0,
+      pointerEvents: "none" as const,
+    },
+    copyIcon: {
+      color: theme.colors.foregroundMuted,
+    },
+    copyIconHovered: {
+      color: theme.colors.foreground,
+    },
+    // Sits over the bottom-right of a clamped card. Whole-line truncation is silent on its own,
+    // so without this a clamped card and a complete one look identical.
+    expandPill: {
+      position: "absolute",
+      right: theme.spacing[2],
+      bottom: theme.spacing[2],
+      paddingHorizontal: theme.spacing[2],
+      paddingVertical: theme.spacing[1],
+      borderRadius: theme.borderRadius.sm,
+      backgroundColor: theme.colors.surface3,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    expandPillText: {
+      fontSize: theme.fontSize.sm,
       color: theme.colors.foregroundMuted,
     },
     subAgentSessionText: {
