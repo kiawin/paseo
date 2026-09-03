@@ -770,7 +770,7 @@ export function createPaseoApi(
         return createWorkspaceHandle(result.workspace);
       },
       archive: (workspace, requestId) =>
-        daemonClient.archiveWorkspace(resolveWorkspaceId(workspace), requestId),
+        daemonClient.archiveWorkspace(resolveWorkspaceId(workspace), { requestId }),
       subscribe: listenWorkspaces,
     },
     agents: {
@@ -869,7 +869,7 @@ function createWorkspaceHandleFactory(
       setBaseBranch: (options) =>
         daemonClient.setWorkspaceBaseBranch({ ...options, workspaceId: id }),
       archive: async (requestId) => {
-        const result = await daemonClient.archiveWorkspace(id, requestId);
+        const result = await daemonClient.archiveWorkspace(id, { requestId });
         if (current) {
           current = { ...current, archivingAt: result.archivedAt };
         }

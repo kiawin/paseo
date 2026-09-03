@@ -397,6 +397,7 @@ describe("wire compatibility", () => {
             projectIconRevision: "automatic:none:v1",
             projectRootPath: "/tmp/project",
             projectKind: "git",
+            projectWorktreeLocation: null,
           },
         },
       },
