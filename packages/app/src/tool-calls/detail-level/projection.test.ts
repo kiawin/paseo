@@ -232,6 +232,9 @@ describe("tool call detail-level projection", () => {
       mode: "overview",
       run: expect.any(Object),
       isLoading: false,
+      // Call "4" is seeded as failed, so the group carries the rollup the trace style's dot
+      // reads. Without this the whole overview group would look clean from the outside.
+      hasFailure: true,
       summary: {
         editedFileCount: 1,
         commandCount: 1,
