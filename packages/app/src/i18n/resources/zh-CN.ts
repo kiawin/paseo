@@ -1840,6 +1840,9 @@ export const zhCN: TranslationResources = {
     subAgentActivity: "Sub-agent 活动",
     input: "输入",
     output: "输出",
+    clickToExpand: "点击展开",
+    inLabel: "输入",
+    outLabel: "输出",
   },
   toolCallGroup: {
     editedFiles: {
@@ -2025,6 +2028,15 @@ export const zhCN: TranslationResources = {
         options: {
           overview: "摘要",
           detailed: "完整详情",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "聊天记录样式",
+        description: "已完成回合的排布方式",
+        accessibilityLabel: "选择聊天记录样式（{{value}}）",
+        options: {
+          cards: "卡片",
+          trace: "轨迹",
         },
       },
       language: {
