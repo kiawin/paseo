@@ -1,8 +1,14 @@
 import type { Logger } from "pino";
 import { basename } from "node:path";
+
+import type { AgentSessionConfig } from "./agent/agent-sdk-types.js";
 import {
+  type GitSetupOptions,
+  type CreateAgentWorktreeTarget,
   type FirstAgentContext,
+  type ChangeRequestCheckoutSource,
   type SessionInboundMessage,
+  type WorktreeLocation,
   type SessionOutboundMessage,
   type WorkspaceSetupSnapshot,
   type WorkspaceDescriptorPayload,
@@ -23,10 +29,14 @@ import {
   getWorktreeSetupCommands,
   resolveWorktreeRuntimeEnv,
   runWorktreeSetupCommands,
+  slugify,
+  validateBranchSlug,
   type WorktreeConfig,
   type WorktreeSetupCommandResult,
   WorktreeSetupError,
 } from "../utils/worktree.js";
+import type { CheckoutExistingBranchResult } from "../utils/checkout-git.js";
+import { expandTilde } from "../utils/path.js";
 import { toCheckoutError } from "./checkout-git-utils.js";
 import type {
   CreatePaseoWorktreeInput,
@@ -47,11 +57,45 @@ import {
 
 const SAFE_GIT_REF_PATTERN = /^[A-Za-z0-9._/-]+$/;
 
+export interface NormalizedGitOptions {
+  baseBranch?: string;
+  createNewBranch: boolean;
+  newBranchName?: string;
+  createWorktree: boolean;
+  worktreeSlug?: string;
+  requestedWorktreeSlug?: string;
+  refName?: string;
+  action?: "branch-off" | "checkout";
+  checkoutSource?: ChangeRequestCheckoutSource;
+  githubPrNumber?: number;
+}
+
 type EmitSessionMessage = (message: SessionOutboundMessage) => void;
+
+interface BuildAgentSessionConfigDependencies {
+  paseoHome?: string;
+  worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
+  sessionLogger: Logger;
+  workspaceGitService?: WorkspaceGitService;
+  createPaseoWorktree: (
+    input: CreatePaseoWorktreeInput,
+    options?: {
+      resolveDefaultBranch?: (repoRoot: string) => Promise<string>;
+    },
+  ) => Promise<CreatePaseoWorktreeWorkflowResult>;
+  checkoutExistingBranch: (cwd: string, branch: string) => Promise<CheckoutExistingBranchResult>;
+  createBranchFromBase: (params: {
+    cwd: string;
+    baseBranch: string;
+    newBranchName: string;
+  }) => Promise<void>;
+}
 
 interface CreatePaseoWorktreeInBackgroundDependencies {
   paseoHome?: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   emitWorkspaceUpdateForWorkspaceId: (workspaceId: string) => Promise<void>;
   cacheWorkspaceSetupSnapshot: (workspaceId: string, snapshot: WorkspaceSetupSnapshot) => void;
   emit: EmitSessionMessage;
@@ -105,6 +149,7 @@ interface HandleWorkspaceSetupRunRequestDependencies extends CreatePaseoWorktree
 interface HandleCreatePaseoWorktreeRequestDependencies {
   paseoHome?: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   describeWorkspaceRecord: (
     result: CreatePaseoWorktreeResult,
   ) => Promise<WorkspaceDescriptorPayload>;
@@ -130,6 +175,224 @@ function normalizeFirstAgentContext(
   }
 
   return undefined;
+}
+
+export async function buildAgentSessionConfig(
+  dependencies: BuildAgentSessionConfigDependencies,
+  config: AgentSessionConfig,
+  gitOptions?: GitSetupOptions,
+  legacyWorktreeName?: string,
+  firstAgentContext?: FirstAgentContext,
+): Promise<{
+  sessionConfig: AgentSessionConfig;
+  createdWorkspaceId?: string;
+}> {
+  let cwd = expandTilde(config.cwd);
+  const normalized = normalizeGitOptions(gitOptions, legacyWorktreeName);
+  let createdWorkspaceId: string | undefined;
+
+  if (!normalized) {
+    return {
+      sessionConfig: {
+        ...config,
+        cwd,
+      },
+    };
+  }
+
+  if (normalized.createWorktree) {
+    dependencies.sessionLogger.info(
+      { worktreeSlug: normalized.requestedWorktreeSlug },
+      "Creating worktree through createWorktreeCore",
+    );
+
+    const createdWorktree = await dependencies.createPaseoWorktree(
+      {
+        cwd,
+        worktreeSlug: normalized.worktreeSlug,
+        refName: normalized.refName,
+        action: normalized.action,
+        checkoutSource: normalized.checkoutSource,
+        githubPrNumber: normalized.githubPrNumber,
+        firstAgentContext,
+        runSetup: false,
+        paseoHome: dependencies.paseoHome,
+        worktreesRoot: dependencies.worktreesRoot,
+        resolveWorktreeLocation: dependencies.resolveWorktreeLocation,
+      },
+      {
+        resolveDefaultBranch: normalized.baseBranch
+          ? async () => normalized.baseBranch!
+          : (repoRoot) =>
+              resolveGitCreateBaseBranch(
+                repoRoot,
+                dependencies.workspaceGitService,
+                dependencies.paseoHome,
+              ),
+      },
+    );
+    cwd = createdWorktree.workspace.cwd;
+    createdWorkspaceId = createdWorktree.workspace.workspaceId;
+  } else if (normalized.createNewBranch) {
+    const baseBranch =
+      normalized.baseBranch ??
+      (await resolveGitCreateBaseBranch(
+        cwd,
+        dependencies.workspaceGitService,
+        dependencies.paseoHome,
+      ));
+    await dependencies.createBranchFromBase({
+      cwd,
+      baseBranch,
+      newBranchName: normalized.newBranchName!,
+    });
+    dependencies.workspaceGitService?.invalidateForge(cwd);
+  } else if (normalized.baseBranch) {
+    await dependencies.checkoutExistingBranch(cwd, normalized.baseBranch);
+    dependencies.workspaceGitService?.invalidateForge(cwd);
+  }
+
+  return {
+    sessionConfig: {
+      ...config,
+      cwd,
+    },
+    createdWorkspaceId,
+  };
+}
+
+interface ValidateNormalizedGitOptionsInput {
+  baseBranch: string | undefined;
+  createNewBranch: boolean;
+  normalizedBranchName: string | undefined;
+  normalizedWorktreeSlug: string | undefined;
+}
+
+function validateNormalizedGitOptions(input: ValidateNormalizedGitOptionsInput): void {
+  if (input.baseBranch) {
+    assertSafeGitRef(input.baseBranch, "base branch");
+  }
+
+  if (input.createNewBranch) {
+    if (!input.normalizedBranchName) {
+      throw new Error("New branch name is required");
+    }
+    const validation = validateBranchSlug(input.normalizedBranchName);
+    if (!validation.valid) {
+      throw new Error(`Invalid branch name: ${validation.error}`);
+    }
+  }
+
+  if (input.normalizedWorktreeSlug) {
+    const validation = validateBranchSlug(input.normalizedWorktreeSlug);
+    if (!validation.valid) {
+      throw new Error(`Invalid worktree name: ${validation.error}`);
+    }
+  }
+}
+
+export function normalizeAgentCreationGitOptions(
+  gitOptions?: GitSetupOptions,
+  legacyWorktreeName?: string,
+  worktree?: CreateAgentWorktreeTarget,
+): NormalizedGitOptions | null {
+  if (worktree && gitOptions) {
+    throw new Error("create_agent_request worktree cannot be combined with git options");
+  }
+  if (worktree) {
+    switch (worktree.mode) {
+      case "branch-off":
+        gitOptions = {
+          createWorktree: true,
+          createNewBranch: true,
+          newBranchName: worktree.newBranch,
+          baseBranch: worktree.base,
+          action: "branch-off",
+          refName: worktree.base,
+        };
+        break;
+      case "checkout-branch":
+        gitOptions = { createWorktree: true, action: "checkout", refName: worktree.branch };
+        break;
+      case "checkout-pr":
+        gitOptions = {
+          createWorktree: true,
+          action: "checkout",
+          githubPrNumber: worktree.prNumber,
+        };
+        break;
+    }
+  }
+  return normalizeGitOptions(gitOptions, legacyWorktreeName);
+}
+
+function normalizeGitOptions(
+  gitOptions?: GitSetupOptions,
+  legacyWorktreeName?: string,
+): NormalizedGitOptions | null {
+  const fallbackOptions: GitSetupOptions | undefined = legacyWorktreeName
+    ? {
+        createWorktree: true,
+        createNewBranch: true,
+        newBranchName: legacyWorktreeName,
+        worktreeSlug: legacyWorktreeName,
+      }
+    : undefined;
+
+  const merged = gitOptions ?? fallbackOptions;
+  if (!merged) {
+    return null;
+  }
+
+  const baseBranch = merged.baseBranch?.trim() || undefined;
+  const createWorktree = Boolean(merged.createWorktree);
+  const createNewBranch = Boolean(merged.createNewBranch);
+  const normalizedBranchName = merged.newBranchName ? slugify(merged.newBranchName) : undefined;
+  const requestedWorktreeSlug = merged.worktreeSlug ? slugify(merged.worktreeSlug) : undefined;
+  const normalizedWorktreeSlug = requestedWorktreeSlug ?? normalizedBranchName;
+  const refName = merged.refName?.trim() || undefined;
+  const action = merged.action;
+  // COMPAT(githubPrNumber): legacy GitHub checkout input retained when
+  // checkoutSource shipped in v0.2.0-beta.1. Remove after 2027-01-17 once the
+  // supported client floor is >= v0.2.0.
+  const checkoutSource =
+    merged.checkoutSource ??
+    (merged.githubPrNumber
+      ? ({ kind: "change_request", forge: "github", number: merged.githubPrNumber } as const)
+      : undefined);
+  const githubPrNumber = merged.githubPrNumber;
+
+  if (
+    !createWorktree &&
+    !createNewBranch &&
+    !baseBranch &&
+    !refName &&
+    !action &&
+    !checkoutSource &&
+    !githubPrNumber
+  ) {
+    return null;
+  }
+
+  validateNormalizedGitOptions({
+    baseBranch,
+    createNewBranch,
+    normalizedBranchName,
+    normalizedWorktreeSlug,
+  });
+
+  return {
+    baseBranch,
+    createNewBranch,
+    newBranchName: normalizedBranchName,
+    createWorktree,
+    worktreeSlug: normalizedWorktreeSlug,
+    requestedWorktreeSlug,
+    refName,
+    action,
+    checkoutSource,
+    githubPrNumber,
+  };
 }
 
 export function assertSafeGitRef(ref: string, label: string): void {
@@ -285,6 +548,7 @@ export async function handleCreatePaseoWorktreeRequest(
       {
         paseoHome: dependencies.paseoHome,
         worktreesRoot: dependencies.worktreesRoot,
+        resolveWorktreeLocation: dependencies.resolveWorktreeLocation,
         createPaseoWorktreeWorkflow: dependencies.createPaseoWorktreeWorkflow,
       },
       {
@@ -371,9 +635,14 @@ export async function createPaseoWorktreeWorkflow(
   const createdWorktree = await dependencies.createPaseoWorktree(
     {
       ...input,
+      // The workflow owns setup after the workspace exists and automation is allowed.
+      // Keep the lower-level worktree creator from running a second setup pass here.
+      runSetup: false,
 
       paseoHome: input.paseoHome ?? dependencies.paseoHome,
       worktreesRoot: input.worktreesRoot ?? dependencies.worktreesRoot,
+      resolveWorktreeLocation:
+        input.resolveWorktreeLocation ?? dependencies.resolveWorktreeLocation,
     },
     options?.resolveDefaultBranch
       ? { resolveDefaultBranch: options.resolveDefaultBranch }
@@ -593,6 +862,7 @@ export async function runWorktreeSetupInBackground(
           setupResults = await runWorktreeSetupCommands({
             worktreePath: workspaceCwd,
             branchName: worktree.branchName,
+            cleanupOnFailure: false,
             repoRootPath: options.repoRoot,
             runtimeEnv,
             signal,
