@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import { z } from "zod";
+import { WorktreeLocationSchema } from "@getpaseo/protocol/messages";
 
 import { ArchivableFileBackedRegistry } from "./file-backed-registry.js";
 import { areEquivalentPaths } from "../utils/path.js";
@@ -33,6 +34,16 @@ const PersistedProjectRecordSchema = z.object({
   customName: z
     .string()
     .nullable()
+    .optional()
+    .transform((value) => value ?? null),
+  // Where this project's Paseo-managed worktrees are cut. Machine-local on
+  // purpose: paseo.json is committed, so a custom root there would be an
+  // attacker-controlled delete target, and it is read from inside the worktree
+  // after creation, which makes it circular for deciding placement.
+  // COMPAT(projectWorktreeLocation): added in v0.8.0, remove optional after 2027-09-02.
+  // Governs where the NEXT worktree is cut. Existing worktrees keep the
+  // placement class persisted on their own workspace record.
+  worktreeLocation: WorktreeLocationSchema.nullable()
     .optional()
     .transform((value) => value ?? null),
   // Identifies the project's stored custom icon; null means automatic.
@@ -82,6 +93,17 @@ const PersistedWorkspaceRecordSchema = z.object({
     .optional()
     .transform((value) => value ?? null),
   isPaseoOwnedWorktree: z.boolean().default(false),
+  // How this worktree's directory may be removed, fixed when Paseo created it.
+  // COMPAT(projectWorktreeLocation): added in v0.8.0, remove optional after 2027-09-02.
+  //
+  // Never re-derive this from the project's current worktree location: mode is
+  // mutable while placement is not, so a project switched to "managed" would
+  // otherwise point the forced recursive delete at a shared-namespace path.
+  //
+  // Absence does NOT imply "managed". A daemon predating this field strips it on
+  // any re-parse, so readers fall back to the worktree's path instead — see
+  // resolveWorktreeDeletionPolicy.
+  worktreePlacement: z.enum(["managed", "external"]).nullable().optional().default(null),
   mainRepoRoot: z.string().nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -510,6 +532,7 @@ export function createPersistedWorkspaceRecord(input: {
   worktreeRoot?: string | null;
   baseBranch?: string | null;
   isPaseoOwnedWorktree?: boolean;
+  worktreePlacement?: "managed" | "external" | null;
   mainRepoRoot?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -526,6 +549,7 @@ export function createPersistedWorkspaceRecord(input: {
     worktreeRoot: input.worktreeRoot ?? null,
     baseBranch: input.baseBranch ?? null,
     isPaseoOwnedWorktree: input.isPaseoOwnedWorktree ?? false,
+    worktreePlacement: input.worktreePlacement ?? null,
     mainRepoRoot: input.mainRepoRoot ?? null,
     archivedAt: input.archivedAt ?? null,
     autoArchivedChangeRequestUrl: input.autoArchivedChangeRequestUrl ?? null,

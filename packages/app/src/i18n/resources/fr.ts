@@ -461,6 +461,16 @@ export const fr: TranslationResources = {
         unarchiveAction: "Désarchiver",
         restoringTitle: "Restauration de l’espace de travail",
         restoringAction: "Restauration…",
+        removeWorktreeAction: "Supprimer le worktree",
+        removeWorktreeInProgress: "Suppression...",
+        removeWorktreeTitle: "Supprimer le worktree ?",
+        removeWorktreeMessage:
+          "Supprime {{path}} et tout son contenu, y compris les fichiers ignorés comme node_modules et .env. Git refuse de le supprimer si des modifications ne sont pas validées.",
+        removeWorktreeConfirm: "Supprimer",
+        removeWorktreeDone: "Worktree supprimé",
+        removeWorktreeRefused: "Git a refusé de supprimer le worktree",
+        removeWorktreeTerminal:
+          "Git ne reconnaît plus ce répertoire, Paseo ne peut donc pas le supprimer. Supprimez-le manuellement :",
         unavailableTitle: "Espace de travail indisponible",
         checkFailedTitle: "Impossible de vérifier l’espace de travail",
       },
@@ -1333,12 +1343,18 @@ export const fr: TranslationResources = {
         hideFromSidebar: "Masquer de la barre latérale",
         archiving: "Archivage…",
         hiding: "Masquage…",
+        delete: "Supprimer",
+        deleteUnavailable: "Cet espace de travail n'a pas de worktree à supprimer",
       },
       confirmations: {
         hideTitle: "Masquer l’espace de travail ?",
         hideMessage:
           "Masquer « {{workspaceName}} » de la barre latérale ?\n\nLes fichiers sur le disque ne seront pas modifiés.",
         hideConfirm: "Masquer",
+        deleteTitle: "Supprimer l'espace de travail ?",
+        deleteMessage:
+          "Archive « {{workspaceName}} » et supprime son répertoire de worktree, y compris les fichiers ignorés comme node_modules et .env.\n\nGit refuse s'il reste du travail non validé.",
+        deleteConfirm: "Supprimer",
         cancel: "Annuler",
       },
       rename: {
@@ -1353,6 +1369,12 @@ export const fr: TranslationResources = {
         hostDisconnected: "L’hôte n’est pas connecté",
         hideFailed: "Impossible de masquer l’espace de travail",
         archiveFailed: "Impossible d’archiver l’espace de travail",
+        worktreeKeptDirty:
+          "Archivé. Le worktree contient du travail non validé, Git l'a donc conservé.",
+        worktreeKeptLocked: "Archivé. Le worktree est verrouillé, Git l'a donc conservé.",
+        worktreeKeptUnrecognised:
+          "Archivé. Git ne reconnaît plus le répertoire du worktree ; supprimez-le vous-même.",
+        worktreeKeptUnknown: "Archivé, mais Git n'a pas supprimé le worktree.",
       },
     },
   },
@@ -2864,6 +2886,31 @@ export const fr: TranslationResources = {
         transportFallback: "L’hôte n’a pas répondu.",
         failedTitle: "Impossible de charger paseo.json",
         failedDescription: "Rechargez pour réessayer.",
+      },
+      worktreeLocation: {
+        title: "Emplacement du worktree",
+        info: "Où Paseo crée les worktrees de ce projet",
+        label: "Emplacement",
+        description: "Où les nouveaux worktrees sont créés.",
+        accessibilityLabel: "Emplacement du worktree, actuellement {{value}}",
+        noMigrationNote:
+          "Ce changement ne déplace pas les worktrees existants. Ils restent en place ; seuls les nouveaux utilisent le nouvel emplacement.",
+        modes: {
+          managed: "Géré",
+          managedHint: "Le répertoire privé de Paseo",
+          sibling: "Adjacent",
+          siblingHint: "À côté du dépôt",
+          nested: "Imbriqué",
+          nestedHint: "Dans le dépôt",
+          custom: "Personnalisé",
+          customHint: "Un chemin de votre choix",
+        },
+        customPathLabel: "Chemin",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "Répertoire de worktree personnalisé",
+        externalRemovalNote:
+          "Archiver un espace de travail laisse son worktree sur le disque. Supprimez-le vous-même avec git worktree remove.",
+        saveFailed: "Impossible de changer l'emplacement du worktree",
       },
       worktree: {
         title: "Hooks de cycle de vie des worktrees",
