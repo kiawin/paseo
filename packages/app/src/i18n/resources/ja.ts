@@ -1857,6 +1857,9 @@ export const ja: TranslationResources = {
     subAgentActivity: "サブエージェントアクティビティ",
     input: "入力",
     output: "出力",
+    clickToExpand: "クリックして展開",
+    inLabel: "入力",
+    outLabel: "出力",
   },
   toolCallGroup: {
     editedFiles: {
@@ -2044,6 +2047,15 @@ export const ja: TranslationResources = {
         options: {
           overview: "要約",
           detailed: "すべての詳細",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "チャット記録のスタイル",
+        description: "完了したターンのレイアウト",
+        accessibilityLabel: "チャット記録のスタイルを選択（{{value}}）",
+        options: {
+          cards: "カード",
+          trace: "トレース",
         },
       },
       language: {
