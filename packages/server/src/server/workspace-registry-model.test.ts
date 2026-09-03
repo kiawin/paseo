@@ -64,6 +64,7 @@ describe("workspace placement", () => {
       worktreeRoot: "/repo",
       baseBranch: null,
       isPaseoOwnedWorktree: false,
+      worktreePlacement: null,
       mainRepoRoot: null,
     });
     expect(
@@ -117,10 +118,12 @@ describe("workspace placement", () => {
       updatedAt: "2026-03-02T00:00:00.000Z",
     });
 
+    // isPaseoOwnedWorktree is deliberately absent: the checkout reports false
+    // because the path-based check only recognises Paseo's private root, and
+    // reconcile must not withdraw creation-time provenance on that basis.
     expect(update?.fields).toEqual({
       branch: "renamed-branch",
       worktreeRoot: "/repo-feature",
-      isPaseoOwnedWorktree: false,
     });
     expect(update?.workspace).toMatchObject({
       displayName: "Keep this name",
@@ -153,5 +156,66 @@ describe("workspace placement", () => {
       isPaseoOwnedWorktree: true,
       mainRepoRoot: "/repo",
     });
+  });
+});
+
+const baseWorkspace = createPersistedWorkspaceRecord({
+  workspaceId: "wks_provenance",
+  projectId: "prj_provenance",
+  cwd: "/home/dev/repo-worktrees/feat",
+  kind: "worktree",
+  displayName: "feat",
+  createdAt: "2026-09-01T00:00:00.000Z",
+  updatedAt: "2026-09-01T00:00:00.000Z",
+  archivedAt: null,
+});
+
+describe("reconcile and creation-time provenance", () => {
+  // Regression: `observed` derives isPaseoOwnedWorktree from path shape, which
+  // only recognises Paseo's private root. Reconcile runs at boot, on watcher
+  // events, on unarchive and on every agent create — so downgrading here would
+  // strip provenance from every worktree cut into a sibling, nested or custom
+  // holder, taking auto-archive, teardown and any route to removal with it.
+  test("never withdraws isPaseoOwnedWorktree from a record that has it", () => {
+    const workspace = {
+      ...baseWorkspace,
+      kind: "worktree" as const,
+      cwd: "/home/dev/repo-worktrees/feat",
+      worktreeRoot: "/home/dev/repo-worktrees/feat",
+      isPaseoOwnedWorktree: true,
+      mainRepoRoot: "/home/dev/repo",
+    };
+
+    const update = reconcileWorkspacePlacement({
+      workspace,
+      checkout: {
+        isGit: true,
+        currentBranch: "feat",
+        worktreeRoot: "/home/dev/repo-worktrees/feat",
+        mainRepoRoot: "/home/dev/repo",
+        // What the path-based check reports for a holder outside the base root.
+        isPaseoOwnedWorktree: false,
+      },
+      updatedAt: "2026-09-02T00:00:00.000Z",
+    });
+
+    expect(update?.fields.isPaseoOwnedWorktree).toBeUndefined();
+    expect(update?.workspace.isPaseoOwnedWorktree ?? true).toBe(true);
+  });
+
+  test("still adopts ownership when the record lacks it", () => {
+    const update = reconcileWorkspacePlacement({
+      workspace: { ...baseWorkspace, kind: "worktree" as const, isPaseoOwnedWorktree: false },
+      checkout: {
+        isGit: true,
+        currentBranch: null,
+        worktreeRoot: baseWorkspace.cwd,
+        mainRepoRoot: "/home/dev/repo",
+        isPaseoOwnedWorktree: true,
+      },
+      updatedAt: "2026-09-02T00:00:00.000Z",
+    });
+
+    expect(update?.fields.isPaseoOwnedWorktree).toBe(true);
   });
 });
