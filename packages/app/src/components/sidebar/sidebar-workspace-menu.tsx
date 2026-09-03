@@ -12,6 +12,7 @@ import {
   Pin,
   PinOff,
   Tag,
+  Trash2,
 } from "lucide-react-native";
 import { PressHighlight } from "@/components/ui/press-highlight";
 import { isWeb } from "@/constants/platform";
@@ -62,6 +63,7 @@ const ThemedCircleCheck = withUnistyles(CircleCheck);
 const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
 const ThemedTag = withUnistyles(Tag);
+const ThemedTrash = withUnistyles(Trash2);
 
 const copyLeadingIcon = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
 const renameLeadingIcon = <ThemedPencil size={14} uniProps={foregroundMutedColorMapping} />;
@@ -70,6 +72,7 @@ const markAsReadLeadingIcon = (
 );
 const markAsUnreadLeadingIcon = <ThemedCircle size={14} uniProps={foregroundMutedColorMapping} />;
 const archiveLeadingIcon = <ThemedArchive size={14} uniProps={foregroundMutedColorMapping} />;
+const deleteLeadingIcon = <ThemedTrash size={14} uniProps={foregroundMutedColorMapping} />;
 const pinLeadingIcon = <ThemedPin size={14} uniProps={foregroundMutedColorMapping} />;
 const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorMapping} />;
 
@@ -129,6 +132,14 @@ export interface SidebarWorkspaceMenuProps {
   archiveStatus?: "idle" | "pending" | "success";
   archivePendingLabel?: string;
   archiveShortcutKeys?: ShortcutKey[][] | null;
+  /** Archive, and delete the worktree directory with it. */
+  onDelete?: () => void;
+  /**
+   * Why deletion cannot apply here. Set on a workspace with no worktree Paseo
+   * may delete: the row stays in place so the menu keeps one shape, and says
+   * why rather than quietly doing nothing.
+   */
+  deleteDisabledReason?: string;
   isPinned?: boolean;
   onTogglePin?: () => void;
   openInFileManagerPath?: string | null;
@@ -142,9 +153,10 @@ export interface SidebarWorkspaceMenuProps {
 
 interface SidebarWorkspaceMenuItemsProps extends Omit<
   SidebarWorkspaceMenuProps,
-  "onArchive" | "open" | "onOpenChange"
+  "onArchive" | "onDelete" | "open" | "onOpenChange"
 > {
   onArchive?: () => void;
+  onDelete?: () => void;
 }
 
 type MenuSurface = "context" | "dropdown";
@@ -177,6 +189,8 @@ function SidebarWorkspaceMenuItems({
   archiveStatus,
   archivePendingLabel,
   archiveShortcutKeys,
+  onDelete,
+  deleteDisabledReason,
   isPinned,
   onTogglePin,
   openInFileManagerPath,
@@ -280,6 +294,19 @@ function SidebarWorkspaceMenuItems({
           {archiveLabel ?? t("sidebar.workspace.actions.archive")}
         </WorkspaceMenuItem>
       ) : null}
+      {onDelete ? (
+        <WorkspaceMenuItem
+          surface={surface}
+          testID={`sidebar-workspace-menu-delete-${workspaceKey}`}
+          leading={deleteLeadingIcon}
+          destructive
+          disabled={deleteDisabledReason !== undefined}
+          tooltip={deleteDisabledReason}
+          onSelect={onDelete}
+        >
+          {t("sidebar.workspace.actions.delete")}
+        </WorkspaceMenuItem>
+      ) : null}
     </>
   );
 }
@@ -299,6 +326,8 @@ export function SidebarWorkspaceMenu({
   archiveStatus,
   archivePendingLabel,
   archiveShortcutKeys,
+  onDelete,
+  deleteDisabledReason,
   isPinned,
   onTogglePin,
   openInFileManagerPath,
@@ -345,6 +374,8 @@ export function SidebarWorkspaceMenu({
           archiveStatus={archiveStatus}
           archivePendingLabel={archivePendingLabel}
           archiveShortcutKeys={archiveShortcutKeys}
+          onDelete={onDelete}
+          deleteDisabledReason={deleteDisabledReason}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
           openInFileManagerPath={openInFileManagerPath}
@@ -378,6 +409,8 @@ export function SidebarWorkspaceContextMenu({
   archiveStatus,
   archivePendingLabel,
   archiveShortcutKeys,
+  onDelete,
+  deleteDisabledReason,
   isPinned,
   onTogglePin,
   openInFileManagerPath,
@@ -459,6 +492,8 @@ export function SidebarWorkspaceContextMenu({
           archiveStatus={archiveStatus}
           archivePendingLabel={archivePendingLabel}
           archiveShortcutKeys={archiveShortcutKeys}
+          onDelete={onDelete}
+          deleteDisabledReason={deleteDisabledReason}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
           openInFileManagerPath={openInFileManagerPath}
