@@ -2085,6 +2085,11 @@ export const ja: TranslationResources = {
     subAgentActivity: "サブエージェントアクティビティ",
     input: "入力",
     output: "出力",
+    clickToExpand: "クリックして展開",
+    inLabel: "入力",
+    outLabel: "出力",
+    copyCommand: "コマンドをコピー",
+    copyOutput: "出力をコピー",
   },
   turnSummary: {
     details: "ターンの詳細を表示",
@@ -2454,6 +2459,15 @@ export const ja: TranslationResources = {
           full: "すべて",
           collapseToolCalls: "ツール呼び出しを折りたたむ",
           collapseTurns: "ターンを折りたたむ",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "チャット記録のスタイル",
+        description: "完了したターンのレイアウト",
+        accessibilityLabel: "チャット記録のスタイルを選択（{{value}}）",
+        options: {
+          cards: "カード",
+          trace: "トレース",
         },
       },
       language: {
