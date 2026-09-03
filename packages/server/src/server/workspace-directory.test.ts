@@ -616,6 +616,7 @@ describe("WorkspaceDirectory empty projects", () => {
         projectCustomIconRevision: null,
         projectRootPath: "/workspace/empty",
         projectKind: "non_git",
+        projectWorktreeLocation: null,
       },
     ]);
   });

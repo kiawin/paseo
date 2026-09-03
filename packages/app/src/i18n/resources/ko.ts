@@ -419,6 +419,16 @@ export const ko: TranslationResources = {
         unarchiveAction: "보관 취소",
         restoringTitle: "워크스페이스 복원 중",
         restoringAction: "복원 중...",
+        removeWorktreeAction: "워크트리 삭제",
+        removeWorktreeInProgress: "삭제 중...",
+        removeWorktreeTitle: "워크트리를 삭제할까요?",
+        removeWorktreeMessage:
+          "{{path}}와 그 안의 모든 내용을 삭제합니다. node_modules와 .env처럼 Git이 무시하는 파일도 포함됩니다. 커밋하지 않은 변경이 있으면 Git이 삭제를 거부합니다.",
+        removeWorktreeConfirm: "삭제",
+        removeWorktreeDone: "워크트리를 삭제했습니다",
+        removeWorktreeRefused: "Git이 워크트리 삭제를 거부했습니다",
+        removeWorktreeTerminal:
+          "Git이 이 디렉터리를 더 이상 인식하지 못해 Paseo가 삭제할 수 없습니다. 수동으로 삭제하세요:",
         unavailableTitle: "워크스페이스를 사용할 수 없습니다",
         checkFailedTitle: "워크스페이스를 확인하지 못했습니다",
       },
@@ -2648,6 +2658,31 @@ export const ko: TranslationResources = {
         transportFallback: "호스트가 응답하지 않았습니다.",
         failedTitle: "paseo.json을 불러올 수 없습니다",
         failedDescription: "다시 로드하여 재시도하세요.",
+      },
+      worktreeLocation: {
+        title: "워크트리 위치",
+        info: "Paseo가 이 프로젝트의 워크트리를 만드는 위치",
+        label: "위치",
+        description: "새 워크트리가 생성되는 위치입니다.",
+        accessibilityLabel: "워크트리 위치, 현재 {{value}}",
+        noMigrationNote:
+          "이 설정을 바꿔도 기존 워크트리는 이동하지 않습니다. 그대로 남고 새 워크트리만 새 위치를 사용합니다.",
+        modes: {
+          managed: "관리됨",
+          managedHint: "Paseo 전용 디렉터리",
+          sibling: "같은 계층",
+          siblingHint: "저장소 옆",
+          nested: "중첩",
+          nestedHint: "저장소 안",
+          custom: "사용자 지정",
+          customHint: "직접 고른 경로",
+        },
+        customPathLabel: "경로",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "사용자 지정 워크트리 디렉터리",
+        externalRemovalNote:
+          "워크스페이스를 보관해도 워크트리는 디스크에 남습니다. git worktree remove로 직접 삭제하세요.",
+        saveFailed: "워크트리 위치를 변경하지 못했습니다",
       },
       worktree: {
         title: "워크트리 수명 주기 훅",
