@@ -3,6 +3,7 @@ import type pino from "pino";
 
 import type { ForgeService } from "../../services/forge-service.js";
 import { isPaseoOwnedWorktreeCwd } from "../../utils/worktree.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { archiveByScope, type ActiveWorkspaceRef } from "../workspace-archive-service.js";
 import type {
   CreatePaseoWorktreeWorkflowFn,
@@ -18,6 +19,7 @@ import type { AgentStorage } from "./agent-storage.js";
 interface CreateAgentLifecycleDispatchDependencies {
   paseoHome: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
   github: ForgeService;
@@ -123,6 +125,48 @@ export class CreateAgentLifecycleDispatch {
         "Failed to clean up worktree after create_agent_request failed",
       );
     });
+  }
+
+  private async createWorktreeForTarget(
+    cwd: string,
+    target: CreateAgentWorktreeTarget,
+    firstAgentContext: FirstAgentContext,
+  ): Promise<CreatePaseoWorktreeWorkflowResult> {
+    const baseInput = {
+      cwd,
+      firstAgentContext,
+      runSetup: false,
+      paseoHome: this.dependencies.paseoHome,
+      worktreesRoot: this.dependencies.worktreesRoot,
+      resolveWorktreeLocation: this.dependencies.resolveWorktreeLocation,
+    } as const;
+
+    switch (target.mode) {
+      case "branch-off":
+        return this.dependencies.createPaseoWorktreeWorkflow(
+          {
+            ...baseInput,
+            worktreeSlug: target.newBranch,
+            action: "branch-off",
+            ...(target.base ? { refName: target.base } : {}),
+          },
+          target.base ? { resolveDefaultBranch: async () => target.base! } : undefined,
+        );
+      case "checkout-branch":
+        return this.dependencies.createPaseoWorktreeWorkflow({
+          ...baseInput,
+          action: "checkout",
+          refName: target.branch,
+        });
+      case "checkout-pr":
+        return this.dependencies.createPaseoWorktreeWorkflow({
+          ...baseInput,
+          action: "checkout",
+          githubPrNumber: target.prNumber,
+        });
+      default:
+        throw new Error("Unsupported create_agent_request worktree target");
+    }
   }
 
   private registerAutoArchiveOnTerminalState(

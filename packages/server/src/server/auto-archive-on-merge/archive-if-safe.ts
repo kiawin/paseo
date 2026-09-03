@@ -15,6 +15,7 @@ import type {
 import type { ForgeService } from "../../services/forge-service.js";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
 import { isPaseoOwnedWorktreeCwd } from "../../utils/worktree.js";
+import { isPaseoCreatedWorkspace } from "../worktree/ownership.js";
 import type { WorkspaceArchiveContext } from "../workspace-registry.js";
 
 export interface AutoArchiveArchiveOptions {
@@ -69,11 +70,15 @@ export async function archiveIfSafe(input: {
     return;
   }
 
-  const ownership = await deps.isPaseoOwnedWorktreeCwd(cwd, {
-    paseoHome: options.paseoHome,
-    worktreesRoot: options.paseoWorktreesBaseRoot,
-  });
-  if (!ownership.allowed) {
+  // Lifecycle authority, not deletion authority. This gate only decides whether
+  // Paseo may archive a workspace it created; the archive itself never asks for
+  // the directory to be removed. Asking the path instead would silently disable
+  // auto-archive for every worktree cut outside the managed root, because path
+  // shape only recognises Paseo's private namespace.
+  const workspace = (await options.listActiveWorkspaces()).find(
+    (candidate) => candidate.workspaceId === workspaceId,
+  );
+  if (!workspace || !isPaseoCreatedWorkspace(workspace)) {
     return;
   }
 
