@@ -1635,6 +1635,15 @@ const stylesheet = StyleSheet.create((theme) => ({
     alignSelf: "center",
     paddingHorizontal: theme.spacing[2],
   },
+  // Sits on the wrapper's own horizontal padding, which is the column every node indents past.
+  transcriptRail: {
+    position: "absolute",
+    left: theme.spacing[2],
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: theme.colors.border,
+  },
   emptyState: {
     flex: 1,
     alignItems: "center",
@@ -1766,9 +1775,25 @@ interface StreamItemWrapperProps {
 }
 
 function StreamItemWrapper({ gapBelow, children }: StreamItemWrapperProps) {
+  // The rail is drawn here, by the one element that owns the gap between items. Drawn inside a
+  // node instead it can never reach across that gap, whatever the node does with its own
+  // spacing — which is why per-node rails needed an overshoot constant and still broke.
+  // Holding the gap as padding keeps it inside this box, so top:0/bottom:0 spans item plus gap
+  // and consecutive wrappers meet with nothing to bridge.
+  const isTraceTranscript = useSettings((settings) => settings.chatTranscriptStyle === "trace");
   const wrapperStyle = useMemo(
-    () => [stylesheet.streamItemWrapper, { marginBottom: gapBelow }],
-    [gapBelow],
+    () => [
+      stylesheet.streamItemWrapper,
+      isTraceTranscript ? { paddingBottom: gapBelow } : { marginBottom: gapBelow },
+    ],
+    [gapBelow, isTraceTranscript],
   );
-  return <View style={wrapperStyle}>{children}</View>;
+  return (
+    <View style={wrapperStyle}>
+      {isTraceTranscript ? (
+        <View style={stylesheet.transcriptRail} testID="transcript-rail" />
+      ) : null}
+      {children}
+    </View>
+  );
 }

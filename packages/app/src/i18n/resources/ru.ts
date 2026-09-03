@@ -1892,6 +1892,9 @@ export const ru: TranslationResources = {
     subAgentActivity: "Активность субагента",
     input: "Входные данные",
     output: "Выходные данные",
+    clickToExpand: "Нажмите, чтобы развернуть",
+    inLabel: "ВХОД",
+    outLabel: "ВЫХОД",
   },
   toolCallGroup: {
     editedFiles: {
@@ -2083,6 +2086,15 @@ export const ru: TranslationResources = {
         options: {
           overview: "Сводка",
           detailed: "Все подробности",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "Стиль расшифровки чата",
+        description: "Как располагается завершённый ход",
+        accessibilityLabel: "Выбрать стиль расшифровки чата ({{value}})",
+        options: {
+          cards: "Карточки",
+          trace: "Трассировка",
         },
       },
       language: {
