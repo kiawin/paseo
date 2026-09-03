@@ -1,7 +1,7 @@
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
 import type { PluginLifecycle } from "./plugins/lifecycle/index.js";
 import { stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import { getRealpathAwareRelativePath } from "../utils/path.js";
@@ -130,6 +130,11 @@ async function createPaseoWorktreeWithPriority(
             },
           }
         : {}),
+      // From the mode that was used, not the resulting path: a custom root can
+      // sit anywhere, including under Paseo's own base, where path shape would
+      // read as managed and arm the forced recursive delete.
+      worktreePlacement:
+        (createdWorktree.location?.mode ?? "managed") === "managed" ? "managed" : "external",
     });
 
     deps.github.invalidate({ cwd: createdWorktree.worktree.worktreePath });
@@ -147,6 +152,18 @@ async function createPaseoWorktreeWithPriority(
     }
     return rollbackCreatedPaseoWorktree(
       {
+        // A worktree outside the managed root is not inside the hash-derived
+        // root the default policy checks, so the managed path would refuse it
+        // and leave a git-registered stray behind. It was created seconds ago
+        // and is clean, so git removes it without complaint.
+        policy:
+          (createdWorktree.location?.mode ?? "managed") === "managed"
+            ? { kind: "managed" }
+            : { kind: "git-validated" },
+        worktreesRoot:
+          (createdWorktree.location?.mode ?? "managed") === "managed"
+            ? undefined
+            : dirname(createdWorktree.worktree.worktreePath),
         cwd: createdWorktree.repoRoot,
         worktreePath: createdWorktree.worktree.worktreePath,
         teardownCwds: [],

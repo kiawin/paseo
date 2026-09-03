@@ -226,8 +226,20 @@ async function createUnobservedWorkspace(journeyOptions?: {
       },
     },
     getAutoArchivedChangeRequestUrl: async () => null,
+    // Lifecycle authority comes from the persisted record, not the path.
     listActiveWorkspaces: async () =>
-      active ? [{ workspaceId: "workspace-under-test", cwd, kind: "worktree" }] : [],
+      active
+        ? [
+            {
+              workspaceId: "workspace-under-test",
+              cwd,
+              kind: "worktree",
+              worktreeRoot: cwd,
+              isPaseoOwnedWorktree: true,
+              mainRepoRoot: repoDir,
+            },
+          ]
+        : [],
   } as unknown as AutoArchiveOnMergeOptions;
   setupAutoArchiveOnMerge(options, {
     resolvePath: path.resolve,
