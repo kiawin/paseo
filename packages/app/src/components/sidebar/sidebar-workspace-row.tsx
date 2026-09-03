@@ -106,6 +106,20 @@ export function SidebarWorkspaceRow({
     archiveController.archive();
   }, [archiveController, isArchiving]);
 
+  const handleDelete = useCallback(() => {
+    if (isArchiving) {
+      return;
+    }
+    archiveController.deleteWithWorktree();
+  }, [archiveController, isArchiving]);
+
+  // The row stays in the menu whatever the workspace is, so a workspace with no
+  // worktree says why instead of offering an action that would only archive.
+  const deleteDisabledReason =
+    workspace.workspaceKind === "worktree"
+      ? undefined
+      : t("sidebar.workspace.actions.deleteUnavailable");
+
   const clipboard = useWorkspaceClipboardActions();
   const handleCopyPath = useCallback(() => {
     clipboard.copyPath(workspace);
@@ -169,6 +183,8 @@ export function SidebarWorkspaceRow({
         archiveStatus={isArchiving ? "pending" : "idle"}
         archivePendingLabel={t("sidebar.workspace.actions.archiving")}
         onArchive={handleArchive}
+        onDelete={handleDelete}
+        deleteDisabledReason={deleteDisabledReason}
         onCopyBranchName={canCopyBranchName ? handleCopyBranchName : undefined}
         onCopyPath={handleCopyPath}
         onRename={handleOpenRename}
@@ -202,6 +218,8 @@ interface WorkspaceRowBodyProps {
   archiveStatus?: "idle" | "pending" | "success";
   archivePendingLabel?: string;
   onArchive?: () => void;
+  onDelete?: () => void;
+  deleteDisabledReason?: string;
   onCopyBranchName?: () => void;
   onCopyPath?: () => void;
   onRename?: () => void;
@@ -226,6 +244,8 @@ function WorkspaceRowBody({
   archiveStatus = "idle",
   archivePendingLabel,
   onArchive,
+  onDelete,
+  deleteDisabledReason,
   onCopyBranchName,
   onCopyPath,
   onRename,
@@ -305,6 +325,8 @@ function WorkspaceRowBody({
               onMarkAsRead={onMarkAsRead}
               onMarkAsUnread={onMarkAsUnread}
               onArchive={onArchive}
+              onDelete={onDelete}
+              deleteDisabledReason={deleteDisabledReason}
               archiveLabel={archiveLabel}
               archiveStatus={archiveStatus}
               archivePendingLabel={archivePendingLabel}
@@ -347,6 +369,8 @@ function WorkspaceRowBody({
                   archivePendingLabel={archivePendingLabel}
                   archiveShortcutKeys={archiveShortcutKeys}
                   onArchive={onArchive}
+                  onDelete={onDelete}
+                  deleteDisabledReason={deleteDisabledReason}
                   onCopyBranchName={onCopyBranchName}
                   onCopyPath={onCopyPath}
                   onRename={onRename}
@@ -376,6 +400,8 @@ function WorkspaceRowTrailingActions({
   archivePendingLabel,
   archiveShortcutKeys,
   onArchive,
+  onDelete,
+  deleteDisabledReason,
   onMarkAsRead,
   onMarkAsUnread,
   onCopyBranchName,
@@ -395,6 +421,8 @@ function WorkspaceRowTrailingActions({
   archivePendingLabel?: string;
   archiveShortcutKeys?: ShortcutKey[][] | null;
   onArchive?: () => void;
+  onDelete?: () => void;
+  deleteDisabledReason?: string;
   onMarkAsRead?: () => void;
   onMarkAsUnread?: () => void;
   onCopyBranchName?: () => void;
@@ -446,6 +474,8 @@ function WorkspaceRowTrailingActions({
                 onMarkAsRead={onMarkAsRead}
                 onMarkAsUnread={onMarkAsUnread}
                 onArchive={onArchive}
+                onDelete={onDelete}
+                deleteDisabledReason={deleteDisabledReason}
                 archiveLabel={archiveLabel}
                 archiveStatus={archiveStatus}
                 archivePendingLabel={archivePendingLabel}
