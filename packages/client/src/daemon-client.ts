@@ -65,6 +65,8 @@ import type {
   PaseoWorktreeListResponse,
   PaseoWorktreeArchiveResponse,
   ProjectIconSource,
+  WorktreeLocation,
+  WorkspaceWorktreeRemoveResponse,
   ProjectIconResponse,
   ProjectIconGetResponse,
   ProjectAddResponse,
@@ -2430,15 +2432,21 @@ export class DaemonClient {
     });
   }
 
+  /**
+   * `removeWorktreeDirectory` only affects worktrees cut outside Paseo's managed
+   * root, which archive leaves on disk by default. Managed worktrees always
+   * remove their directory and ignore it.
+   */
   async archiveWorkspace(
     workspaceId: string,
-    requestId?: string,
+    options?: { removeWorktreeDirectory?: boolean; requestId?: string },
   ): Promise<ArchiveWorkspacePayload> {
     return this.sendCorrelatedSessionRequest({
-      requestId,
+      requestId: options?.requestId,
       message: {
         type: "archive_workspace_request",
         workspaceId,
+        ...(options?.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : {}),
       },
       responseType: "archive_workspace_response",
     });
@@ -2723,6 +2731,43 @@ export class DaemonClient {
       throw new Error(payload.error ?? "renameProject rejected");
     }
     return { customName: payload.customName };
+  }
+
+  async setProjectWorktreeLocation(
+    projectId: string,
+    location: WorktreeLocation | null,
+    requestId?: string,
+  ): Promise<{ location: WorktreeLocation | null }> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"project.worktree.location.set.response">({
+        requestId,
+        message: { type: "project.worktree.location.set.request", projectId, location },
+      });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "setProjectWorktreeLocation rejected");
+    }
+    return { location: payload.location };
+  }
+
+  /**
+   * Removes an archived workspace's worktree directory.
+   *
+   * Resolves with the refusal rather than throwing when git declines, because
+   * the caller has to tell a retryable refusal from a terminal one: `dirty`
+   * clears with force, `not_a_worktree` and `locked` do not.
+   */
+  async removeWorkspaceWorktree(
+    workspaceId: string,
+    options?: { force?: boolean; requestId?: string },
+  ): Promise<WorkspaceWorktreeRemoveResponse["payload"]> {
+    return this.sendNamespacedCorrelatedSessionRequest<"workspace.worktree.remove.response">({
+      requestId: options?.requestId,
+      message: {
+        type: "workspace.worktree.remove.request",
+        workspaceId,
+        ...(options?.force === true ? { force: true } : {}),
+      },
+    });
   }
 
   async setProjectIcon(

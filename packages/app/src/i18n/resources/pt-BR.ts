@@ -422,6 +422,16 @@ export const ptBR: TranslationResources = {
         unarchiveAction: "Desarquivar",
         restoringTitle: "Restaurando workspace",
         restoringAction: "Restaurando...",
+        removeWorktreeAction: "Remover worktree",
+        removeWorktreeInProgress: "Removendo...",
+        removeWorktreeTitle: "Remover worktree?",
+        removeWorktreeMessage:
+          "Exclui {{path}} e todo o seu conteúdo, incluindo arquivos ignorados como node_modules e .env. O Git se recusa a removê-lo se houver alterações não commitadas.",
+        removeWorktreeConfirm: "Remover",
+        removeWorktreeDone: "Worktree removido",
+        removeWorktreeRefused: "O Git se recusou a remover o worktree",
+        removeWorktreeTerminal:
+          "O Git não reconhece mais este diretório, então o Paseo não pode removê-lo. Remova-o manualmente:",
         unavailableTitle: "Workspace indisponível",
         checkFailedTitle: "Não foi possível verificar o workspace",
       },
@@ -2674,6 +2684,31 @@ export const ptBR: TranslationResources = {
         transportFallback: "O host não respondeu.",
         failedTitle: "Não foi possível carregar paseo.json",
         failedDescription: "Recarregue para tentar novamente.",
+      },
+      worktreeLocation: {
+        title: "Local do worktree",
+        info: "Onde o Paseo cria os worktrees deste projeto",
+        label: "Local",
+        description: "Onde novos worktrees são criados.",
+        accessibilityLabel: "Local do worktree, atualmente {{value}}",
+        noMigrationNote:
+          "Mudar isto não move os worktrees existentes. Eles permanecem onde estão; só os novos usam o novo local.",
+        modes: {
+          managed: "Gerenciado",
+          managedHint: "O diretório do próprio Paseo",
+          sibling: "Adjacente",
+          siblingHint: "Ao lado do repositório",
+          nested: "Aninhado",
+          nestedHint: "Dentro do repositório",
+          custom: "Personalizado",
+          customHint: "Um caminho à sua escolha",
+        },
+        customPathLabel: "Caminho",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "Diretório de worktree personalizado",
+        externalRemovalNote:
+          "Arquivar um espaço de trabalho deixa o worktree no disco. Remova-o você mesmo com git worktree remove.",
+        saveFailed: "Não foi possível alterar o local do worktree",
       },
       worktree: {
         title: "Hooks de ciclo de vida do worktree",

@@ -416,6 +416,16 @@ export const en = {
         unarchiveAction: "Unarchive",
         restoringTitle: "Restoring workspace",
         restoringAction: "Restoring...",
+        removeWorktreeAction: "Remove worktree",
+        removeWorktreeInProgress: "Removing...",
+        removeWorktreeTitle: "Remove worktree?",
+        removeWorktreeMessage:
+          "Deletes {{path}} and everything in it, including ignored files such as node_modules and .env. Git refuses if there is uncommitted work.",
+        removeWorktreeConfirm: "Remove",
+        removeWorktreeDone: "Worktree removed",
+        removeWorktreeRefused: "Git would not remove the worktree",
+        removeWorktreeTerminal:
+          "Git no longer recognises this directory, so Paseo cannot remove it. Remove it yourself:",
         unavailableTitle: "Workspace unavailable",
         checkFailedTitle: "Couldn't check workspace",
       },
@@ -2736,6 +2746,33 @@ export const en = {
         transportFallback: "The host didn't respond.",
         failedTitle: "Couldn't load paseo.json",
         failedDescription: "Reload to try again.",
+      },
+      worktreeLocation: {
+        title: "Worktree location",
+        info: "Where Paseo creates worktrees for this project",
+        label: "Location",
+        description: "Where new worktrees are created.",
+        accessibilityLabel: "Worktree location, currently {{value}}",
+        noMigrationNote:
+          "Changing this does not move existing worktrees. They stay where they are; only new ones use the new location.",
+        modes: {
+          managed: "Managed",
+          managedHint: "Paseo's own directory",
+          sibling: "Sibling",
+          siblingHint: "Next to the repository",
+          nested: "Nested",
+          nestedHint: "Inside the repository",
+          custom: "Custom",
+          customHint: "A path you choose",
+        },
+        customPathLabel: "Path",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "Custom worktree directory",
+        // Worktrees outside Paseo's own directory are left on disk when a
+        // workspace is archived, so say so before someone picks one.
+        externalRemovalNote:
+          "Archiving a workspace leaves its worktree on disk. Remove it yourself with git worktree remove.",
+        saveFailed: "Could not change the worktree location",
       },
       worktree: {
         title: "Worktree lifecycle hooks",
