@@ -3748,6 +3748,7 @@ test("archiving the last workspace emits a remove carrying the now-empty project
       projectCustomIconRevision: null,
       projectRootPath: REPO_CWD,
       projectKind: "git",
+      projectWorktreeLocation: null,
     },
   });
 });

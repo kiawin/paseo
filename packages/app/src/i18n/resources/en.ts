@@ -419,6 +419,16 @@ export const en = {
         unarchiveAction: "Unarchive",
         restoringTitle: "Restoring workspace",
         restoringAction: "Restoring...",
+        removeWorktreeAction: "Remove worktree",
+        removeWorktreeInProgress: "Removing...",
+        removeWorktreeTitle: "Remove worktree?",
+        removeWorktreeMessage:
+          "Deletes {{path}} and everything in it, including ignored files such as node_modules and .env. Git refuses if there is uncommitted work.",
+        removeWorktreeConfirm: "Remove",
+        removeWorktreeDone: "Worktree removed",
+        removeWorktreeRefused: "Git would not remove the worktree",
+        removeWorktreeTerminal:
+          "Git no longer recognises this directory, so Paseo cannot remove it. Remove it yourself:",
         unavailableTitle: "Workspace unavailable",
         checkFailedTitle: "Couldn't check workspace",
       },
@@ -1208,6 +1218,8 @@ export const en = {
         hideFromSidebar: "Hide from sidebar",
         archiving: "Archiving...",
         hiding: "Hiding...",
+        delete: "Delete",
+        deleteUnavailable: "This workspace has no worktree to delete",
       },
       confirmations: {
         hideTitle: "Hide workspace?",
@@ -1215,6 +1227,10 @@ export const en = {
           'Hide "{{workspaceName}}" from the sidebar?\n\nFiles on disk will not be changed.',
         hideConfirm: "Hide",
         cancel: "Cancel",
+        deleteTitle: "Delete workspace?",
+        deleteMessage:
+          'Archives "{{workspaceName}}" and deletes its worktree directory, including ignored files such as node_modules and .env.\n\nGit refuses if there is uncommitted work.',
+        deleteConfirm: "Delete",
       },
       rename: {
         title: "Rename workspace",
@@ -1228,6 +1244,11 @@ export const en = {
         hostDisconnected: "Host is not connected",
         hideFailed: "Failed to hide workspace",
         archiveFailed: "Failed to archive workspace",
+        worktreeKeptDirty: "Archived. The worktree has uncommitted work, so git kept it.",
+        worktreeKeptLocked: "Archived. The worktree is locked, so git kept it.",
+        worktreeKeptUnrecognised:
+          "Archived. Git no longer recognises the worktree directory, so remove it yourself.",
+        worktreeKeptUnknown: "Archived, but git would not remove the worktree.",
       },
     },
   },
@@ -2757,6 +2778,33 @@ export const en = {
         transportFallback: "The host didn't respond.",
         failedTitle: "Couldn't load paseo.json",
         failedDescription: "Reload to try again.",
+      },
+      worktreeLocation: {
+        title: "Worktree location",
+        info: "Where Paseo creates worktrees for this project",
+        label: "Location",
+        description: "Where new worktrees are created.",
+        accessibilityLabel: "Worktree location, currently {{value}}",
+        noMigrationNote:
+          "Changing this does not move existing worktrees. They stay where they are; only new ones use the new location.",
+        modes: {
+          managed: "Managed",
+          managedHint: "Paseo's own directory",
+          sibling: "Sibling",
+          siblingHint: "Next to the repository",
+          nested: "Nested",
+          nestedHint: "Inside the repository",
+          custom: "Custom",
+          customHint: "A path you choose",
+        },
+        customPathLabel: "Path",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "Custom worktree directory",
+        // Worktrees outside Paseo's own directory are left on disk when a
+        // workspace is archived, so say so before someone picks one.
+        externalRemovalNote:
+          "Archiving a workspace leaves its worktree on disk. Remove it yourself with git worktree remove.",
+        saveFailed: "Could not change the worktree location",
       },
       worktree: {
         title: "Worktree lifecycle hooks",

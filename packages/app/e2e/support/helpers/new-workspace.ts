@@ -29,6 +29,7 @@ type NewWorkspaceDaemonClient = Pick<
   | "removeProject"
   | "removePlugin"
   | "reloadPlugin"
+  | "setProjectWorktreeLocation"
   | "setWorkspaceTitle"
 >;
 
