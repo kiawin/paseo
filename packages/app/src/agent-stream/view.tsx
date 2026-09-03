@@ -186,7 +186,12 @@ function renderStreamItemWithTurnFooter(input: {
     />
   ) : null;
   const content = (
-    <StreamItemWrapper gapBelow={input.layoutItem.gapBelow} turnIndent={input.turnIndent}>
+    <StreamItemWrapper
+      itemId={input.layoutItem.item.id}
+      gapBelow={input.layoutItem.gapBelow}
+      selectableGap={input.layoutItem.item.kind === "assistant_message"}
+      turnIndent={input.turnIndent}
+    >
       {input.content}
     </StreamItemWrapper>
   );
@@ -1790,6 +1795,18 @@ const stylesheet = StyleSheet.create((theme) => ({
     alignSelf: "center",
     paddingHorizontal: theme.spacing[2],
   },
+  streamItemWrapperSelectableGap: isWeb
+    ? { cursor: "auto" as const, userSelect: "text" as const }
+    : {},
+  // Sits on the wrapper's own horizontal padding, which is the column every node indents past.
+  transcriptRail: {
+    position: "absolute",
+    left: theme.spacing[2],
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: theme.colors.border,
+  },
   emptyState: {
     flex: 1,
     alignItems: "center",
@@ -1915,25 +1932,46 @@ const permissionStyles = StyleSheet.create((theme) => ({
 }));
 
 interface StreamItemWrapperProps {
+  itemId: string;
   gapBelow: number;
+  selectableGap: boolean;
   turnIndent: TurnIndent;
   children: ReactNode;
 }
 
-function StreamItemWrapper({ gapBelow, turnIndent, children }: StreamItemWrapperProps) {
+function StreamItemWrapper({ gapBelow, selectableGap, turnIndent, children }: StreamItemWrapperProps) {
+  const isTraceTranscript = useSettings((settings) => settings.chatTranscriptStyle === "trace");
+  const keepsGapInsideWrapper = turnIndent === "none" || turnIndent === "lastNested";
+  const usesPaddingForGap = keepsGapInsideWrapper && (isTraceTranscript || selectableGap);
   const wrapperStyle = useMemo(
     () => [
       stylesheet.streamItemWrapper,
-      { marginBottom: turnIndent === "nested" || turnIndent === "openedHost" ? 0 : gapBelow },
+      {
+        marginBottom:
+          turnIndent === "nested" || turnIndent === "openedHost" || usesPaddingForGap ? 0 : gapBelow,
+        ...(usesPaddingForGap ? { paddingBottom: gapBelow } : {}),
+      },
+      selectableGap && stylesheet.streamItemWrapperSelectableGap,
     ],
-    [gapBelow, turnIndent],
+    [gapBelow, selectableGap, turnIndent, usesPaddingForGap],
   );
   const gapStyle = useMemo(() => ({ paddingBottom: gapBelow }), [gapBelow]);
   switch (turnIndent) {
     case "none":
+      return (
+        <View style={wrapperStyle}>
+          {isTraceTranscript ? (
+            <View style={stylesheet.transcriptRail} testID="transcript-rail" />
+          ) : null}
+          {children}
+        </View>
+      );
     case "openedHost":
       return (
         <View style={wrapperStyle}>
+          {isTraceTranscript ? (
+            <View style={stylesheet.transcriptRail} testID="transcript-rail" />
+          ) : null}
           {children}
           {turnIndent === "openedHost" ? <IndentRail style={gapStyle} /> : null}
         </View>
@@ -1941,12 +1979,18 @@ function StreamItemWrapper({ gapBelow, turnIndent, children }: StreamItemWrapper
     case "nested":
       return (
         <View style={wrapperStyle}>
+          {isTraceTranscript ? (
+            <View style={stylesheet.transcriptRail} testID="transcript-rail" />
+          ) : null}
           <IndentRail style={gapStyle}>{children}</IndentRail>
         </View>
       );
     case "lastNested":
       return (
         <View style={wrapperStyle}>
+          {isTraceTranscript ? (
+            <View style={stylesheet.transcriptRail} testID="transcript-rail" />
+          ) : null}
           <IndentRail>{children}</IndentRail>
         </View>
       );
