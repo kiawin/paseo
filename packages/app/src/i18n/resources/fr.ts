@@ -1912,6 +1912,9 @@ export const fr: TranslationResources = {
     subAgentActivity: "Activité du sous-agent",
     input: "Saisir",
     output: "Sortir",
+    clickToExpand: "Cliquer pour développer",
+    inLabel: "ENT",
+    outLabel: "SORT",
   },
   toolCallGroup: {
     editedFiles: {
@@ -2102,6 +2105,15 @@ export const fr: TranslationResources = {
         options: {
           overview: "Résumé",
           detailed: "Détails complets",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "Style de la transcription",
+        description: "Disposition d'un tour terminé",
+        accessibilityLabel: "Sélectionner le style de la transcription ({{value}})",
+        options: {
+          cards: "Cartes",
+          trace: "Trace",
         },
       },
       language: {
