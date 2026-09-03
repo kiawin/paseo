@@ -4,6 +4,7 @@ import type pino from "pino";
 
 import type { ForgeService } from "../../services/forge-service.js";
 import { isPaseoOwnedWorktreeCwd } from "../../utils/worktree.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { archiveByScope, type ActiveWorkspaceRef } from "../workspace-archive-service.js";
 import type {
   CreatePaseoWorktreeWorkflowFn,
@@ -21,6 +22,7 @@ import type { AgentStorage } from "./agent-storage.js";
 interface CreateAgentLifecycleDispatchDependencies {
   paseoHome: string;
   worktreesRoot?: string;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
   agentManager: AgentManager;
   agentStorage: AgentStorage;
   github: ForgeService;
