@@ -1,7 +1,6 @@
 import { createElement, type ElementType } from "react";
 import { lightHighlightColors } from "@getpaseo/highlight";
 import { lightTheme } from "../src/styles/theme";
-
 const pinnedTheme = {
   colorScheme: "light",
   // The light theme's colours, so a `withUnistyles` mapping finds every key it reads, with the
@@ -9,6 +8,7 @@ const pinnedTheme = {
   colors: {
     ...lightTheme.colors,
     syntax: lightHighlightColors,
+    terminal: lightTheme.colors.terminal,
     foreground: "#111111",
     foregroundMuted: "#666666",
     statusSuccess: "#15803d",
