@@ -65,6 +65,7 @@ import { ImportSessionSheet } from "@/components/import-session-sheet";
 import { useNavigateToImportedAgent } from "@/hooks/use-import-session";
 import { useToast } from "@/contexts/toast-context";
 import { useOpenOutsideWorkspaceFolder } from "@/workspace/open-in-file-manager/outside-folder";
+import { useWorktreeRemoval } from "@/workspace/use-worktree-removal";
 import { getOrCreateClientId } from "@/utils/client-id";
 import { selectIsAgentListOpen, usePanelStore } from "@/stores/panel-store";
 import { toggleDesktopSidebarsWithCheckoutIntent } from "@/utils/desktop-sidebar-toggle";
@@ -3176,6 +3177,12 @@ function WorkspaceScreenContent({
 
   const containerStyle = [styles.container, styles.containerWorkspaceBackground];
 
+  const { isRemovingWorktree, removeWorktree } = useWorktreeRemoval({
+    client,
+    t,
+    toast,
+    onRemoved: workspaceRecovery.retryInspection,
+  });
   const workspaceScreenGate = renderWorkspaceRouteGate({
     state: workspaceRouteState,
     actions: {
@@ -3184,6 +3191,8 @@ function WorkspaceScreenContent({
       onDismissMissingWorkspace: handleDismissMissingWorkspace,
       onRecoverWorkspace: workspaceRecovery.restore,
       onRetryRecoveryInspection: workspaceRecovery.retryInspection,
+      onRemoveWorktree: removeWorktree,
+      isRemovingWorktree,
     },
   });
   const gatedWorkspaceScreen = renderWorkspaceScreenGateShell({

@@ -173,6 +173,7 @@ import {
 import { resolvePaseoToolPolicy } from "./agent/paseo-tool-policy.js";
 import { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { DaemonConfigBrowserToolsPolicy } from "./browser-tools/policy.js";
+import { resolveProjectWorktreeLocation } from "./worktree/ownership.js";
 import { WorkspaceGitServiceImpl } from "./workspace-git-service.js";
 import { resolveWorkspaceIdForPath } from "./resolve-workspace-id-for-path.js";
 import {
@@ -979,6 +980,8 @@ export async function createPaseoDaemon(
     logger,
     paseoHome: config.paseoHome,
     worktreesRoot: config.worktreesRoot,
+    resolveWorktreeLocation: (repoRoot) =>
+      resolveProjectWorktreeLocation(projectRegistry, repoRoot),
     deps: {
       forgeOverrides: { github },
     },
@@ -1177,6 +1180,7 @@ export async function createPaseoDaemon(
         kind: workspace.kind,
         worktreeRoot: workspace.worktreeRoot,
         isPaseoOwnedWorktree: workspace.isPaseoOwnedWorktree,
+        worktreePlacement: workspace.worktreePlacement,
         mainRepoRoot: workspace.mainRepoRoot,
       }));
   };

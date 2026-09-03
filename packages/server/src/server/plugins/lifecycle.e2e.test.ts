@@ -899,7 +899,7 @@ test.each([false, true])(
         created.workspace!.id,
       );
       await client.archiveWorkspace(created.workspace!.id);
-      await expect(stat(cwd)).rejects.toMatchObject({ code: "ENOENT" });
+      expect((await stat(cwd)).isDirectory()).toBe(true);
       const hookRecordsBeforeRestore = await readFile(orderFile, "utf8");
       await client.close();
       await daemon.close();
@@ -1112,7 +1112,7 @@ test("the placement example creates a sibling worktree, opens its first agent th
       .filter((entry) => entry.message.startsWith('{"hook":"provider.open"'))
       .map((entry) => JSON.parse(entry.message));
     expect(opened.map((entry) => entry.config.cwd)).toContain(cwd);
-    await client.archiveWorkspace(created.workspace!.id);
+    await client.archiveWorkspace(created.workspace!.id, { removeWorktreeDirectory: true });
     await expect(stat(cwd)).rejects.toMatchObject({ code: "ENOENT" });
   } finally {
     await client.close();
