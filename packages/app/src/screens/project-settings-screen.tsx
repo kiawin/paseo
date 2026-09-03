@@ -29,7 +29,22 @@ import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import { SettingsTextAreaCard } from "@/components/settings-textarea";
 import { SettingsGroup } from "@/components/settings/headings/settings-group";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
+<<<<<<< HEAD
+<<<<<<< HEAD
 import { SettingsBackLink, SettingsDetailHeader } from "@/components/settings";
+=======
+=======
+import { SettingsBackLink, SettingsDetailHeader } from "@/components/settings";
+import { CopyFromHostSection } from "@/screens/settings/copy-from-host-section";
+import {
+  PrAutomationSection,
+  type PrAutomationSectionProps,
+} from "@/screens/settings/pr-automation-section";
+>>>>>>> 0e6f1cb29 (fixup! feat: per-project worktree location, with archive that only deletes what it owns (#19))
+import {
+  WorktreeLocationSection,
+  type WorktreeLocationSectionProps,
+} from "@/screens/settings/worktree-location-section";
 import { settingsStyles } from "@/styles/settings";
 import { useProjects } from "@/hooks/use-projects";
 import type { ProjectEditFormSnapshot } from "@/projects/edit-form";
@@ -223,6 +238,19 @@ function ProjectSettingsBody({
 
   const data = readQuery.data;
   const supportsCustomIcon = useHostFeature(selectedHost.serverId, "projectCustomIcon");
+  const supportsWorktreeLocation = useHostFeature(selectedHost.serverId, "projectWorktreeLocation");
+  const worktreeLocationProps = useMemo<WorktreeLocationSectionProps | null>(
+    () =>
+      supportsWorktreeLocation && client
+        ? {
+            client,
+            projectId: selectedHost.projectId,
+            repoRoot: selectedHost.repoRoot,
+            location: selectedHost.worktreeLocation ?? null,
+          }
+        : null,
+    [supportsWorktreeLocation, client, selectedHost],
+  );
   const customIconRevision = selectedHost.customIconRevision ?? null;
   const projectIconTargets = useMemo(() => {
     const target = createProjectIconTarget({
@@ -316,6 +344,7 @@ function ProjectSettingsBody({
       />
 
       {renderContent({
+        worktreeLocationProps,
         readQuery,
         loadedConfig,
         loadedRevision,
@@ -334,6 +363,7 @@ function ProjectSettingsBody({
 }
 
 interface RenderContentInput {
+  worktreeLocationProps: WorktreeLocationSectionProps | null;
   readQuery: ReturnType<typeof useQuery<ReadProjectConfigData>>;
   loadedConfig: PaseoConfigRaw | null;
   loadedRevision: PaseoConfigRevision | null;
@@ -349,6 +379,7 @@ interface RenderContentInput {
 }
 
 function renderContent({
+  worktreeLocationProps,
   readQuery,
   loadedConfig,
   loadedRevision,
@@ -399,6 +430,7 @@ function renderContent({
   return (
     <ProjectConfigForm
       key={formKey}
+      worktreeLocation={worktreeLocationProps}
       baseConfig={loadedConfig}
       revision={loadedRevision}
       hasUncommittedWorktreeSetupChanges={hasUncommittedWorktreeSetupChanges}
@@ -480,6 +512,7 @@ function errorToDetail(error: unknown): string | null {
 }
 
 interface ProjectConfigFormProps {
+  worktreeLocation: WorktreeLocationSectionProps | null;
   baseConfig: PaseoConfigRaw;
   revision: PaseoConfigRevision | null;
   hasUncommittedWorktreeSetupChanges: boolean;
@@ -490,6 +523,7 @@ interface ProjectConfigFormProps {
 }
 
 function ProjectConfigForm({
+  worktreeLocation,
   baseConfig,
   revision,
   hasUncommittedWorktreeSetupChanges,
@@ -697,6 +731,8 @@ function ProjectConfigForm({
 
   return (
     <View>
+      {worktreeLocation ? <WorktreeLocationSection {...worktreeLocation} /> : null}
+
       <SettingsGroup
         title={t("settings.project.worktree.title")}
         info={t("settings.project.worktree.info")}

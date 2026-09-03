@@ -17,7 +17,11 @@ import {
   UnsupportedForgeCheckoutTargetError,
   type WorktreeCreationIntent,
 } from "./resolve-worktree-creation-intent.js";
-import type { ChangeRequestCheckoutSource, FirstAgentContext } from "@getpaseo/protocol/messages";
+import type {
+  ChangeRequestCheckoutSource,
+  FirstAgentContext,
+  WorktreeLocation,
+} from "@getpaseo/protocol/messages";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import { runGitCommand, runWithGitCommandPriority } from "../utils/run-git-command.js";
 
@@ -32,6 +36,13 @@ export interface CreateWorktreeCoreInput {
   firstAgentContext?: FirstAgentContext;
   paseoHome?: string;
   worktreesRoot?: string;
+  runSetup?: boolean;
+  /**
+   * Resolves where this project cuts worktrees. Injected rather than looked up
+   * by each caller because some entry points (MCP create_agent, for one) only
+   * have a cwd and no projectId.
+   */
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
 }
 
 export interface CreateWorktreeCoreDeps {
@@ -49,6 +60,8 @@ export interface CreateWorktreeCoreResult {
   intent: WorktreeCreationIntent;
   repoRoot: string;
   created: boolean;
+  /** The location actually used. Null means managed. */
+  location?: WorktreeLocation | null;
 }
 
 export async function createWorktreeCore(
@@ -127,11 +140,13 @@ async function createWorktreeCoreWithPriority(
     }
   }
 
+  const location = (await input.resolveWorktreeLocation?.(repoRoot)) ?? null;
   const defaultPath = await resolveDefaultWorktreePath({
     cwd: repoRoot,
     paseoHome: input.paseoHome,
     worktreesRoot: input.worktreesRoot,
     worktreeSlug: normalizedSlug,
+    location,
   });
   const { stdout: sourceRoot } = await runGitCommand(["rev-parse", "--show-toplevel"], {
     cwd: input.cwd,
@@ -155,12 +170,18 @@ async function createWorktreeCoreWithPriority(
       worktreeSlug: normalizedSlug,
       worktreePath: transformed.path,
       source: intent,
+      runSetup: input.runSetup ?? true,
       paseoHome: input.paseoHome,
       worktreesRoot: input.worktreesRoot,
+      location,
     }),
     intent,
     repoRoot,
     created: true,
+    // Returned so downstream records placement from the mode that was actually
+    // used, rather than re-deriving it from the resulting path — a custom root
+    // can sit anywhere, and path shape cannot tell intent from coincidence.
+    location,
   };
 }
 
