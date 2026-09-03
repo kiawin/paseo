@@ -1,7 +1,12 @@
 import { getPaseoToolActionLabel } from "@getpaseo/protocol/paseo-tool-presentation/index";
 import { isTurnTrigger } from "@/agent-stream/turn-membership";
 
-import { describeToolCall, type GroupableItem, type ToolCallRun } from "../grouping";
+import {
+  describeToolCall,
+  type GroupableItem,
+  type ToolCallDescriptor,
+  type ToolCallRun,
+} from "../grouping";
 
 const DIRECT_SEARCH_TOOL_SUFFIX_PATTERN = /(?:^|[_.:/])(?:web_search|llm_context)$/;
 
@@ -20,6 +25,17 @@ export interface OverviewToolCallGroup {
   run: ToolCallRun;
   summary: OverviewSummary;
   isLoading: boolean;
+  /**
+   * True when any call in the run failed. The group hides its calls, so without this a failure
+   * inside it is invisible. `canceled` is excluded: it carries no error, so there is nothing to
+   * go looking for.
+   */
+  hasFailure: boolean;
+}
+
+/** A non-zero shell exit never reaches `status`, so the group has to look at the detail. */
+function hasNonZeroExit(detail: ToolCallDescriptor["detail"]): boolean {
+  return detail.type === "shell" && typeof detail.exitCode === "number" && detail.exitCode !== 0;
 }
 
 function isSearchCall(name: string): boolean {
@@ -72,15 +88,22 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
 }
 
 export function buildOverviewGroup(run: ToolCallRun): OverviewToolCallGroup {
+  const summary = summarizeToolCalls(run.calls);
   const isLoading = run.calls.some((call) => {
     if (call.kind === "thought") return call.status !== "ready";
     const status = describeToolCall(call).status;
     return status === "running" || status === "executing";
   });
+  const hasFailure = run.calls.some((call) => {
+    if (call.kind !== "tool_call") return false;
+    const descriptor = describeToolCall(call);
+    return descriptor.status === "failed" || hasNonZeroExit(descriptor.detail);
+  });
   return {
     mode: "overview",
     run,
     isLoading,
-    summary: summarizeToolCalls(run.calls),
+    hasFailure,
+    summary,
   };
 }
