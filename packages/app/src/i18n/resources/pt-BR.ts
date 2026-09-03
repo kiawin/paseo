@@ -2157,6 +2157,11 @@ export const ptBR: TranslationResources = {
     empty: "Nenhum detalhe adicional disponível",
     input: "Entrada",
     output: "Saída",
+    clickToExpand: "Clique para expandir",
+    inLabel: "ENT",
+    outLabel: "SAÍ",
+    copyCommand: "Copiar comando",
+    copyOutput: "Copiar saída",
   },
   turnSummary: {
     details: "Ver detalhes do turno",
@@ -2543,6 +2548,15 @@ export const ptBR: TranslationResources = {
           full: "Completo",
           collapseToolCalls: "Recolher chamadas de ferramentas",
           collapseTurns: "Recolher turnos",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "Estilo da transcrição",
+        description: "Como um turno concluído é organizado",
+        accessibilityLabel: "Selecionar estilo da transcrição ({{value}})",
+        options: {
+          cards: "Cartões",
+          trace: "Rastro",
         },
       },
       language: {
