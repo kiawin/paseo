@@ -1,3 +1,5 @@
+import { resolve as resolvePath } from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import { withWorkspaceBackingDirectory, workspaceBackingPath } from "./backing-directory.js";
@@ -82,7 +84,7 @@ describe("workspaceBackingPath", () => {
         worktreeRoot: "/repo-worktrees/feat-x",
         cwd: "/repo-worktrees/feat-x/packages/app",
       }),
-    ).toBe("/repo-worktrees/feat-x");
+    ).toBe(resolvePath("/repo-worktrees/feat-x"));
   });
 
   test("falls back to the cwd when Paseo does not own the worktree", () => {
@@ -92,13 +94,13 @@ describe("workspaceBackingPath", () => {
         worktreeRoot: "/somewhere/else",
         cwd: "/repo",
       }),
-    ).toBe("/repo");
+    ).toBe(resolvePath("/repo"));
   });
 
   test("falls back to the cwd when an owned record has no worktree root", () => {
     expect(
       workspaceBackingPath({ isPaseoOwnedWorktree: true, worktreeRoot: null, cwd: "/repo" }),
-    ).toBe("/repo");
+    ).toBe(resolvePath("/repo"));
   });
 });
 

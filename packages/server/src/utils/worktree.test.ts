@@ -473,8 +473,12 @@ describe("resolveWorktreeHolderDir", () => {
   // This is what the resolve() in the sibling branch is actually for: without
   // it a relative repoRoot yields a relative holder, and the worktree lands
   // wherever the daemon's cwd happens to be.
-  it("sibling absolutises a relative repo root", async () => {
+  it("sibling absolutises a relative repo root", async (ctx) => {
     const relativeRepoRoot = relative(process.cwd(), repoDir);
+    // A relative form only exists when the repo shares a drive with the daemon's
+    // cwd. Windows CI puts the temp dir on another drive, where `relative` hands
+    // back an absolute path and there is nothing to absolutise.
+    if (isAbsolute(relativeRepoRoot)) ctx.skip();
     expect(isAbsolute(relativeRepoRoot)).toBe(false);
 
     await expect(
@@ -822,10 +826,15 @@ describe("creating and listing worktrees per location mode", () => {
     const location: WorktreeLocation = { mode: "sibling" };
     const created = await create("listed", "listed-branch", location);
 
+    // Compared through the realpath-aware matcher rather than by string: on
+    // Windows the temp path git reports differs from the one we built by 8.3
+    // short names and separators.
+    const matchesCreated = createRealpathAwarePathMatcher(created.worktreePath);
+
     const listed = await listPaseoWorktrees({ cwd: repoDir, paseoHome, location });
-    expect(listed.map((entry) => entry.path)).toContain(created.worktreePath);
+    expect(listed.some((entry) => matchesCreated(entry.path))).toBe(true);
 
     const listedAsManaged = await listPaseoWorktrees({ cwd: repoDir, paseoHome });
-    expect(listedAsManaged.map((entry) => entry.path)).not.toContain(created.worktreePath);
+    expect(listedAsManaged.some((entry) => matchesCreated(entry.path))).toBe(false);
   });
 });
