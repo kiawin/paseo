@@ -3,8 +3,11 @@ import { z } from "zod";
 import {
   AgentSnapshotPayloadSchema,
   AgentTimelineItemPayloadSchema,
+  ArchiveWorkspaceRequestSchema,
   ServerInfoStatusPayloadSchema,
   SessionOutboundMessageSchema,
+  WorkspaceProjectDescriptorPayloadSchema,
+  WorktreeLocationSchema,
   WSHelloMessageSchema,
 } from "./messages.js";
 
@@ -266,6 +269,131 @@ describe("wire schema compatibility", () => {
     expect(parsed.capabilities.supportsRewindConversation).toBe(false);
     expect(parsed.capabilities.supportsRewindFiles).toBe(false);
     expect(parsed.capabilities.supportsRewindBoth).toBe(false);
+  });
+
+  // COMPAT(projectWorktreeLocation): added in v0.8.0, remove after 2027-09-02.
+  test("archive request from an old client omits removeWorktreeDirectory", () => {
+    const legacy = ArchiveWorkspaceRequestSchema.parse({
+      type: "archive_workspace_request",
+      workspaceId: "ws-1",
+      requestId: "req-1",
+    });
+
+    // Absence must read as "leave the directory". A worktree cut outside
+    // Paseo's managed root is only removed when a client explicitly asks, so
+    // an old client that cannot ask gets the non-destructive path.
+    expect(legacy.removeWorktreeDirectory).toBeUndefined();
+
+    const explicit = ArchiveWorkspaceRequestSchema.parse({
+      type: "archive_workspace_request",
+      workspaceId: "ws-1",
+      requestId: "req-1",
+      removeWorktreeDirectory: true,
+    });
+    expect(explicit.removeWorktreeDirectory).toBe(true);
+  });
+
+  test("project descriptor parses with and without a worktree location", () => {
+    const base = {
+      projectId: "p-1",
+      projectDisplayName: "repo",
+      projectRootPath: "/home/u/repo",
+      projectKind: "git" as const,
+    };
+
+    const legacy = WorkspaceProjectDescriptorPayloadSchema.parse(base);
+    expect(legacy.projectWorktreeLocation).toBeUndefined();
+
+    for (const mode of ["managed", "sibling", "nested"] as const) {
+      const parsed = WorkspaceProjectDescriptorPayloadSchema.parse({
+        ...base,
+        projectWorktreeLocation: { mode },
+      });
+      expect(parsed.projectWorktreeLocation).toEqual({ mode });
+    }
+
+    const custom = WorkspaceProjectDescriptorPayloadSchema.parse({
+      ...base,
+      projectWorktreeLocation: { mode: "custom", root: "/home/u/worktrees" },
+    });
+    expect(custom.projectWorktreeLocation).toEqual({
+      mode: "custom",
+      root: "/home/u/worktrees",
+    });
+
+    // A daemon that predates the field sends null rather than omitting it.
+    const nulled = WorkspaceProjectDescriptorPayloadSchema.parse({
+      ...base,
+      projectWorktreeLocation: null,
+    });
+    expect(nulled.projectWorktreeLocation).toBeNull();
+  });
+
+  test("custom worktree location requires a non-empty root", () => {
+    expect(() => WorktreeLocationSchema.parse({ mode: "custom" })).toThrow();
+    expect(() => WorktreeLocationSchema.parse({ mode: "custom", root: "" })).toThrow();
+    expect(() => WorktreeLocationSchema.parse({ mode: "elsewhere" })).toThrow();
+  });
+
+  test("the worktree-location feature flag is optional in both directions", () => {
+    const advertised = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "srv-1",
+      hostname: "host",
+      version: "0.8.0",
+      features: { projectWorktreeLocation: true },
+    });
+    expect(advertised.features?.projectWorktreeLocation).toBe(true);
+
+    // An old daemon does not advertise it, so the client must read undefined
+    // and gate the feature off rather than assuming support.
+    const oldDaemon = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "srv-1",
+      hostname: "host",
+      version: "0.7.0",
+      features: {},
+    });
+    expect(oldDaemon.features?.projectWorktreeLocation).toBeUndefined();
+
+    // An old client's schema predates the key entirely: parsing a new daemon's
+    // payload must drop it rather than throw.
+    const LegacyServerInfoSchema = z.object({
+      status: z.literal("server_info"),
+      serverId: z.string(),
+      hostname: z.string(),
+      version: z.string(),
+      features: z.object({ providersSnapshot: z.boolean().optional() }).optional(),
+    });
+    const viaLegacy = LegacyServerInfoSchema.parse({
+      status: "server_info",
+      serverId: "srv-1",
+      hostname: "host",
+      version: "0.8.0",
+      features: { providersSnapshot: true, projectWorktreeLocation: true },
+    });
+    expect(viaLegacy.features).toEqual({ providersSnapshot: true });
+  });
+
+  // Guards the rollout hazard recorded in the plan: zod strips unknown keys, so
+  // a daemon predating a persisted field erases it on any re-parse. Deletion
+  // policy must therefore never rely on a persisted field alone.
+  test("zod strips unknown keys on re-parse", () => {
+    const LegacyRecordSchema = z.object({
+      workspaceId: z.string(),
+      worktreeRoot: z.string().nullable().default(null),
+    });
+
+    const fromNewDaemon = {
+      workspaceId: "ws-1",
+      worktreeRoot: "/home/u/repo-worktrees/feat-x",
+      worktreePlacement: "git-validated",
+    };
+
+    expect(LegacyRecordSchema.parse(fromNewDaemon)).toEqual({
+      workspaceId: "ws-1",
+      worktreeRoot: "/home/u/repo-worktrees/feat-x",
+    });
   });
 
   test("notification timeline items parse their level and message", () => {
