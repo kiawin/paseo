@@ -620,7 +620,11 @@ function buildCycleQueue(turnId: string, cycle: number): CycleEvent[] {
 
   const shellDetail: ToolCallDetail = {
     type: "shell",
-    command: "node scripts/simulate-stream-burst.mjs",
+    // Wide on purpose: the chat transcript renders a shell call's IN and OUT in one horizontal
+    // scroller, and a command narrower than the card never exercises that. Keep it past ~120
+    // columns so the overflow assertion in chat-trace-style.spec.ts stays meaningful.
+    command:
+      "node scripts/simulate-stream-burst.mjs --ticks=48 --drag-window=250 --report=/tmp/paseo-mock-load/burst-report.json --verbose",
     cwd: "/tmp/paseo-mock-load",
     output:
       "[burst] tick 1 userIsAtBottom=true\n[burst] tick 2 userIsAtBottom=true\n[burst] drag-start isDragging=true\n[burst] tick 3 suppressed\n[burst] drag-end isDragging=false\n",

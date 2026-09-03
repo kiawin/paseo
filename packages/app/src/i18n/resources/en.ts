@@ -1932,6 +1932,11 @@ export const en = {
     subAgentActivity: "Sub-agent activity",
     input: "Input",
     output: "Output",
+    clickToExpand: "Click to expand",
+    inLabel: "IN",
+    outLabel: "OUT",
+    copyCommand: "Copy command",
+    copyOutput: "Copy output",
   },
   toolCallGroup: {
     editedFiles: {
@@ -2224,6 +2229,15 @@ export const en = {
         options: {
           overview: "Summary",
           detailed: "Full detail",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "Chat transcript style",
+        description: "How a completed turn is laid out",
+        accessibilityLabel: "Select chat transcript style ({{value}})",
+        options: {
+          cards: "Cards",
+          trace: "Trace",
         },
       },
       language: {
