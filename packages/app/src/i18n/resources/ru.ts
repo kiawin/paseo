@@ -421,6 +421,16 @@ export const ru: TranslationResources = {
         unarchiveAction: "Разархивировать",
         restoringTitle: "Восстановление рабочего пространства",
         restoringAction: "Восстановление...",
+        removeWorktreeAction: "Удалить worktree",
+        removeWorktreeInProgress: "Удаление...",
+        removeWorktreeTitle: "Удалить worktree?",
+        removeWorktreeMessage:
+          "Удаляет {{path}} и всё содержимое каталога, включая игнорируемые файлы вроде node_modules и .env. Git откажется удалять каталог, если в нём есть незакоммиченные изменения.",
+        removeWorktreeConfirm: "Удалить",
+        removeWorktreeDone: "Worktree удалён",
+        removeWorktreeRefused: "Git отказался удалить каталог worktree",
+        removeWorktreeTerminal:
+          "Git больше не распознаёт этот каталог, поэтому Paseo не может его удалить. Удалите каталог вручную:",
         unavailableTitle: "Рабочая область недоступна",
         checkFailedTitle: "Не удалось проверить рабочее пространство",
       },
@@ -2681,6 +2691,31 @@ export const ru: TranslationResources = {
         transportFallback: "Хост не ответил.",
         failedTitle: "Не удалось загрузить paseo.json.",
         failedDescription: "Загрузите данные заново, чтобы повторить попытку.",
+      },
+      worktreeLocation: {
+        title: "Расположение worktree",
+        info: "Где Paseo создаёт каталоги worktree для этого проекта",
+        label: "Расположение",
+        description: "Где создаются новые каталоги worktree.",
+        accessibilityLabel: "Расположение worktree, сейчас {{value}}",
+        noMigrationNote:
+          "Изменение настройки не перемещает существующие каталоги worktree. Они остаются на месте; новое расположение используется только для новых каталогов.",
+        modes: {
+          managed: "Управляемое",
+          managedHint: "Собственный каталог Paseo",
+          sibling: "Соседнее",
+          siblingHint: "Рядом с репозиторием",
+          nested: "Вложенное",
+          nestedHint: "Внутри репозитория",
+          custom: "Пользовательское",
+          customHint: "Путь на ваш выбор",
+        },
+        customPathLabel: "Путь",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "Свой каталог для worktree",
+        externalRemovalNote:
+          "После архивирования рабочего пространства его каталог worktree остаётся на диске. Удалите каталог вручную командой git worktree remove.",
+        saveFailed: "Не удалось изменить расположение worktree",
       },
       worktree: {
         title: "Хуки жизненного цикла worktree",

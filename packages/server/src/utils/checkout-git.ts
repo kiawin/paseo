@@ -1052,15 +1052,19 @@ export interface GitWorktreeEntry {
   isBare?: boolean;
 }
 
-/** Check whether a path is under Paseo's worktree root. */
+/**
+ * Check whether a path is under Paseo's worktree base root.
+ *
+ * Always resolves the real base root. The previous no-options branch matched a
+ * literal `.paseo/worktrees` segment instead, which is wrong for any deployment
+ * that sets a PASEO_HOME or a worktrees.root without those segments — it would
+ * report a genuine managed worktree as foreign.
+ */
 export function isPaseoWorktreePath(
   p: string,
   options?: { paseoHome?: string; worktreesRoot?: string },
 ): boolean {
-  if (options?.worktreesRoot || options?.paseoHome) {
-    return isDescendantPath(p, resolvePaseoWorktreesBaseRoot(options));
-  }
-  return /[/\\]\.paseo[/\\]worktrees[/\\]/.test(p);
+  return isDescendantPath(p, resolvePaseoWorktreesBaseRoot(options));
 }
 
 /** True when `child` is strictly inside `parent` (handles both `/` and `\`). */
@@ -1160,11 +1164,11 @@ async function getPaseoWorktreeForCwd(
   cwd: string,
   options: PaseoWorktreeLookupOptions = {},
 ): Promise<PaseoWorktreeForCwd> {
-  // Fast-path reject: non-worktree paths do not need expensive ownership checks.
-  if (!/[\\/]worktrees[\\/]/.test(cwd)) {
-    return { isPaseoOwnedWorktree: false };
-  }
-
+  // No string pre-filter here. The previous one required a literal "worktrees"
+  // path segment, which silently rejected every worktree whose holder does not
+  // contain one — including any deployment that points worktrees.root at, say,
+  // /srv/paseo-wt, and every worktree cut outside the managed root. Cheap
+  // rejection has to come from the ownership check itself, not from the path.
   const ownership = await isPaseoOwnedWorktreeCwd(cwd, {
     paseoHome: options.context?.paseoHome,
     worktreesRoot: options.context?.worktreesRoot,

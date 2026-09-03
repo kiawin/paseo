@@ -418,6 +418,16 @@ export const ar: TranslationResources = {
         unarchiveAction: "إلغاء الأرشفة",
         restoringTitle: "جارٍ استعادة مساحة العمل",
         restoringAction: "جارٍ الاستعادة...",
+        removeWorktreeAction: "إزالة شجرة العمل",
+        removeWorktreeInProgress: "جارٍ الإزالة...",
+        removeWorktreeTitle: "إزالة شجرة العمل؟",
+        removeWorktreeMessage:
+          "يحذف \u2066{{path}}\u2069 وكل ما بداخله، بما في ذلك الملفات المتجاهَلة مثل \u2066node_modules\u2069 و \u2066.env\u2069. سيرفض \u2066Git\u2069 الإزالة إذا كانت هناك تغييرات غير مُلتزَمة.",
+        removeWorktreeConfirm: "إزالة",
+        removeWorktreeDone: "تمت إزالة شجرة العمل",
+        removeWorktreeRefused: "رفض \u2066Git\u2069 إزالة شجرة العمل",
+        removeWorktreeTerminal:
+          "لم يعد \u2066Git\u2069 يتعرف على هذا الدليل، لذا لا يستطيع \u2066Paseo\u2069 إزالته. أزله يدويًا:",
         unavailableTitle: "مساحة العمل غير متاحة",
         checkFailedTitle: "تعذر التحقق من مساحة العمل",
       },
@@ -1286,7 +1296,7 @@ export const ar: TranslationResources = {
         builtInOnly: "يتم عرض البرنامج الخفي لسطح المكتب المدمج فقط هنا",
         running: "جري",
         notRunning: "لا يعمل",
-        pid: "PID{{pid}}",
+        pid: "PID {{pid}}",
       },
       management: {
         title: "إدارة البرنامج الخفي المدمج",
@@ -1421,7 +1431,7 @@ export const ar: TranslationResources = {
     integrations: {
       cli: {
         statusFailed: "غير قادر على التحقق من حالة تثبيت CLI.",
-        installFailed: "غير قادر على تثبيت PaseoCLI.",
+        installFailed: "غير قادر على تثبيت Paseo CLI.",
       },
     },
   },
@@ -2633,6 +2643,31 @@ export const ar: TranslationResources = {
         transportFallback: "المضيف لم يستجب.",
         failedTitle: "تعذر تحميل paseo.json",
         failedDescription: "أعد التحميل للمحاولة مرة أخرى.",
+      },
+      worktreeLocation: {
+        title: "موقع شجرة العمل",
+        info: "أين ينشئ \u2066Paseo\u2069 أشجار العمل لهذا المشروع",
+        label: "الموقع",
+        description: "أين تُنشأ أشجار العمل الجديدة.",
+        accessibilityLabel: "موقع شجرة العمل، حاليًا {{value}}",
+        noMigrationNote:
+          "تغيير هذا لا ينقل أشجار العمل الحالية. تبقى في مكانها؛ الجديدة فقط تستخدم الموقع الجديد.",
+        modes: {
+          managed: "مُدار",
+          managedHint: "دليل \u2066Paseo\u2069 الخاص",
+          sibling: "مجاور",
+          siblingHint: "بجانب المستودع",
+          nested: "متداخل",
+          nestedHint: "داخل المستودع",
+          custom: "مخصص",
+          customHint: "مسار تختاره",
+        },
+        customPathLabel: "المسار",
+        customPathPlaceholder: "~/code/worktrees",
+        customPathAccessibility: "دليل شجرة عمل مخصص",
+        externalRemovalNote:
+          "تترك أرشفة مساحة العمل شجرة العمل على القرص. أزلها يدويًا باستخدام \u2066git worktree remove\u2069.",
+        saveFailed: "تعذر تغيير موقع شجرة العمل",
       },
       worktree: {
         title: "خطافات دورة حياة شجرة العمل",

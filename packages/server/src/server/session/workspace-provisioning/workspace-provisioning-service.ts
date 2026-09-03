@@ -1,3 +1,12 @@
+import {
+  classifyWorktreePlacementByPath,
+  type WorktreePlacement,
+} from "../../worktree/ownership.js";
+import {
+  backingDirectoryExists,
+  withWorkspaceBackingDirectory,
+  workspaceBackingPath,
+} from "../../worktree/backing-directory.js";
 import { basename, resolve } from "node:path";
 import type { Logger } from "pino";
 import {
@@ -46,6 +55,12 @@ export interface CreateWorktreeWorkspaceInput {
   title: string | null;
   expectsInitialAgent?: boolean;
   untrustedSource?: UntrustedWorkspaceSource;
+  /**
+   * Placement derived from the location mode actually used. Falls back to path
+   * shape only for callers that do not know the mode; the path cannot tell a
+   * deliberate custom root under Paseo's base from a genuinely managed one.
+   */
+  worktreePlacement?: WorktreePlacement;
 }
 
 export interface WorkspaceProvisioningService {
@@ -70,18 +85,24 @@ export interface WorkspaceProvisioningService {
   ): Promise<PersistedWorkspaceRecord>;
 }
 
-export type WorkspaceProvisioningErrorCode = "unknown_project" | "archived_project";
+export type WorkspaceProvisioningErrorCode =
+  | "unknown_project"
+  | "archived_project"
+  | "backing_directory_missing";
+
+const PROVISIONING_ERROR_MESSAGES: Record<WorkspaceProvisioningErrorCode, string> = {
+  unknown_project: "Unknown project",
+  archived_project: "Archived project",
+  backing_directory_missing: "Workspace directory was removed before it could be registered",
+};
 
 export class WorkspaceProvisioningError extends Error {
   constructor(
     readonly code: WorkspaceProvisioningErrorCode,
-    projectId: string,
+    /** The project id, or for backing_directory_missing the directory path. */
+    readonly subject: string,
   ) {
-    super(
-      code === "unknown_project"
-        ? `Unknown project: ${projectId}`
-        : `Archived project: ${projectId}`,
-    );
+    super(`${PROVISIONING_ERROR_MESSAGES[code]}: ${subject}`);
     this.name = "WorkspaceProvisioningError";
   }
 }
@@ -94,6 +115,33 @@ export function createWorkspaceProvisioningService(deps: {
   logger: Logger;
 }): WorkspaceProvisioningService {
   const { serverId, workspaceRegistry, projectRegistry, workspaceGitService, logger } = deps;
+
+  /**
+   * Writes a newly built record under the backing directory's lock, so archive
+   * cannot decide the directory is unreferenced and then delete it out from
+   * under this record.
+   *
+   * A Paseo-owned worktree is re-checked for presence inside the lock: if an
+   * archive completed while this creation was still resolving git state, the
+   * directory is already gone and registering the record would leave a live
+   * workspace pointing at nothing. Records Paseo does not own are only ordered,
+   * not re-checked — archive never removes those directories, and a plain
+   * checkout workspace may legitimately be registered for a path git has not
+   * materialised yet.
+   */
+  async function registerWorkspaceRecord(
+    workspace: PersistedWorkspaceRecord,
+    context?: { expectsInitialAgent?: boolean },
+  ): Promise<PersistedWorkspaceRecord> {
+    const backingPath = workspaceBackingPath(workspace);
+    return withWorkspaceBackingDirectory(backingPath, async () => {
+      if (workspace.isPaseoOwnedWorktree && !(await backingDirectoryExists(backingPath))) {
+        throw new WorkspaceProvisioningError("backing_directory_missing", backingPath);
+      }
+      await workspaceRegistry.upsert(workspace, context);
+      return workspace;
+    });
+  }
 
   async function runInImportWorkspace<T>(
     input: ImportWorkspaceInput,
@@ -215,8 +263,7 @@ export function createWorkspaceProvisioningService(deps: {
       createdAt: timestamp,
       updatedAt: timestamp,
     });
-    await workspaceRegistry.upsert(workspace, context);
-    return workspace;
+    return registerWorkspaceRecord(workspace, context);
   }
 
   async function createWorkspaceForWorktree(
@@ -242,16 +289,16 @@ export function createWorkspaceProvisioningService(deps: {
         branch: input.branch,
         baseBranch: input.baseBranch,
         mainRepoRoot: repoRoot,
+        worktreePlacement: input.worktreePlacement ?? classifyWorktreePlacementByPath(worktreeRoot),
       }),
       title: input.title,
       createdAt: timestamp,
       updatedAt: timestamp,
       ...(input.untrustedSource ? { untrustedSource: input.untrustedSource } : {}),
     });
-    await workspaceRegistry.upsert(workspace, {
+    return registerWorkspaceRecord(workspace, {
       expectsInitialAgent: input.expectsInitialAgent,
     });
-    return workspace;
   }
 
   async function resolveSourceProjectForWorktree(input: {
@@ -401,8 +448,9 @@ export function createWorkspaceProvisioningService(deps: {
       }
     }
     if (!next) return workspace;
-    await workspaceRegistry.upsert(next);
-    return next;
+    // Unarchiving makes the record a live reference again, so it takes the same
+    // lock as creation: archive must not be mid-removal of this directory.
+    return registerWorkspaceRecord(next);
   }
 
   async function refreshWorkspaceRecord(

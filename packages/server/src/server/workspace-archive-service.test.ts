@@ -878,3 +878,155 @@ describe("resolveWorkspaceIdAtPath", () => {
     expect(result).toBe("ws-nested");
   });
 });
+
+describe("archiveByScope — worktrees outside the managed root", () => {
+  /** A worktree cut into a shared holder, the way sibling/nested/custom do. */
+  function createExternalWorktree(repoDir: string, slug: string): string {
+    const holder = path.join(path.dirname(repoDir), "repo-worktrees");
+    mkdirSync(holder, { recursive: true });
+    const worktreePath = path.join(holder, slug);
+    execFileSync("git", ["worktree", "add", worktreePath, "-b", `${slug}-branch`], {
+      cwd: repoDir,
+      stdio: "pipe",
+    });
+    return worktreePath;
+  }
+
+  function externalWorkspace(worktreePath: string, repoDir: string): ActiveWorkspaceRef {
+    return {
+      workspaceId: "ws-external",
+      cwd: worktreePath,
+      kind: "worktree",
+      worktreeRoot: worktreePath,
+      isPaseoOwnedWorktree: true,
+      worktreePlacement: "external",
+      mainRepoRoot: repoDir,
+    };
+  }
+
+  // The default. Archive is not a licence to delete a directory people also
+  // keep their own worktrees in.
+  test("leaves the directory on disk when removal was not requested", async () => {
+    const { repoDir } = createGitRepo();
+    const worktreePath = createExternalWorktree(repoDir, "left-alone");
+    const paseoHome = path.join(path.dirname(repoDir), ".paseo");
+    const deps = createArchiveDeps({
+      paseoHome,
+      activeWorkspaces: [externalWorkspace(worktreePath, repoDir)],
+    });
+
+    const result = await archiveByScope(deps, {
+      scope: { kind: "workspace", workspaceId: "ws-external" },
+      requestId: "req-leave",
+    });
+
+    assertArchiveResult(result, {
+      archivedWorkspaceIds: ["ws-external"],
+      removedDirectory: false,
+    });
+    expect(existsSync(worktreePath)).toBe(true);
+  });
+
+  test("removes a clean directory when removal was explicitly requested", async () => {
+    const { repoDir } = createGitRepo();
+    const worktreePath = createExternalWorktree(repoDir, "removed");
+    const paseoHome = path.join(path.dirname(repoDir), ".paseo");
+    const deps = createArchiveDeps({
+      paseoHome,
+      activeWorkspaces: [externalWorkspace(worktreePath, repoDir)],
+    });
+
+    const result = await archiveByScope(deps, {
+      scope: { kind: "workspace", workspaceId: "ws-external" },
+      requestId: "req-remove",
+      removeWorktreeDirectory: true,
+    });
+
+    assertArchiveResult(result, {
+      archivedWorkspaceIds: ["ws-external"],
+      removedDirectory: true,
+    });
+    expect(existsSync(worktreePath)).toBe(false);
+  });
+
+  // The guard the whole design rests on: git refuses, and archive must not fall
+  // back to a recursive delete. Dropping the policy argument fails this.
+  test("keeps uncommitted work when git refuses the requested removal", async () => {
+    const { repoDir } = createGitRepo();
+    const worktreePath = createExternalWorktree(repoDir, "dirty");
+    writeFileSync(path.join(worktreePath, "unsaved.txt"), "work in progress\n");
+    const paseoHome = path.join(path.dirname(repoDir), ".paseo");
+    const deps = createArchiveDeps({
+      paseoHome,
+      activeWorkspaces: [externalWorkspace(worktreePath, repoDir)],
+    });
+
+    const result = await archiveByScope(deps, {
+      scope: { kind: "workspace", workspaceId: "ws-external" },
+      requestId: "req-dirty",
+      removeWorktreeDirectory: true,
+    });
+
+    // The workspace still archives; only the directory survives.
+    assertArchiveResult(result, {
+      archivedWorkspaceIds: ["ws-external"],
+      removedDirectory: false,
+    });
+    expect(existsSync(path.join(worktreePath, "unsaved.txt"))).toBe(true);
+    expect(readFileSync(path.join(worktreePath, "unsaved.txt"), "utf8")).toBe("work in progress\n");
+  });
+
+  // A stale record pointing at a path something else now occupies must not
+  // authorize deleting whatever is there.
+  test("refuses a requested removal when the path is no longer a worktree", async () => {
+    const { repoDir } = createGitRepo();
+    const holder = path.join(path.dirname(repoDir), "repo-worktrees");
+    const strangerPath = path.join(holder, "stranger");
+    mkdirSync(strangerPath, { recursive: true });
+    writeFileSync(path.join(strangerPath, "important.txt"), "not ours\n");
+    const paseoHome = path.join(path.dirname(repoDir), ".paseo");
+    const deps = createArchiveDeps({
+      paseoHome,
+      activeWorkspaces: [externalWorkspace(strangerPath, repoDir)],
+    });
+
+    const result = await archiveByScope(deps, {
+      scope: { kind: "workspace", workspaceId: "ws-external" },
+      requestId: "req-stranger",
+      removeWorktreeDirectory: true,
+    });
+
+    assertArchiveResult(result, {
+      archivedWorkspaceIds: ["ws-external"],
+      removedDirectory: false,
+    });
+    expect(existsSync(path.join(strangerPath, "important.txt"))).toBe(true);
+  });
+
+  // Placement is fixed at creation. A record whose persisted value says managed
+  // but whose path is external must not get the forced recursive delete.
+  test("does not apply managed deletion to a path outside the managed root", async () => {
+    const { repoDir } = createGitRepo();
+    const worktreePath = createExternalWorktree(repoDir, "mislabelled");
+    writeFileSync(path.join(worktreePath, "unsaved.txt"), "work in progress\n");
+    const paseoHome = path.join(path.dirname(repoDir), ".paseo");
+    const deps = createArchiveDeps({
+      paseoHome,
+      activeWorkspaces: [
+        { ...externalWorkspace(worktreePath, repoDir), worktreePlacement: "managed" },
+      ],
+    });
+
+    const result = await archiveByScope(deps, {
+      scope: { kind: "workspace", workspaceId: "ws-external" },
+      requestId: "req-mislabelled",
+      removeWorktreeDirectory: true,
+    });
+
+    assertArchiveResult(result, {
+      archivedWorkspaceIds: ["ws-external"],
+      removedDirectory: false,
+    });
+    expect(existsSync(path.join(worktreePath, "unsaved.txt"))).toBe(true);
+  });
+});
