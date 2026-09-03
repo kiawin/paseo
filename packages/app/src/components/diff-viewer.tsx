@@ -4,6 +4,7 @@ import { View, Text, ScrollView as RNScrollView } from "react-native";
 import { ScrollView as GHScrollView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native-unistyles";
 import type { DiffLine } from "@/utils/tool-call-parsers";
+import { buildChatSplitDiffRows, type ChatSplitDiffRow } from "@/utils/chat-split-diff";
 import { diffLinePrefix } from "@/utils/diff-highlight";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
@@ -18,9 +19,19 @@ interface DiffViewerProps {
   maxHeight?: number;
   emptyLabel?: string;
   fillAvailableHeight?: boolean;
+  /** Render removals and their replacements as two aligned columns. Needs width; see the caller. */
+  split?: boolean;
+  /**
+   * Clip long lines at the edge instead of scrolling them. A preview that has to be scrolled
+   * sideways to be read is not a preview, and on touch the sideways scroller fights the list it
+   * sits in.
+   */
+  clipHorizontally?: boolean;
+  /** Break long lines at the edge so nothing scrolls sideways. */
+  wrap?: boolean;
 }
 
-function DiffLineRow({ line }: { line: DiffLine }) {
+function DiffLineRow({ line, wrap }: { line: DiffLine; wrap: boolean }) {
   const lineContainerStyle = React.useMemo(
     () => [
       styles.line,
@@ -31,17 +42,26 @@ function DiffLineRow({ line }: { line: DiffLine }) {
     ],
     [line.type],
   );
+
+  return (
+    <View style={lineContainerStyle}>
+      <DiffLineBody line={line} wrap={wrap} />
+    </View>
+  );
+}
+
+function DiffLineBody({ line, wrap }: { line: DiffLine; wrap: boolean }) {
+  const baseTextStyle = wrap ? wrapLineTextStyle : styles.lineText;
   const plainLineTextStyle = React.useMemo(
     () => [
-      styles.lineText,
+      baseTextStyle,
       line.type === "header" && styles.headerText,
       line.type === "add" && styles.addText,
       line.type === "remove" && styles.removeText,
       line.type === "context" && styles.contextText,
     ],
-    [line.type],
+    [baseTextStyle, line.type],
   );
-
   const prefixStyle = React.useMemo(
     () => [
       line.type === "add" && styles.addText,
@@ -53,33 +73,61 @@ function DiffLineRow({ line }: { line: DiffLine }) {
 
   if (line.tokens) {
     return (
-      <View style={lineContainerStyle}>
-        <Text style={styles.lineText}>
-          <Text style={prefixStyle}>{diffLinePrefix(line)}</Text>
-          <DiffTokens tokens={line.tokens} />
+      <Text style={baseTextStyle}>
+        <Text style={prefixStyle}>{diffLinePrefix(line)}</Text>
+        <DiffTokens tokens={line.tokens} />
+      </Text>
+    );
+  }
+
+  if (line.segments) {
+    return (
+      <Text style={baseTextStyle}>
+        <Text style={line.type === "add" ? styles.addText : styles.removeText}>
+          {line.content[0]}
         </Text>
+        {line.segments.map((segment) => (
+          <DiffSegment
+            key={`${segment.changed ? "c" : "u"}:${segment.text}`}
+            segment={segment}
+            lineType={line.type}
+          />
+        ))}
+      </Text>
+    );
+  }
+
+  return <Text style={plainLineTextStyle}>{line.content}</Text>;
+}
+
+function SplitDiffCell({ line, wrap }: { line: DiffLine | null; wrap: boolean }) {
+  const cellStyle = React.useMemo(
+    () => [
+      styles.splitCell,
+      line === null && styles.absentCell,
+      line?.type === "add" && styles.addLine,
+      line?.type === "remove" && styles.removeLine,
+      line?.type === "context" && styles.contextLine,
+    ],
+    [line],
+  );
+
+  return <View style={cellStyle}>{line ? <DiffLineBody line={line} wrap={wrap} /> : null}</View>;
+}
+
+function SplitDiffRowView({ row, wrap }: { row: ChatSplitDiffRow; wrap: boolean }) {
+  if (row.kind === "header") {
+    return (
+      <View style={[styles.line, styles.headerLine]}>
+        <DiffLineBody line={row.line} wrap={wrap} />
       </View>
     );
   }
 
   return (
-    <View style={lineContainerStyle}>
-      {line.segments ? (
-        <Text style={styles.lineText}>
-          <Text style={line.type === "add" ? styles.addText : styles.removeText}>
-            {line.content[0]}
-          </Text>
-          {line.segments.map((segment) => (
-            <DiffSegment
-              key={`${segment.changed ? "c" : "u"}:${segment.text}`}
-              segment={segment}
-              lineType={line.type}
-            />
-          ))}
-        </Text>
-      ) : (
-        <Text style={plainLineTextStyle}>{line.content}</Text>
-      )}
+    <View style={styles.splitRow}>
+      <SplitDiffCell line={row.left} wrap={wrap} />
+      <SplitDiffCell line={row.right} wrap={wrap} />
     </View>
   );
 }
@@ -122,6 +170,9 @@ export function DiffViewer({
   maxHeight,
   emptyLabel,
   fillAvailableHeight = false,
+  split = false,
+  clipHorizontally = false,
+  wrap = false,
 }: DiffViewerProps) {
   const { t } = useTranslation();
   const [scrollViewWidth, setScrollViewWidth] = React.useState(0);
@@ -143,13 +194,27 @@ export function DiffViewer({
   const linesContainerStyle = React.useMemo(
     () => [
       styles.linesContainer,
+      wrap && styles.linesContainerWrap,
       scrollViewWidth > 0 && inlineUnistylesStyle({ minWidth: scrollViewWidth }),
     ],
-    [scrollViewWidth],
+    [scrollViewWidth, wrap],
   );
   const keyedDiffLines = React.useMemo(
     () => diffLines.map((line, index) => ({ key: `${index}-${line.type}-${line.content}`, line })),
     [diffLines],
+  );
+  const keyedSplitRows = React.useMemo(
+    () =>
+      split
+        ? buildChatSplitDiffRows(diffLines).map((row, index) => ({
+            key:
+              row.kind === "header"
+                ? `${index}-header-${row.line.content}`
+                : `${index}-pair-${row.left?.content ?? ""}-${row.right?.content ?? ""}`,
+            row,
+          }))
+        : [],
+    [split, diffLines],
   );
   const webVerticalContentStyle = React.useMemo(
     () => [styles.verticalContent, fillAvailableHeight && styles.fillHeight],
@@ -165,24 +230,29 @@ export function DiffViewer({
   }
 
   const lines = (
-    <View style={linesContainerStyle} dataSet={CODE_SURFACE_DATASET}>
-      {keyedDiffLines.map(({ key, line }) => (
-        <DiffLineRow key={key} line={line} />
-      ))}
+    <View style={linesContainerStyle} dataSet={CODE_SURFACE_DATASET} testID="diff-viewer-lines">
+      {split
+        ? keyedSplitRows.map(({ key, row }) => <SplitDiffRowView key={key} row={row} wrap={wrap} />)
+        : keyedDiffLines.map(({ key, line }) => <DiffLineRow key={key} line={line} wrap={wrap} />)}
     </View>
   );
 
-  const horizontalScroll = (
-    <ScrollView
-      horizontal
-      nestedScrollEnabled
-      showsHorizontalScrollIndicator
-      contentContainerStyle={styles.horizontalContent}
-      onLayout={handleInnerLayout}
-    >
-      {lines}
-    </ScrollView>
-  );
+  const horizontalScroll =
+    clipHorizontally || wrap ? (
+      <View style={styles.horizontalClip} onLayout={handleInnerLayout}>
+        {lines}
+      </View>
+    ) : (
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator
+        contentContainerStyle={styles.horizontalContent}
+        onLayout={handleInnerLayout}
+      >
+        {lines}
+      </ScrollView>
+    );
 
   const content = (
     <ScrollView
@@ -215,9 +285,17 @@ const styles = StyleSheet.create((theme) => {
       flexDirection: "column" as const,
       paddingRight: insets.extraRight,
     },
+    horizontalClip: {
+      flexDirection: "column" as const,
+      paddingRight: insets.extraRight,
+      overflow: "hidden" as const,
+    },
     linesContainer: {
       alignSelf: "flex-start",
       padding: insets.padding,
+    },
+    linesContainerWrap: {
+      alignSelf: "stretch",
     },
     line: {
       minWidth: "100%",
@@ -232,6 +310,16 @@ const styles = StyleSheet.create((theme) => {
         ? {
             whiteSpace: "pre",
             overflowWrap: "normal",
+          }
+        : null),
+    },
+    wrapText: {
+      flexShrink: 1,
+      minWidth: 0,
+      ...(isWeb
+        ? {
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
           }
         : null),
     },
@@ -262,6 +350,33 @@ const styles = StyleSheet.create((theme) => {
     contextLine: {
       backgroundColor: theme.colors.surface1,
     },
+    splitRow: {
+      flexDirection: "row" as const,
+      minWidth: "100%",
+    },
+    splitCell: {
+      flex: 1,
+      flexBasis: 0,
+      minWidth: 0,
+      paddingVertical: theme.spacing[1],
+      paddingHorizontal: theme.spacing[1],
+      borderRightWidth: 1,
+      borderRightColor: theme.colors.border,
+      // Diff text is whiteSpace: "pre", so a long line would paint over the other column
+      // instead of stopping at the divider.
+      overflow: "hidden" as const,
+    },
+    // No content on this side of the pair. Web draws the reference's diagonal hatch; other
+    // platforms get a flat muted fill, which reads the same at a glance.
+    absentCell: {
+      backgroundColor: theme.colors.surface2,
+      ...(isWeb
+        ? {
+            backgroundImage:
+              "repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(127,127,127,0.18) 4px, rgba(127,127,127,0.18) 8px)",
+          }
+        : null),
+    },
     contextText: {
       color: theme.colors.foregroundMuted,
     },
@@ -276,3 +391,5 @@ const styles = StyleSheet.create((theme) => {
     },
   };
 });
+
+const wrapLineTextStyle = [styles.lineText, styles.wrapText];
