@@ -4,9 +4,11 @@ import {
   constants as fsConstants,
   existsSync,
   mkdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "fs";
 import { copyFile, rm, stat } from "fs/promises";
 import { join, basename, dirname, isAbsolute, resolve, sep } from "path";
@@ -42,6 +44,7 @@ import { spawnProcess } from "./spawn.js";
 import { resolvePaseoHome } from "../server/paseo-home.js";
 import { createExternalProcessEnv } from "../server/paseo-env.js";
 import { parseGitRevParsePath, resolveGitRevParsePath } from "./git-rev-parse-path.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 import { expandTilde, getRealpathAwareRelativePath, isPathInsideRoot } from "./path.js";
 import { terminateWithTreeKill } from "./tree-kill.js";
 
@@ -214,6 +217,8 @@ export interface CreateWorktreeOptions {
   runSetup: boolean;
   paseoHome?: string;
   worktreesRoot?: string;
+  /** Absent or null means managed, which is the pre-existing layout. */
+  location?: WorktreeLocation | null;
 }
 
 export class BranchAlreadyCheckedOutError extends Error {
@@ -634,10 +639,28 @@ async function inferRepoRootPathFromWorktreePath(worktreePath: string): Promise<
   }
 }
 
+/**
+ * The recursive fallback is only safe inside Paseo's private root. Elsewhere the
+ * holder is a directory people also use, and setup can have produced ignored
+ * files worth more than this cleanup, so the directory is left for the caller's
+ * rollback to report.
+ */
+function cleanUpFailedWorktreeSetup(options: {
+  worktreePath: string;
+  allowRecursiveCleanup?: boolean;
+}): void {
+  if (options.allowRecursiveCleanup === false) {
+    return;
+  }
+  rmSync(options.worktreePath, { recursive: true, force: true });
+}
+
 export async function runWorktreeSetupCommands(options: {
   worktreePath: string;
   branchName: string;
   cleanupOnFailure: boolean;
+  /** Defaults to true. False outside Paseo's private root, where a recursive delete is unsafe. */
+  allowRecursiveCleanup?: boolean;
   repoRootPath?: string;
   runtimeEnv?: WorktreeRuntimeEnv;
   signal?: AbortSignal;
@@ -684,7 +707,7 @@ export async function runWorktreeSetupCommands(options: {
             timeout: 120_000,
           });
         } catch {
-          rmSync(options.worktreePath, { recursive: true, force: true });
+          cleanUpFailedWorktreeSetup(options);
         }
       }
       throw new WorktreeSetupError(
@@ -877,14 +900,172 @@ export async function getPaseoWorktreesRoot(
   return join(baseRoot, projectHash);
 }
 
-export async function computeWorktreePath(
-  cwd: string,
-  slug: string,
-  paseoHome?: string,
-  worktreesRoot?: string,
-): Promise<string> {
-  const projectWorktreesRoot = await getPaseoWorktreesRoot(cwd, paseoHome, worktreesRoot);
-  return join(projectWorktreesRoot, slug);
+/** Why a custom worktree root cannot be used. Mapped to a wire error by callers. */
+export type CustomWorktreeRootRejection =
+  | "relative"
+  | "is_repo_root"
+  | "inside_repo"
+  | "contains_repo"
+  | "inside_managed_root";
+
+export type CustomWorktreeRootResult =
+  | { ok: true; root: string }
+  | { ok: false; rejection: CustomWorktreeRootRejection };
+
+/**
+ * Shape-level validation for a `custom` worktree root. Cross-project collision
+ * needs the project registry and is checked at the RPC boundary instead.
+ *
+ * A root inside the repo is rejected rather than accepted, because `nested`
+ * already expresses that and carries the `.git/info/exclude` write with it. A
+ * root containing the repo is rejected because a slug matching the repo's own
+ * directory name would then resolve to the repo itself.
+ */
+export function resolveCustomWorktreeRoot(
+  root: string,
+  repoRoot: string,
+  options?: WorktreeRootOptions,
+): CustomWorktreeRootResult {
+  const expanded = expandTilde(root.trim());
+  if (!isAbsolute(expanded)) {
+    return { ok: false, rejection: "relative" };
+  }
+
+  const resolvedRoot = resolve(expanded);
+  const resolvedRepoRoot = resolve(repoRoot);
+
+  // A custom root under Paseo's own base root produces the two-segment
+  // <hash>/<slug> shape the placement classifier reads as `managed`, silently
+  // arming the forced recursive delete for a mode whose contract is that the
+  // directory is left alone. Containing the base root is refused for the same
+  // reason in reverse.
+  const managedBaseRoot = resolvePaseoWorktreesBaseRoot(options);
+  if (
+    getRealpathAwareRelativePath(managedBaseRoot, resolvedRoot) !== null ||
+    isPathInsideRoot(resolvedRoot, managedBaseRoot)
+  ) {
+    return { ok: false, rejection: "inside_managed_root" };
+  }
+
+  if (getRealpathAwareRelativePath(resolvedRepoRoot, resolvedRoot) === "") {
+    return { ok: false, rejection: "is_repo_root" };
+  }
+  if (isPathInsideRoot(resolvedRepoRoot, resolvedRoot)) {
+    return { ok: false, rejection: "inside_repo" };
+  }
+  if (isPathInsideRoot(resolvedRoot, resolvedRepoRoot)) {
+    return { ok: false, rejection: "contains_repo" };
+  }
+
+  return { ok: true, root: resolvedRoot };
+}
+
+/** User-facing wording for each shape-level rejection. */
+export function describeCustomWorktreeRootRejection(
+  rejection: CustomWorktreeRootRejection,
+): string {
+  switch (rejection) {
+    case "relative":
+      return "Enter an absolute path.";
+    case "is_repo_root":
+      return "That is the repository itself. Choose a different directory.";
+    case "inside_repo":
+      return "That is inside the repository. Choose Nested instead.";
+    case "contains_repo":
+      return "That directory contains the repository. Choose a different one.";
+    case "inside_managed_root":
+      return "That is inside Paseo's own worktree directory. Choose Managed instead.";
+  }
+}
+
+const NESTED_WORKTREES_EXCLUDE_ENTRY = ".worktrees/";
+
+/**
+ * Keeps a nested holder out of git's untracked listing.
+ *
+ * Writes to the git common dir's info/exclude, never .gitignore: the choice is
+ * machine-local and .gitignore is committed. Resolving the common dir matters —
+ * a bare repo or a linked worktree has no <repoRoot>/.git directory.
+ *
+ * This is a correctness prerequisite, not tidiness. The workspace file watcher
+ * builds its ignore set from `--exclude-standard`, so until the entry exists the
+ * main workspace's recursive watcher descends into an entire second checkout.
+ */
+async function excludeNestedWorktreesFromGit(cwd: string): Promise<void> {
+  try {
+    const commonDir = await getGitCommonDir(cwd);
+    const excludePath = join(commonDir, "info", "exclude");
+    const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+    const alreadyExcluded = existing
+      .split(/\r?\n/)
+      .some((line) => line.trim() === NESTED_WORKTREES_EXCLUDE_ENTRY);
+    if (alreadyExcluded) {
+      return;
+    }
+
+    mkdirSync(dirname(excludePath), { recursive: true });
+    const separator = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
+    writeFileSync(
+      excludePath,
+      `${existing}${separator}${NESTED_WORKTREES_EXCLUDE_ENTRY}\n`,
+      "utf8",
+    );
+  } catch {
+    // Best effort. A missing exclude makes the holder show as untracked and
+    // costs watcher work; it must not block creating the worktree.
+  }
+}
+
+export interface WorktreeHolderDirInput {
+  /** A path inside the repository. Used to derive the repo root when one is not supplied. */
+  cwd: string;
+  /** Absent or null means `managed`. */
+  location?: WorktreeLocation | null;
+  /** Pre-resolved repo root. Supplying it avoids a `git rev-parse`. */
+  repoRoot?: string;
+  paseoHome?: string;
+  worktreesBaseRoot?: string;
+}
+
+/**
+ * The directory that holds worktree slugs for a project. The worktree itself is
+ * this directory plus `/<slug>`.
+ *
+ * `managed` keeps the two-level `<base>/<hash8>/<slug>` layout and delegates to
+ * the pre-existing path builder so it stays byte-identical. The other three
+ * carry a single level and are derived from the repo root.
+ */
+export async function resolveWorktreeHolderDir(input: WorktreeHolderDirInput): Promise<string> {
+  const location: WorktreeLocation = input.location ?? { mode: "managed" };
+
+  if (location.mode === "managed") {
+    return getPaseoWorktreesRoot(input.cwd, input.paseoHome, input.worktreesBaseRoot);
+  }
+
+  const repoRoot = resolve(input.repoRoot ?? (await resolveRepoRootForHolder(input.cwd)));
+
+  if (location.mode === "sibling") {
+    // dirname/basename are taken after resolve() so a trailing separator on the
+    // repo root cannot produce an empty basename and a holder named "-worktrees".
+    return join(dirname(repoRoot), `${basename(repoRoot)}-worktrees`);
+  }
+
+  if (location.mode === "nested") {
+    return join(repoRoot, ".worktrees");
+  }
+
+  const custom = resolveCustomWorktreeRoot(location.root, repoRoot, {
+    ...(input.paseoHome === undefined ? {} : { paseoHome: input.paseoHome }),
+    ...(input.worktreesBaseRoot === undefined ? {} : { worktreesRoot: input.worktreesBaseRoot }),
+  });
+  if (!custom.ok) {
+    throw new Error(`Invalid custom worktree root (${custom.rejection}): ${location.root}`);
+  }
+  return custom.root;
+}
+
+async function resolveRepoRootForHolder(cwd: string): Promise<string> {
+  return resolveRepoRootFromGitCommonDir(await getGitCommonDir(cwd));
 }
 
 export function mapWorkspaceCwdToWorktree(input: {
@@ -1055,12 +1236,22 @@ export async function listPaseoWorktrees({
   cwd,
   paseoHome,
   worktreesRoot,
+  location,
 }: {
   cwd: string;
   paseoHome?: string;
   worktreesRoot?: string;
+  location?: WorktreeLocation | null;
 }): Promise<PaseoWorktreeInfo[]> {
-  const projectWorktreesRoot = await getPaseoWorktreesRoot(cwd, paseoHome, worktreesRoot);
+  // Filtering against the managed root would match nothing for a project whose
+  // worktrees are cut elsewhere, so they would vanish from list RPCs and from
+  // branch and archive selection.
+  const projectWorktreesRoot = await resolveWorktreeHolderDir({
+    cwd,
+    location,
+    paseoHome,
+    worktreesBaseRoot: worktreesRoot,
+  });
   const entries = await readWorktreeList(cwd);
 
   return entries
@@ -1090,6 +1281,62 @@ export async function listRepoWorktrees({ cwd }: { cwd: string }): Promise<Paseo
     );
 }
 
+/**
+ * How a worktree directory may be removed.
+ *
+ * `managed` is the pre-existing behaviour and only safe inside Paseo's private
+ * `<base>/<hash8>/` namespace, where nothing else writes: it forces the git
+ * removal, ignores git's verdict, and finishes with a recursive delete so a
+ * half-completed prior attempt still converges.
+ *
+ * `git-validated` is for worktrees cut into directories people also use. Git's
+ * worktree registry is the authority — it refuses a path that is not a worktree
+ * of this repo, and refuses one holding uncommitted work — and there is no
+ * recursive-delete fallback, so a refusal leaves the directory alone. Git proves
+ * repository membership and cleanliness, not that Paseo created the directory.
+ */
+export type WorktreeDeletionPolicy =
+  | { kind: "managed" }
+  | { kind: "git-validated"; force?: boolean };
+
+export type WorktreeRemovalRefusal =
+  /** Git has disowned the directory. No force level recovers this; only a raw delete would. */
+  | "not_a_worktree"
+  /** Uncommitted or untracked work present. `--force` overrides. */
+  | "dirty"
+  /** Deliberately locked. Needs `remove -f -f` or an unlock, so a single `--force` is not enough. */
+  | "locked"
+  /** Anything else — treated as possibly transient and retried. */
+  | "unknown";
+
+export class WorktreeRemovalRefusedError extends Error {
+  readonly refusal: WorktreeRemovalRefusal;
+  readonly worktreePath: string;
+  /** True only for refusals a single `--force` actually clears. */
+  readonly recoverableWithForce: boolean;
+
+  constructor(input: { refusal: WorktreeRemovalRefusal; worktreePath: string; cause?: unknown }) {
+    super(
+      `Refusing to remove worktree (${input.refusal}): ${input.worktreePath}${
+        input.cause instanceof Error ? `\n${input.cause.message}` : ""
+      }`,
+      input.cause instanceof Error ? { cause: input.cause } : undefined,
+    );
+    this.name = "WorktreeRemovalRefusedError";
+    this.refusal = input.refusal;
+    this.worktreePath = input.worktreePath;
+    this.recoverableWithForce = input.refusal === "dirty";
+  }
+}
+
+export function classifyWorktreeRemovalRefusal(error: unknown): WorktreeRemovalRefusal {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/is not a working tree/i.test(message)) return "not_a_worktree";
+  if (/contains modified or untracked files/i.test(message)) return "dirty";
+  if (/locked working tree/i.test(message)) return "locked";
+  return "unknown";
+}
+
 export interface DeletePaseoWorktreeOptions {
   cwd: string | null;
   worktreePath?: string;
@@ -1098,6 +1345,12 @@ export interface DeletePaseoWorktreeOptions {
   worktreesRoot?: string;
   paseoHome?: string;
   worktreesBaseRoot?: string;
+  /**
+   * Defaults to `managed`, which is the behaviour every existing caller relies
+   * on. Callers holding a worktree outside the managed base root must pass
+   * `git-validated` explicitly.
+   */
+  policy?: WorktreeDeletionPolicy;
 }
 
 export async function deletePaseoWorktree({
@@ -1108,6 +1361,7 @@ export async function deletePaseoWorktree({
   worktreesRoot,
   paseoHome,
   worktreesBaseRoot,
+  policy = { kind: "managed" },
 }: DeletePaseoWorktreeOptions): Promise<void> {
   if (!worktreePath && !worktreeSlug) {
     throw new Error("worktreePath or worktreeSlug is required");
@@ -1151,10 +1405,42 @@ export async function deletePaseoWorktree({
     }
   }
 
+  if (policy.kind === "git-validated") {
+    if (!cwd) {
+      throw new Error("cwd is required to remove a worktree with git validation");
+    }
+    await removeWorktreeWithGit({
+      cwd,
+      worktreePath: resolvedWorktree,
+      force: policy.force === true,
+    });
+  } else {
+    await removeWorktreeManaged({ cwd, worktreePath: resolvedWorktree });
+  }
+
   if (cwd) {
     try {
-      await runGitCommand(["worktree", "remove", resolvedWorktree, "--force"], {
-        cwd,
+      await runGitCommand(["worktree", "prune"], { cwd, timeout: 30_000 });
+    } catch {
+      // not critical; git will prune lazily
+    }
+  }
+}
+
+/**
+ * The pre-existing removal, unchanged. Safe only inside Paseo's private
+ * namespace: git's verdict is ignored and the recursive delete runs regardless,
+ * which is what makes archive idempotent when a previous attempt already took
+ * the admin dir but left the working tree behind.
+ */
+async function removeWorktreeManaged(input: {
+  cwd: string | null;
+  worktreePath: string;
+}): Promise<void> {
+  if (input.cwd) {
+    try {
+      await runGitCommand(["worktree", "remove", input.worktreePath, "--force"], {
+        cwd: input.cwd,
         timeout: 120_000,
       });
     } catch {
@@ -1165,15 +1451,55 @@ export async function deletePaseoWorktree({
     }
   }
 
-  await removeDirectoryWithRetries(resolvedWorktree);
+  await removeDirectoryWithRetries(input.worktreePath);
+}
 
-  if (cwd) {
+/**
+ * Removes the worktree through git and lets git's verdict stand. No recursive
+ * delete: when git refuses, the directory is left on disk and the caller
+ * reports the path.
+ *
+ * The retry ladder is the same one the recursive delete uses, but it only
+ * covers transient failures. A classified refusal is git's considered verdict
+ * about the directory's contents, so retrying cannot change it and the error is
+ * raised immediately.
+ */
+async function removeWorktreeWithGit(input: {
+  cwd: string;
+  worktreePath: string;
+  force: boolean;
+}): Promise<void> {
+  const args = ["worktree", "remove", input.worktreePath];
+  if (input.force) {
+    args.push("--force");
+  }
+
+  let lastError: unknown;
+  for (const delay of REMOVE_RETRY_DELAYS_MS) {
+    if (delay > 0) {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, delay));
+    }
     try {
-      await runGitCommand(["worktree", "prune"], { cwd, timeout: 30_000 });
-    } catch {
-      // not critical; git will prune lazily
+      await runGitCommand(args, { cwd: input.cwd, timeout: 120_000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      const refusal = classifyWorktreeRemovalRefusal(error);
+      if (refusal !== "unknown") {
+        throw new WorktreeRemovalRefusedError({
+          refusal,
+          worktreePath: input.worktreePath,
+          cause: error,
+        });
+      }
     }
   }
+
+  throw new WorktreeRemovalRefusedError({
+    refusal: "unknown",
+    worktreePath: input.worktreePath,
+    cause: lastError,
+  });
 }
 
 export async function rollbackCreatedPaseoWorktree(
@@ -1209,14 +1535,16 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
+/** Backoff for filesystem/git contention: a locked file, a watcher, an open handle. */
+const REMOVE_RETRY_DELAYS_MS = [0, 100, 300, 700, 1500];
+
 async function removeDirectoryWithRetries(path: string): Promise<void> {
   if (!(await pathExists(path))) {
     return;
   }
 
-  const delaysMs = [0, 100, 300, 700, 1500];
   let lastError: unknown = null;
-  for (const delay of delaysMs) {
+  for (const delay of REMOVE_RETRY_DELAYS_MS) {
     if (delay > 0) {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, delay));
     }
@@ -1248,9 +1576,19 @@ export const createWorktree = async ({
   runSetup,
   paseoHome,
   worktreesRoot,
+  location,
 }: CreateWorktreeOptions): Promise<WorktreeConfig> => {
   const sourcePlan = await resolveWorktreeSourcePlan({ cwd, source, desiredSlug: worktreeSlug });
-  let worktreePath = join(await getPaseoWorktreesRoot(cwd, paseoHome, worktreesRoot), worktreeSlug);
+  const holderDir = await resolveWorktreeHolderDir({
+    cwd,
+    location,
+    paseoHome,
+    worktreesBaseRoot: worktreesRoot,
+  });
+  if (location?.mode === "nested") {
+    await excludeNestedWorktreesFromGit(cwd);
+  }
+  let worktreePath = join(holderDir, worktreeSlug);
   mkdirSync(dirname(worktreePath), { recursive: true });
 
   // Also handle worktree path collision
@@ -1298,6 +1636,7 @@ export const createWorktree = async ({
       worktreePath,
       branchName: sourcePlan.branchName,
       cleanupOnFailure: true,
+      allowRecursiveCleanup: (location?.mode ?? "managed") === "managed",
     });
   }
 
