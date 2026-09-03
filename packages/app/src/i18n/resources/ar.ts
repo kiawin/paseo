@@ -1875,6 +1875,11 @@ export const ar: TranslationResources = {
     subAgentActivity: "نشاط الوكيل الفرعي",
     input: "مدخل",
     output: "الإخراج",
+    clickToExpand: "انقر للتوسيع",
+    inLabel: "دخل",
+    outLabel: "خرج",
+    copyCommand: "نسخ الأمر",
+    copyOutput: "نسخ الإخراج",
   },
   toolCallGroup: {
     editedFiles: {
@@ -2072,6 +2077,15 @@ export const ar: TranslationResources = {
         options: {
           overview: "ملخص",
           detailed: "التفاصيل الكاملة",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "نمط سجل المحادثة",
+        description: "كيفية تخطيط الدور المكتمل",
+        accessibilityLabel: "اختر نمط سجل المحادثة ({{value}})",
+        options: {
+          cards: "بطاقات",
+          trace: "تتبّع",
         },
       },
       language: {

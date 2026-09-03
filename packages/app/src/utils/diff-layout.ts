@@ -1,5 +1,6 @@
 import type { ParsedDiffFile } from "@getpaseo/protocol/messages";
 import type { DiffLine } from "@/git/use-diff-query";
+import { pairDiffLines } from "@/utils/diff-pairing";
 
 type ReviewSide = "old" | "new";
 type ReviewableLineType = "add" | "remove" | "context";
@@ -260,55 +261,21 @@ export function buildSplitDiffRows(file: ParsedDiffFile): SplitDiffRow[] {
       lineIndex: headerLine?.lineIndex ?? 0,
     });
 
-    let pendingRemovals: NumberedDiffCell[] = [];
-    let pendingAdditions: NumberedDiffCell[] = [];
+    const pairs = pairDiffLines(
+      hunk.lines.map((numberedLine) => ({
+        type: numberedLine.line.type,
+        oldCell: numberedLine.oldCell,
+        newCell: numberedLine.newCell,
+      })),
+    );
 
-    const flushPendingRows = () => {
-      const pairCount = Math.max(pendingRemovals.length, pendingAdditions.length);
-      for (let index = 0; index < pairCount; index += 1) {
-        const removal = pendingRemovals[index] ?? null;
-        const addition = pendingAdditions[index] ?? null;
-        rows.push({
-          kind: "pair",
-          left: toSplitDisplayLine(removal),
-          right: toSplitDisplayLine(addition),
-        });
-      }
-      pendingRemovals = [];
-      pendingAdditions = [];
-    };
-
-    for (const numberedLine of hunk.lines) {
-      if (numberedLine.line.type === "header") {
-        continue;
-      }
-
-      if (numberedLine.line.type === "remove") {
-        if (numberedLine.oldCell) {
-          pendingRemovals.push(numberedLine.oldCell);
-        }
-        continue;
-      }
-
-      if (numberedLine.line.type === "add") {
-        if (numberedLine.newCell) {
-          pendingAdditions.push(numberedLine.newCell);
-        }
-        continue;
-      }
-
-      flushPendingRows();
-
-      if (numberedLine.line.type === "context") {
-        rows.push({
-          kind: "pair",
-          left: toSplitDisplayLine(numberedLine.oldCell),
-          right: toSplitDisplayLine(numberedLine.newCell),
-        });
-      }
+    for (const pair of pairs) {
+      rows.push({
+        kind: "pair",
+        left: toSplitDisplayLine(pair.left),
+        right: toSplitDisplayLine(pair.right),
+      });
     }
-
-    flushPendingRows();
   }
 
   return rows;
