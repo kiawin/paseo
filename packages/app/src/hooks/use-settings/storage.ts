@@ -58,6 +58,12 @@ export type PullRequestOpenLocation = "main" | "side" | "explorer";
 export type SidebarWorkspaceTrailing = "diff" | "timestamp" | "none";
 /** How much of an agent's work the chat shows between the user's message and the reply. */
 export type ChatDisplay = "full" | "collapseToolCalls" | "collapseTurns";
+export type ToolCallDetailLevel = "overview" | "detailed";
+/**
+ * How a completed turn is laid out. Separate from ToolCallDetailLevel, which decides how much
+ * of the turn survives; this decides how what survives is drawn.
+ */
+export type ChatTranscriptStyle = "cards" | "trace";
 
 const ThemePreferenceSchema = z.enum([
   ...THEME_OPTIONS.map((option) => option.name),
@@ -121,6 +127,8 @@ export interface AppSettings {
   sidebarAgentRows: SidebarAgentRows;
   autoExpandReasoning: boolean;
   chatDisplay: ChatDisplay;
+  toolCallDetailLevel: ToolCallDetailLevel;
+  chatTranscriptStyle: ChatTranscriptStyle;
   chatOutlineEnabled: boolean;
   vimKeybindings: boolean;
   sendShortcut: SendShortcut;
@@ -181,6 +189,8 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sidebarAgentRows: DEFAULT_SIDEBAR_AGENT_ROWS,
   autoExpandReasoning: false,
   chatDisplay: "collapseTurns",
+  toolCallDetailLevel: "detailed",
+  chatTranscriptStyle: "cards",
   chatOutlineEnabled: true,
   vimKeybindings: false,
   sendShortcut: "enter",
@@ -286,7 +296,11 @@ const StoredAppSettingsSchema = z
       .enum(["overview", "detailed"])
       .or(z.literal("concise").transform(() => "overview" as const))
       .optional()
-      .catch(undefined),
+      .catch("detailed"),
+    // No .optional(): with it, an absent key parses to undefined and .catch never runs, so an
+    // upgrading user would get no value at all. Stored blobs are normalized, not merged over
+    // DEFAULT_CLIENT_SETTINGS, so the default has to come from here.
+    chatTranscriptStyle: z.enum(["cards", "trace"]).catch("cards"),
     // COMPAT(compactToolCalls): migrated in v0.1.105, remove after 2027-01-12.
     compactToolCalls: z.boolean().optional().catch(undefined),
     chatOutlineEnabled: z.boolean().catch(true),

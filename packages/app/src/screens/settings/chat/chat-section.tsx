@@ -8,13 +8,29 @@ import {
   SettingsSwitch,
 } from "@/components/settings";
 import { isNative } from "@/constants/platform";
-import { useAppSettings, type ChatDisplay } from "@/hooks/use-settings";
+import { useAppSettings, type AppSettings, type ChatDisplay } from "@/hooks/use-settings";
+
+const TOOL_CALL_DETAIL_LEVELS: readonly AppSettings["toolCallDetailLevel"][] = [
+  "detailed",
+  "overview",
+];
 
 const CHAT_DISPLAYS: readonly ChatDisplay[] = ["full", "collapseToolCalls", "collapseTurns"];
+
+const CHAT_TRANSCRIPT_STYLES: readonly AppSettings["chatTranscriptStyle"][] = ["cards", "trace"];
 
 export function ChatSection() {
   const { t } = useTranslation();
   const { settings, updateSettings } = useAppSettings();
+
+  const toolCallDetailOptions = useMemo(
+    () =>
+      TOOL_CALL_DETAIL_LEVELS.map((value) => ({
+        value,
+        label: t(`settings.general.toolCallDetail.options.${value}`),
+      })),
+    [t],
+  );
 
   const chatDisplayOptions = useMemo(
     () =>
@@ -29,8 +45,27 @@ export function ChatSection() {
     (chatDisplay: ChatDisplay) => void updateSettings({ chatDisplay }),
     [updateSettings],
   );
+  const chatTranscriptStyleOptions = useMemo(
+    () =>
+      CHAT_TRANSCRIPT_STYLES.map((value) => ({
+        value,
+        label: t(`settings.general.chatTranscriptStyle.options.${value}`),
+      })),
+    [t],
+  );
+
+  const changeToolCallDetailLevel = useCallback(
+    (toolCallDetailLevel: AppSettings["toolCallDetailLevel"]) =>
+      void updateSettings({ toolCallDetailLevel }),
+    [updateSettings],
+  );
   const changeAutoExpandReasoning = useCallback(
     (autoExpandReasoning: boolean) => void updateSettings({ autoExpandReasoning }),
+    [updateSettings],
+  );
+  const changeChatTranscriptStyle = useCallback(
+    (chatTranscriptStyle: AppSettings["chatTranscriptStyle"]) =>
+      void updateSettings({ chatTranscriptStyle }),
     [updateSettings],
   );
   const changeChatOutline = useCallback(
@@ -49,11 +84,25 @@ export function ChatSection() {
             onValueChange={changeAutoExpandReasoning}
           />
           <SettingsSelect
+            label={t("settings.general.toolCallDetail.label")}
+            hint={t("settings.general.toolCallDetail.description")}
+            value={settings.toolCallDetailLevel}
+            options={toolCallDetailOptions}
+            onValueChange={changeToolCallDetailLevel}
+          />
+          <SettingsSelect
             label={t("settings.general.chatDisplay.label")}
             hint={t("settings.general.chatDisplay.description")}
             value={settings.chatDisplay}
             options={chatDisplayOptions}
             onValueChange={changeChatDisplay}
+          />
+          <SettingsSelect
+            label={t("settings.general.chatTranscriptStyle.label")}
+            hint={t("settings.general.chatTranscriptStyle.description")}
+            value={settings.chatTranscriptStyle}
+            options={chatTranscriptStyleOptions}
+            onValueChange={changeChatTranscriptStyle}
           />
           {isNative ? null : (
             <SettingsSwitch

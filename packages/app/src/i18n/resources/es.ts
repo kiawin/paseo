@@ -2113,6 +2113,11 @@ export const es: TranslationResources = {
     subAgentActivity: "Actividad de subagente",
     input: "Aporte",
     output: "Producción",
+    clickToExpand: "Clic para ampliar",
+    inLabel: "ENT",
+    outLabel: "SAL",
+    copyCommand: "Copiar comando",
+    copyOutput: "Copiar salida",
   },
   turnSummary: {
     details: "Ver detalles del turno",
@@ -2488,6 +2493,15 @@ export const es: TranslationResources = {
           full: "Completo",
           collapseToolCalls: "Contraer llamadas a herramientas",
           collapseTurns: "Contraer turnos",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "Estilo de la transcripción",
+        description: "Cómo se organiza un turno completado",
+        accessibilityLabel: "Seleccionar estilo de la transcripción ({{value}})",
+        options: {
+          cards: "Tarjetas",
+          trace: "Traza",
         },
       },
       language: {

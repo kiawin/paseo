@@ -1,11 +1,33 @@
-import { lightHighlightColors } from "@getpaseo/highlight";
-
 const testTheme = {
   colorScheme: "light",
   colors: {
-    syntax: lightHighlightColors,
     foreground: "#111111",
     foregroundMuted: "#666666",
+    // Read at import time by styles/syntax-token-styles; the values are irrelevant to tests.
+    syntax: Object.fromEntries(
+      [
+        "keyword",
+        "comment",
+        "string",
+        "number",
+        "literal",
+        "function",
+        "definition",
+        "class",
+        "type",
+        "tag",
+        "attribute",
+        "property",
+        "variable",
+        "operator",
+        "punctuation",
+        "regexp",
+        "escape",
+        "meta",
+        "heading",
+        "link",
+      ].map((name) => [name, "#111111"]),
+    ),
     statusSuccess: "#15803d",
     statusDanger: "#b91c1c",
     statusWarning: "#d97706",
