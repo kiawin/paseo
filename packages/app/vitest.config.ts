@@ -277,6 +277,11 @@ export default defineConfig({
         find: /^react-native-reanimated\/scripts\/validate-worklets-version$/,
         replacement: path.resolve(__dirname, "test-stubs/reanimated-validate-worklets-version.ts"),
       },
+      // The package ships JSX in .js files, which the browser project cannot load.
+      {
+        find: /^expo-clipboard$/,
+        replacement: path.resolve(__dirname, "test-stubs/expo-clipboard.ts"),
+      },
       {
         find: /^expo-clipboard$/,
         replacement: path.resolve(__dirname, "test-stubs/expo-clipboard.ts"),
