@@ -9,6 +9,7 @@ import {
 import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 import { i18n } from "@/i18n/i18next";
+import type { WorktreeRemovalRefusal } from "@getpaseo/protocol/messages";
 
 export interface WorkspaceArchiveTarget {
   serverId: string;
@@ -16,20 +17,31 @@ export interface WorkspaceArchiveTarget {
 }
 
 interface WorkspaceArchiveClient {
-  archiveWorkspace: (workspaceId: string) => Promise<{ error: string | null; canceled?: boolean }>;
+  archiveWorkspace: (
+    workspaceId: string,
+    options?: { removeWorktreeDirectory?: boolean },
+  ) => Promise<ArchiveWorkspaceResponse>;
 }
 
 interface WorkspaceArchiveUndoClient {
   undoWorkspaceArchive: (workspaceId: string) => Promise<void>;
 }
 
-/** `canceled`: an undo stopped the archive on the host before it finished. */
+/** `canceled`: an undo stopped this archive before it finished. */
 export type WorkspaceArchiveOutcome = "archived" | "canceled";
+
+export interface ArchiveWorkspaceResponse {
+  error: string | null;
+  canceled?: boolean;
+  worktreeDirectoryRemoved?: boolean | null;
+  worktreeRemovalRefusal?: WorktreeRemovalRefusal | null;
+}
 
 export interface OptimisticWorkspaceArchive {
   /** The row as it was before the archive hid it, for undo to put back. */
   hidden: WorkspaceDescriptor | null;
   done: Promise<WorkspaceArchiveOutcome>;
+  response: Promise<ArchiveWorkspaceResponse | null>;
 }
 
 interface OptimisticWorkspaceArchiveSnapshot {
@@ -99,49 +111,65 @@ function restoreOptimisticallyHiddenWorkspace(input: {
 async function archiveWorkspaceOrThrow(input: {
   client: WorkspaceArchiveClient;
   workspaceId: string;
-}): Promise<WorkspaceArchiveOutcome> {
-  const payload = await input.client.archiveWorkspace(input.workspaceId);
+  removeWorktreeDirectory?: boolean;
+}): Promise<ArchiveWorkspaceResponse> {
+  const payload = await input.client.archiveWorkspace(
+    input.workspaceId,
+    input.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : undefined,
+  );
   if (payload.canceled) {
-    return "canceled";
+    return payload;
   }
   if (payload.error) {
     throw new Error(payload.error);
   }
-  return "archived";
+  return payload;
 }
 
 /**
- * Hides the row now and archives it on the host. A failed archive puts the row back, and so
- * does a canceled one: an undo from another client stopped it, so the workspace stays.
+ * Hides the row now and archives it on the host. A failed or canceled archive puts the row back.
  */
 export function beginOptimisticWorkspaceArchive(input: {
   client: WorkspaceArchiveClient;
   workspace: WorkspaceArchiveTarget;
+  removeWorktreeDirectory?: boolean;
 }): OptimisticWorkspaceArchive {
   const snapshot = hideWorkspaceOptimistically(input.workspace);
-  const done = (async () => {
+  const operation = (async () => {
     try {
-      const outcome = await archiveWorkspaceOrThrow({
+      const response = await archiveWorkspaceOrThrow({
         client: input.client,
         workspaceId: input.workspace.workspaceId,
+        ...(input.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : {}),
       });
-      if (outcome === "canceled") {
+      if (response.canceled) {
         restoreOptimisticallyHiddenWorkspace({ serverId: input.workspace.serverId, snapshot });
+        return { outcome: "canceled" as const, response };
       }
-      return outcome;
+      return { outcome: "archived" as const, response };
     } catch (error) {
       restoreOptimisticallyHiddenWorkspace({ serverId: input.workspace.serverId, snapshot });
       throw error;
     }
   })();
-  return { hidden: snapshot.workspace, done };
+  return {
+    hidden: snapshot.workspace,
+    done: operation.then(({ outcome }) => outcome),
+    response: operation.then(
+      ({ response }) => response,
+      () => null,
+    ),
+  };
 }
 
 export async function archiveWorkspaceOptimistically(input: {
   client: WorkspaceArchiveClient;
   workspace: WorkspaceArchiveTarget;
-}): Promise<WorkspaceArchiveOutcome> {
-  return beginOptimisticWorkspaceArchive(input).done;
+  removeWorktreeDirectory?: boolean;
+}): Promise<ArchiveWorkspaceResponse | null> {
+  const archive = beginOptimisticWorkspaceArchive(input);
+  const [outcome, response] = await Promise.all([archive.done, archive.response]);
+  return outcome === "canceled" ? null : response;
 }
 
 /**

@@ -1018,11 +1018,48 @@ export const ProjectIconSourceSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("upload"), data: z.string() }),
 ]);
 
+// Where a project's Paseo-managed worktrees are cut. Absent or null means
+// "managed", which is the pre-existing <base>/<hash8>/<slug> layout.
+//
+// This decides where the NEXT worktree is cut and nothing else. Existing
+// worktrees keep their absolute paths, and the deletion policy for a worktree
+// is fixed at creation on its workspace record — never re-derived from the
+// project's current mode, which would let a mode change point the managed
+// (recursive, forced) delete at a shared-namespace path.
+export const WorktreeLocationSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("managed") }),
+  z.object({ mode: z.literal("sibling") }),
+  z.object({ mode: z.literal("nested") }),
+  z.object({ mode: z.literal("custom"), root: z.string().min(1) }),
+]);
+
 export const ProjectRenameRequestSchema = z.object({
   type: z.literal("project.rename.request"),
   projectId: z.string(),
   // Null or empty string clears the override and reverts to the derived name.
   customName: z.string().nullable(),
+  requestId: z.string(),
+});
+
+// COMPAT(projectWorktreeLocation): added in v0.8.0, remove after 2027-09-02.
+export const ProjectWorktreeLocationSetRequestSchema = z.object({
+  type: z.literal("project.worktree.location.set.request"),
+  projectId: z.string(),
+  // Null clears the override and reverts to managed.
+  location: WorktreeLocationSchema.nullable(),
+  requestId: z.string(),
+});
+
+// Removes an archived workspace's worktree directory. Separate from the archive
+// request because by the time removal can be retried the record is already
+// archived, and archive resolves only against active workspaces — so a repeated
+// archive request cannot reach it, and would re-run teardown if it could.
+export const WorkspaceWorktreeRemoveRequestSchema = z.object({
+  type: z.literal("workspace.worktree.remove.request"),
+  workspaceId: z.string(),
+  // Only ever set from an explicit second confirmation by a person. It does not
+  // clear a locked worktree: git needs `remove -f -f` for that, deliberately.
+  force: z.boolean().optional(),
   requestId: z.string(),
 });
 
@@ -2191,6 +2228,42 @@ export const ProjectRenameResponseSchema = z.object({
   payload: ProjectRenameResponsePayloadSchema,
 });
 
+export const ProjectWorktreeLocationSetResponseSchema = z.object({
+  type: z.literal("project.worktree.location.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    projectId: z.string(),
+    accepted: z.boolean(),
+    location: WorktreeLocationSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+/** Why `git worktree remove` declined. Shared by archive and the standalone removal. */
+export const WorktreeRemovalRefusalSchema = z.enum([
+  "not_a_worktree",
+  "dirty",
+  "locked",
+  "unknown",
+]);
+
+export const WorkspaceWorktreeRemoveResponseSchema = z.object({
+  type: z.literal("workspace.worktree.remove.response"),
+  payload: z.object({
+    requestId: z.string(),
+    workspaceId: z.string(),
+    removed: z.boolean(),
+    // The resolved directory, always reported: the workspace record is already
+    // archived, so this response is the only place the path surfaces.
+    worktreePath: z.string().nullable(),
+    // Classified so the client can tell a retryable refusal from a terminal one
+    // and avoid offering a force button that cannot work.
+    refusal: WorktreeRemovalRefusalSchema.nullable(),
+    recoverableWithForce: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
 export const ProjectIconSetResponseSchema = z.object({
   type: z.literal("project.icon.set.response"),
   payload: z.object({
@@ -2258,6 +2331,11 @@ export const WorkspaceRecoveryStateSchema = z.discriminatedUnion("kind", [
     workspaceName: z.string(),
     action: z.string(),
     branch: z.string().nullable(),
+    // COMPAT(projectWorktreeLocation): added in v0.8.0, remove optional after 2027-09-02.
+    // Present only when the worktree sits outside Paseo's managed root, is
+    // still on disk, and archive therefore left it there. Absent means there is
+    // nothing for the client to offer removing.
+    removableWorktreePath: z.string().nullable().optional(),
   }),
   z.object({
     kind: z.literal("unavailable"),
@@ -2791,6 +2869,12 @@ export const ProjectGithubCloneRequestSchema = z.object({
 export const ArchiveWorkspaceRequestSchema = z.object({
   type: z.literal("archive_workspace_request"),
   workspaceId: z.string(),
+  // COMPAT(projectWorktreeLocation): added in v0.8.0, remove optional after 2027-09-02.
+  // Only meaningful for worktrees cut outside Paseo's managed root, which are
+  // left on disk by default. Absent means "leave the directory", so an old
+  // client archiving one of them gets the safe behaviour. Managed worktrees
+  // always remove their directory and ignore this field.
+  removeWorktreeDirectory: z.boolean().optional(),
   requestId: z.string(),
 });
 
@@ -3520,6 +3604,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   CloseItemsRequestMessageSchema,
   UpdateAgentRequestMessageSchema,
   ProjectRenameRequestSchema,
+  ProjectWorktreeLocationSetRequestSchema,
+  WorkspaceWorktreeRemoveRequestSchema,
   ProjectIconSetRequestSchema,
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
@@ -3983,6 +4069,8 @@ export const ServerInfoStatusPayloadSchema = z
         pluginSourceInstallation: z.boolean().optional(),
         // COMPAT(pluginSourceUpdates): added in v0.8.0; remove gate after 2027-03-16 once daemon floor supports reviewed updates.
         pluginSourceUpdates: z.boolean().optional(),
+        // COMPAT(projectWorktreeLocation): added in v0.8.0, remove gate after 2027-09-02.
+        projectWorktreeLocation: z.boolean().optional(),
         // COMPAT(pluginThemes): added in v0.5.0, remove gate after 2027-08-20.
         // A daemon that predates this flag keeps `addTheme` in the server bundle it compiles,
         // so a theme plugin cannot start there at all.
@@ -4620,6 +4708,9 @@ export const WorkspaceProjectDescriptorPayloadSchema = z.object({
   projectIconRevision: z.string().optional(),
   projectRootPath: z.string(),
   projectKind: z.enum(["git", "non_git", "directory"]),
+  // COMPAT(projectWorktreeLocation): added in v0.8.0, remove optional after 2027-09-02.
+  // Absent or null means "managed".
+  projectWorktreeLocation: WorktreeLocationSchema.nullable().optional(),
   // COMPAT(directorySync): sequence of this latest directory projection.
   syncSeq: z.number().int().positive().optional(),
 });
@@ -5013,6 +5104,15 @@ export const ArchiveWorkspaceResponseMessageSchema = z.object({
     error: z.string().nullable(),
     // An undo stopped this archive before it finished; `error` carries the reason.
     canceled: z.boolean().optional(),
+    // COMPAT(archiveWorktreeRemoval): added in v0.8.0, remove optional after 2027-09-06.
+    // Null or absent means no removal was attempted: the client did not ask, or
+    // the workspace has no directory Paseo may delete. A daemon predating this
+    // never removes a directory it was not asked about, so absent reads the same.
+    worktreeDirectoryRemoved: z.boolean().nullable().optional(),
+    // Why git declined, when it did. Only meaningful with
+    // `worktreeDirectoryRemoved` false; null there means the attempt failed
+    // before git had an opinion.
+    worktreeRemovalRefusal: WorktreeRemovalRefusalSchema.nullable().optional(),
   }),
 });
 
@@ -7615,6 +7715,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,
+  ProjectWorktreeLocationSetResponseSchema,
+  WorkspaceWorktreeRemoveResponseSchema,
   ProjectIconSetResponseSchema,
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,
@@ -7991,6 +8093,16 @@ export type DeleteAgentRequestMessage = z.infer<typeof DeleteAgentRequestMessage
 export type UpdateAgentRequestMessage = z.infer<typeof UpdateAgentRequestMessageSchema>;
 export type ProjectIconSource = z.infer<typeof ProjectIconSourceSchema>;
 export type ProjectRenameRequest = z.infer<typeof ProjectRenameRequestSchema>;
+export type WorktreeLocation = z.infer<typeof WorktreeLocationSchema>;
+export type ProjectWorktreeLocationSetRequest = z.infer<
+  typeof ProjectWorktreeLocationSetRequestSchema
+>;
+export type ProjectWorktreeLocationSetResponse = z.infer<
+  typeof ProjectWorktreeLocationSetResponseSchema
+>;
+export type WorktreeRemovalRefusal = z.infer<typeof WorktreeRemovalRefusalSchema>;
+export type WorkspaceWorktreeRemoveRequest = z.infer<typeof WorkspaceWorktreeRemoveRequestSchema>;
+export type WorkspaceWorktreeRemoveResponse = z.infer<typeof WorkspaceWorktreeRemoveResponseSchema>;
 export type ProjectIconSetRequest = z.infer<typeof ProjectIconSetRequestSchema>;
 export type ProjectRemoveRequest = z.infer<typeof ProjectRemoveRequestSchema>;
 export type WorkspaceTitleSetRequest = z.infer<typeof WorkspaceTitleSetRequestSchema>;
@@ -8264,11 +8376,8 @@ export const WSHelloMessageSchema = z.object({
       [CLIENT_CAPS.providerSnapshotReferences]: z.boolean().optional(),
       [CLIENT_CAPS.timelineReplacementInvalidation]: z.boolean().optional(),
       [CLIENT_CAPS.timelineNotifications]: z.boolean().optional(),
-<<<<<<< HEAD
       [CLIENT_CAPS.backgroundAgents]: z.boolean().optional(),
-=======
       [CLIENT_CAPS.artifactToolDetail]: z.boolean().optional(),
->>>>>>> 2a1f1fa3 (feat(artifacts): let an agent publish a document a person can read (#16))
       [CLIENT_CAPS.browserHost]: BrowserAutomationHostCapabilitySchema.optional(),
     })
     .passthrough()
