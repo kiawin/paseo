@@ -383,3 +383,32 @@ export async function installDaemonConnectionGate(
     },
   };
 }
+
+export async function expectWorktreeLocation(page: Page, label: string): Promise<void> {
+  await expect(page.getByTestId("worktree-location-trigger")).toContainText(label);
+}
+
+export async function chooseWorktreeLocation(page: Page, label: string): Promise<void> {
+  await page.getByTestId("worktree-location-trigger").click();
+  await page.getByRole("menuitem", { name: label, exact: true }).click();
+}
+
+export async function expectWorktreeLocationPreview(
+  page: Page,
+  expected: string | RegExp,
+): Promise<void> {
+  await expect(page.getByTestId("worktree-location-preview")).toContainText(expected);
+}
+
+export async function fillCustomWorktreeRoot(page: Page, value: string): Promise<void> {
+  const input = page.getByTestId("worktree-location-custom-input");
+  await input.fill(value);
+  await input.blur();
+}
+
+export async function expectWorktreeLocationError(
+  page: Page,
+  expected: string | RegExp,
+): Promise<void> {
+  await expect(page.getByTestId("worktree-location-error")).toContainText(expected);
+}
