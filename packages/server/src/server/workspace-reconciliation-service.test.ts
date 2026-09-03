@@ -1231,6 +1231,7 @@ describe("WorkspaceReconciliationService", () => {
       worktreeRoot: null,
       baseBranch: null,
       isPaseoOwnedWorktree: false,
+      worktreePlacement: null,
       mainRepoRoot: null,
       metadata: {},
       createdAt: timestamp,

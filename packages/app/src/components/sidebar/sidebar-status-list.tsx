@@ -752,6 +752,19 @@ function StatusWorkspaceRowWithMenu({
   const handleSelectWorkspace = useCallback(() => {
     useSidebarSelectionStore.getState().enter(workspace.workspaceKey);
   }, [workspace.workspaceKey]);
+  const handleDelete = useCallback(() => {
+    if (isArchiving) {
+      return;
+    }
+    archiveController.deleteWithWorktree();
+  }, [archiveController, isArchiving]);
+
+  // The row stays in the menu whatever the workspace is, so a workspace with no
+  // worktree says why instead of offering an action that would only archive.
+  const deleteDisabledReason =
+    workspace.workspaceKind === "worktree"
+      ? undefined
+      : t("sidebar.workspace.actions.deleteUnavailable");
 
   const clipboard = useWorkspaceClipboardActions();
   const handleCopyPath = useCallback(() => {
@@ -802,6 +815,8 @@ function StatusWorkspaceRowWithMenu({
         archivePendingLabel={t("sidebar.workspace.actions.archiving")}
         onSelectWorkspace={handleSelectWorkspace}
         onArchive={handleArchive}
+        onDelete={handleDelete}
+        deleteDisabledReason={deleteDisabledReason}
         onCopyBranchName={workspace.projectKind === "git" ? handleCopyBranchName : undefined}
         onCopyPath={handleCopyPath}
         onRename={rename.begin}
@@ -837,6 +852,8 @@ interface StatusWorkspaceRowInnerProps {
   archivePendingLabel?: string;
   onSelectWorkspace?: () => void;
   onArchive?: () => void;
+  onDelete?: () => void;
+  deleteDisabledReason?: string;
   onCopyBranchName?: () => void;
   onCopyPath?: () => void;
   onRename?: () => void;
@@ -887,6 +904,8 @@ function StatusWorkspaceRowInnerContent({
   archivePendingLabel,
   onSelectWorkspace,
   onArchive,
+  onDelete,
+  deleteDisabledReason,
   onCopyBranchName,
   onCopyPath,
   onRename,
@@ -1003,6 +1022,8 @@ function StatusWorkspaceRowInnerContent({
               onMarkAsUnread={onMarkAsUnread}
               onSelectWorkspace={onSelectWorkspace}
               onArchive={onArchive}
+              onDelete={onDelete}
+              deleteDisabledReason={deleteDisabledReason}
               archiveLabel={archiveLabel}
               archiveStatus={archiveStatus}
               archivePendingLabel={archivePendingLabel}
@@ -1060,6 +1081,8 @@ function StatusWorkspaceRowInnerContent({
                     onMarkAsUnread={onMarkAsUnread}
                     onSelectWorkspace={onSelectWorkspace}
                     onArchive={onArchive}
+                    onDelete={onDelete}
+                    deleteDisabledReason={deleteDisabledReason}
                     archiveLabel={archiveLabel}
                     archiveStatus={archiveStatus}
                     archivePendingLabel={archivePendingLabel}
@@ -1095,6 +1118,8 @@ function StatusWorkspaceActionSlot({
   onMarkAsUnread,
   onSelectWorkspace,
   onArchive,
+  onDelete,
+  deleteDisabledReason,
   archiveLabel,
   archiveStatus,
   archivePendingLabel,
@@ -1117,6 +1142,8 @@ function StatusWorkspaceActionSlot({
   onMarkAsUnread?: () => void;
   onSelectWorkspace?: () => void;
   onArchive?: () => void;
+  onDelete?: () => void;
+  deleteDisabledReason?: string;
   archiveLabel?: string;
   archiveStatus?: "idle" | "pending" | "success";
   archivePendingLabel?: string;
@@ -1152,6 +1179,8 @@ function StatusWorkspaceActionSlot({
             onMarkAsUnread={onMarkAsUnread}
             onSelectWorkspace={onSelectWorkspace}
             onArchive={onArchive}
+            onDelete={onDelete}
+            deleteDisabledReason={deleteDisabledReason}
             archiveLabel={archiveLabel}
             archiveStatus={archiveStatus}
             archivePendingLabel={archivePendingLabel}

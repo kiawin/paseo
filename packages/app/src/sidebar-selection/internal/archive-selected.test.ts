@@ -31,6 +31,7 @@ function makeEntry(
     pinnedAt: null,
     background: false,
     labels: [],
+    agents: [],
     scripts: [],
     hasRunningScripts: false,
     archiveHasUncommittedChanges: null,
@@ -81,7 +82,7 @@ describe("archiveSelectedWorkspaces", () => {
         );
         return { failures: [], showPartialFailure: () => false };
       },
-      archiveWithoutUndo: async () => "archived",
+      archiveWithoutUndo: async () => ({ error: null }),
       hasActiveUndo: () => false,
       purgeWorkspaceState: vi.fn(),
       redirectActiveWorkspace: (workspace) => {
@@ -125,7 +126,7 @@ describe("archiveSelectedWorkspaces", () => {
         readWorktreeRisk: async () => ({ isDirty: true, aheadOfOrigin: 1 }),
         confirmRiskyBulkArchive,
         archiveWithUndo,
-        archiveWithoutUndo: async () => "archived",
+        archiveWithoutUndo: async () => ({ error: null }),
         hasActiveUndo: () => false,
         purgeWorkspaceState: vi.fn(),
         redirectActiveWorkspace: vi.fn(),

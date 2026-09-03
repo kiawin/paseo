@@ -25,7 +25,11 @@ import {
   type WorktreeCreationIntent,
   worktreeUntrustedSource,
 } from "./resolve-worktree-creation-intent.js";
-import type { ChangeRequestCheckoutSource, FirstAgentContext } from "@getpaseo/protocol/messages";
+import type {
+  ChangeRequestCheckoutSource,
+  FirstAgentContext,
+  WorktreeLocation,
+} from "@getpaseo/protocol/messages";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import { runWithRepositoryRoot } from "../utils/git-repository-discovery.js";
 import { runGitCommand, runWithGitCommandPriority } from "../utils/run-git-command.js";
@@ -44,6 +48,8 @@ export interface CreateWorktreeCoreInput {
   firstAgentContext?: FirstAgentContext;
   paseoHome?: string;
   worktreesRoot?: string;
+  location?: WorktreeLocation | null;
+  resolveWorktreeLocation?: (repoRoot: string) => Promise<WorktreeLocation | null>;
 }
 
 export interface CreateWorktreeCoreDeps {
@@ -80,8 +86,9 @@ async function createWorktreeCoreWithPriority(
   deps: CreateWorktreeCoreDeps,
 ): Promise<CreateWorktreeCoreResult> {
   const repoRoot = await resolveWorktreeRepoRoot(input, deps.workspaceGitService);
+  const location = input.location ?? (await input.resolveWorktreeLocation?.(repoRoot)) ?? null;
   return runWithRepositoryRoot(repoRoot, () =>
-    createWorktreeAtRepositoryRoot(input, deps, repoRoot),
+    createWorktreeAtRepositoryRoot({ ...input, location }, deps, repoRoot),
   );
 }
 
@@ -158,6 +165,7 @@ async function createWorktreeAtRepositoryRoot(
     cwd: repoRoot,
     paseoHome: input.paseoHome,
     worktreesRoot: input.worktreesRoot,
+    location: input.location,
     worktreeSlug: normalizedSlug,
   });
   const { stdout: sourceRoot } = await runGitCommand(["rev-parse", "--show-toplevel"], {
@@ -192,6 +200,7 @@ async function createWorktreeAtRepositoryRoot(
       cwd: repoRoot,
       worktreeSlug: normalizedSlug,
       worktreePath: transformed.path,
+      location: input.location,
       source: intent,
       preparedBranchOff,
       paseoHome: input.paseoHome,

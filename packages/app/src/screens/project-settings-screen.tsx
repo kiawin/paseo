@@ -29,6 +29,7 @@ import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import { SettingsTextAreaCard } from "@/components/settings-textarea";
 import { SettingsGroup } from "@/components/settings/headings/settings-group";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
+import { WorktreeLocationSection } from "./settings/worktree-location-section";
 import type { PageTitleParent } from "@/components/page-layout";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { SettingsDetailHeader } from "@/components/settings";
@@ -304,6 +305,13 @@ function ProjectSettingsBody({
         client={client}
         supportsCustomIcon={supportsCustomIcon}
         snapshot={editSnapshot}
+      />
+
+      <WorktreeLocationSection
+        client={client}
+        projectId={selectedHost.projectId}
+        repoRoot={selectedHost.repoRoot}
+        location={selectedHost.worktreeLocation ?? null}
       />
 
       {renderContent({

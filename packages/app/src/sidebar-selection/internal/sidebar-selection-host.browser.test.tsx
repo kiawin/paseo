@@ -58,6 +58,7 @@ function makeEntry(id: string): SidebarWorkspaceEntry {
     pinnedAt: null,
     background: false,
     labels: [],
+    agents: [],
     scripts: [],
     hasRunningScripts: false,
     archiveHasUncommittedChanges: null,

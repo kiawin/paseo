@@ -134,6 +134,7 @@ import {
 import { resolvePaseoToolPolicy } from "./agent/paseo-tool-policy.js";
 import { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { DaemonConfigBrowserToolsPolicy } from "./browser-tools/policy.js";
+import { resolveProjectWorktreeLocation } from "./worktree/ownership.js";
 import { WorkspaceGitServiceImpl } from "./workspace-git-service.js";
 import { resolveWorkspaceIdForPath } from "./resolve-workspace-id-for-path.js";
 import {
@@ -984,6 +985,8 @@ export async function createPaseoDaemon(
     logger,
     paseoHome: config.paseoHome,
     worktreesRoot: config.worktreesRoot,
+    resolveWorktreeLocation: (repoRoot) =>
+      resolveProjectWorktreeLocation(projectRegistry, repoRoot),
     deps: {
       forgeResolver,
     },
@@ -1199,6 +1202,7 @@ export async function createPaseoDaemon(
         kind: workspace.kind,
         worktreeRoot: workspace.worktreeRoot,
         isPaseoOwnedWorktree: workspace.isPaseoOwnedWorktree,
+        worktreePlacement: workspace.worktreePlacement,
         mainRepoRoot: workspace.mainRepoRoot,
         worktreeManagerPluginId: workspace.worktreeManagerPluginId,
         untrustedSource: workspace.untrustedSource,
@@ -1280,6 +1284,8 @@ export async function createPaseoDaemon(
         lifecycle: pluginRuntime,
         paseoHome: config.paseoHome,
         worktreesRoot: config.worktreesRoot,
+        resolveWorktreeLocation: (repoRoot) =>
+          resolveProjectWorktreeLocation(projectRegistry, repoRoot),
         createPaseoWorktree: async (workflowInput, workflowOptions) => {
           return createRegisteredPaseoWorktree(workflowInput, {
             lifecycle: pluginRuntime,
@@ -1367,7 +1373,7 @@ export async function createPaseoDaemon(
         isCheckoutUntrusted: (checkoutPath) => isCheckoutUntrusted(workspaceRegistry, checkoutPath),
         sessionLogger: logger,
       },
-      { scope: { kind: "workspace", workspaceId }, requestId },
+      { scope: { kind: "workspace", workspaceId }, requestId, removeWorktreeDirectory: true },
     );
   const hubAgentLifecycle = new CreateAgentLifecycleDispatch({
     lifecycle: pluginRuntime,

@@ -463,7 +463,9 @@ export default function contribute(server) {
     const managedPath = managed.workspace!.workspaceDirectory;
     await client.disablePlugin("custom-manager");
 
-    const archived = await client.archiveWorkspace(managed.workspace!.id);
+    const archived = await client.archiveWorkspace(managed.workspace!.id, {
+      removeWorktreeDirectory: true,
+    });
     expect(archived.error).toBeNull();
     await expect(stat(managedPath)).rejects.toMatchObject({ code: "ENOENT" });
 
@@ -478,7 +480,7 @@ export default function contribute(server) {
     expect(git(managedPath, ["branch", "--show-current"])).toBe("survive-disable");
     // Re-enabling the plugin must not route removal of a Git-restored worktree back to the plugin.
     await client.enablePlugin("custom-manager");
-    await client.archiveWorkspace(managed.workspace!.id);
+    await client.archiveWorkspace(managed.workspace!.id, { removeWorktreeDirectory: true });
     await expect(stat(managedPath)).rejects.toMatchObject({ code: "ENOENT" });
 
     const events = (await readFile(eventsFile, "utf8"))
@@ -1213,8 +1215,12 @@ export default function contribute(server) {
 
     // Re-enable the plugin and archive both workspaces: neither should invoke the former manager's remove.
     await client.enablePlugin("owner-tracking-manager");
-    expect((await client.archiveWorkspace(firstWorkspaceId)).error).toBeNull();
-    expect((await client.archiveWorkspace(secondWorkspaceId)).error).toBeNull();
+    expect(
+      (await client.archiveWorkspace(firstWorkspaceId, { removeWorktreeDirectory: true })).error,
+    ).toBeNull();
+    expect(
+      (await client.archiveWorkspace(secondWorkspaceId, { removeWorktreeDirectory: true })).error,
+    ).toBeNull();
     await expect(stat(worktreePath)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(removeCallsFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   } finally {
