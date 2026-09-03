@@ -128,6 +128,25 @@ describe("workspace recovery", () => {
     expect(unarchived).toEqual([workspace.workspaceId]);
   });
 
+  test("exposes an existing external worktree path for explicit removal", async () => {
+    const worktreeRoot = "/repo-worktrees/feature";
+    const workspace = createWorkspace({
+      cwd: `${worktreeRoot}/packages/app`,
+      worktreeRoot,
+      worktreePlacement: "external",
+    });
+    const { service } = createHarness({
+      workspace,
+      directories: [workspace.cwd, worktreeRoot],
+    });
+
+    await expect(service.inspect(workspace.workspaceId)).resolves.toMatchObject({
+      kind: "recoverable",
+      action: "unarchive",
+      removableWorktreePath: worktreeRoot,
+    });
+  });
+
   test("does not offer recovery for a missing non-worktree directory", async () => {
     const workspace = createWorkspace({ kind: "directory", branch: null });
     const { service } = createHarness({ workspace });

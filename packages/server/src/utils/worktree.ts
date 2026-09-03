@@ -52,6 +52,7 @@ import {
 import { terminateWithTreeKill } from "./tree-kill.js";
 import { validateWorktreePath } from "./worktree-path.js";
 import type { PluginWorktreeManagerRuntime } from "../server/plugins/runtime.js";
+import type { WorktreeLocation } from "@getpaseo/protocol/messages";
 
 export { slugify, validateBranchSlug } from "@getpaseo/protocol/branch-slug";
 
@@ -174,6 +175,7 @@ export interface PaseoWorktreeInfo {
   createdAt: string;
   branchName?: string;
   head?: string;
+  isMainWorktree?: boolean;
 }
 
 export interface PaseoWorktreeOwnership {
@@ -248,6 +250,7 @@ export interface CreateWorktreeOptions {
   paseoHome?: string;
   worktreesRoot?: string;
   worktreePath?: string;
+  location?: WorktreeLocation | null;
 }
 
 export class BranchAlreadyCheckedOutError extends Error {
@@ -1222,6 +1225,7 @@ export interface ListPaseoWorktreesOptions {
   cwd: string;
   paseoHome?: string;
   worktreesRoot?: string;
+  location?: WorktreeLocation | null;
 }
 
 export function listPaseoWorktrees(
@@ -1234,8 +1238,14 @@ async function listPaseoWorktreesAtRepositoryRoot({
   cwd,
   paseoHome,
   worktreesRoot,
+  location,
 }: ListPaseoWorktreesOptions): Promise<PaseoWorktreeInfo[]> {
-  const projectWorktreesRoot = await getPaseoWorktreesRoot(cwd, paseoHome, worktreesRoot);
+  const projectWorktreesRoot = await resolveWorktreeHolderDir({
+    cwd,
+    location,
+    paseoHome,
+    worktreesBaseRoot: worktreesRoot,
+  });
   const { entries } = await readGitWorktreeEntries(cwd);
 
   const mainCheckoutPath = await resolveRepoRootFromGitCommonDir(await getGitCommonDir(cwd));
@@ -1253,6 +1263,26 @@ async function listPaseoWorktreesAtRepositoryRoot({
   }
   return worktrees;
 }
+
+/** Every usable repository worktree, including the main checkout and hand-made worktrees. */
+export async function listRepoWorktrees({ cwd }: { cwd: string }): Promise<PaseoWorktreeInfo[]> {
+  const gitWorktrees = await listGitWorktrees({ cwd });
+  const mainPath = await resolveRepoRootFromGitCommonDir(await getGitCommonDir(cwd));
+  return gitWorktrees.map((worktree) => {
+    const result: PaseoWorktreeInfo = {
+      path: worktree.path,
+      createdAt: worktree.createdAt,
+      isMainWorktree: resolve(worktree.path) === resolve(mainPath),
+    };
+    if (worktree.branchName !== null) result.branchName = worktree.branchName;
+    if (worktree.head !== null) result.head = worktree.head;
+    return result;
+  });
+}
+
+export type WorktreeDeletionPolicy =
+  | { kind: "managed" }
+  | { kind: "git-validated"; force?: boolean };
 
 /**
  * Exact normalized paths of all currently registered worktrees for the repo containing `cwd`.
@@ -1283,6 +1313,9 @@ export interface DeletePaseoWorktreeOptions {
   // gone, where the marker proof can no longer be verified. Only pass
   // this when the record was matched against the path by the caller.
   registryProven?: boolean;
+  /** The current create operation returned this path as newly created. */
+  createdByCurrentOperation?: boolean;
+  policy?: WorktreeDeletionPolicy;
   worktreeManagers?: Pick<PluginWorktreeManagerRuntime, "removeWorktree">;
   worktreeManagerPluginId?: string | null;
   removeReason?: "archive" | "rollback";
@@ -1339,6 +1372,13 @@ export function deletePaseoWorktree(options: DeletePaseoWorktreeOptions): Promis
   return options.cwd ? runWithRepositoryRoot(options.cwd, operation) : operation();
 }
 
+function hasCallerOwnershipProof(options: {
+  registryProven?: boolean;
+  createdByCurrentOperation?: boolean;
+}): boolean {
+  return options.registryProven === true || options.createdByCurrentOperation === true;
+}
+
 async function deletePaseoWorktreeAtRepositoryRoot({
   cwd,
   worktreePath,
@@ -1348,6 +1388,8 @@ async function deletePaseoWorktreeAtRepositoryRoot({
   paseoHome,
   worktreesBaseRoot,
   registryProven,
+  createdByCurrentOperation,
+  policy = { kind: "managed" },
   worktreeManagers,
   worktreeManagerPluginId,
   removeReason = "archive",
@@ -1380,7 +1422,7 @@ async function deletePaseoWorktreeAtRepositoryRoot({
   // caller-asserted registry record), not on living under the per-project
   // hashed root: plugin-placed worktrees live anywhere.
   let resolvedWorktree: string;
-  if (registryProven) {
+  if (hasCallerOwnershipProof({ registryProven, createdByCurrentOperation })) {
     resolvedWorktree = await normalizePathForOwnership(requestedPath);
   } else if (ownership.allowed && ownership.worktreePath) {
     resolvedWorktree = ownership.worktreePath;
@@ -1409,6 +1451,14 @@ async function deletePaseoWorktreeAtRepositoryRoot({
     }
   }
 
+  if (policy.kind === "git-validated") {
+    if (!cwd) throw new Error("cwd is required to remove a git-validated worktree");
+    const args = ["worktree", "remove", resolvedWorktree];
+    if (policy.force) args.push("--force");
+    await runGitCommand(args, { cwd, timeout: 120_000 });
+    await pruneWorktreesBestEffort(cwd);
+    return;
+  }
   if (cwd) {
     try {
       await runGitCommand(["worktree", "remove", resolvedWorktree, "--force"], {
@@ -1651,12 +1701,98 @@ async function readLocalBranchTip(cwd: string, branchName: string): Promise<stri
   }
 }
 
+export type CustomWorktreeRootRejection =
+  | "relative"
+  | "is_repo_root"
+  | "inside_repo"
+  | "contains_repo"
+  | "inside_managed_root";
+export type CustomWorktreeRootResult =
+  | { ok: true; root: string }
+  | { ok: false; rejection: CustomWorktreeRootRejection };
+
+export function resolveCustomWorktreeRoot(
+  root: string,
+  repoRoot: string,
+  options?: WorktreeRootOptions,
+): CustomWorktreeRootResult {
+  const expanded = expandTilde(root.trim());
+  if (!isAbsolute(expanded)) return { ok: false, rejection: "relative" };
+  const resolvedRoot = resolve(expanded);
+  const resolvedRepoRoot = resolve(repoRoot);
+  const managedBaseRoot = resolvePaseoWorktreesBaseRoot(options);
+  if (
+    getRealpathAwareRelativePath(managedBaseRoot, resolvedRoot) !== null ||
+    isPathInsideRoot(resolvedRoot, managedBaseRoot)
+  )
+    return { ok: false, rejection: "inside_managed_root" };
+  if (getRealpathAwareRelativePath(resolvedRepoRoot, resolvedRoot) === "") {
+    return { ok: false, rejection: "is_repo_root" };
+  }
+  if (isPathInsideRoot(resolvedRepoRoot, resolvedRoot))
+    return { ok: false, rejection: "inside_repo" };
+  if (isPathInsideRoot(resolvedRoot, resolvedRepoRoot))
+    return { ok: false, rejection: "contains_repo" };
+  return { ok: true, root: resolvedRoot };
+}
+
+export function describeCustomWorktreeRootRejection(
+  rejection: CustomWorktreeRootRejection,
+): string {
+  switch (rejection) {
+    case "relative":
+      return "Enter an absolute path.";
+    case "is_repo_root":
+      return "That is the repository itself. Choose a different directory.";
+    case "inside_repo":
+      return "That is inside the repository. Choose Nested instead.";
+    case "contains_repo":
+      return "That directory contains the repository. Choose a different one.";
+    case "inside_managed_root":
+      return "That is inside Paseo's own worktree directory. Choose Managed instead.";
+  }
+}
+
+export async function resolveWorktreeHolderDir(input: {
+  cwd: string;
+  location?: WorktreeLocation | null;
+  repoRoot?: string;
+  paseoHome?: string;
+  worktreesBaseRoot?: string;
+}): Promise<string> {
+  const location = input.location ?? { mode: "managed" as const };
+  if (location.mode === "managed") {
+    return getPaseoWorktreesRoot(input.cwd, input.paseoHome, input.worktreesBaseRoot);
+  }
+  const repoRoot = resolve(
+    input.repoRoot ?? (await resolveRepoRootFromGitCommonDir(await getGitCommonDir(input.cwd))),
+  );
+  if (location.mode === "sibling")
+    return join(dirname(repoRoot), `${basename(repoRoot)}-worktrees`);
+  if (location.mode === "nested") return join(repoRoot, ".worktrees");
+  const custom = resolveCustomWorktreeRoot(location.root, repoRoot, {
+    ...(input.paseoHome === undefined ? {} : { paseoHome: input.paseoHome }),
+    ...(input.worktreesBaseRoot === undefined ? {} : { worktreesRoot: input.worktreesBaseRoot }),
+  });
+  if (!custom.ok)
+    throw new Error(`Invalid custom worktree root (${custom.rejection}): ${location.root}`);
+  return custom.root;
+}
+
 /** Resolve the default placement once, before presenting it to creation hooks. */
 export async function resolveDefaultWorktreePath(
-  options: Pick<CreateWorktreeOptions, "cwd" | "paseoHome" | "worktreesRoot" | "worktreeSlug">,
+  options: Pick<
+    CreateWorktreeOptions,
+    "cwd" | "paseoHome" | "worktreesRoot" | "worktreeSlug" | "location"
+  >,
 ): Promise<string> {
   const original = join(
-    await getPaseoWorktreesRoot(options.cwd, options.paseoHome, options.worktreesRoot),
+    await resolveWorktreeHolderDir({
+      cwd: options.cwd,
+      location: options.location,
+      paseoHome: options.paseoHome,
+      worktreesBaseRoot: options.worktreesRoot,
+    }),
     options.worktreeSlug,
   );
   let candidate = original;
@@ -1688,6 +1824,7 @@ async function createWorktreeAtRepositoryRoot({
   paseoHome,
   worktreesRoot,
   worktreePath: explicitWorktreePath,
+  location,
 }: CreateWorktreeOptions): Promise<
   Omit<CreatedWorktree, "branchName"> & { branchName: string | null }
 > {
@@ -1711,7 +1848,7 @@ async function createWorktreeAtRepositoryRoot({
   try {
     let worktreePath =
       explicitWorktreePath ??
-      (await resolveDefaultWorktreePath({ cwd, paseoHome, worktreesRoot, worktreeSlug }));
+      (await resolveDefaultWorktreePath({ cwd, paseoHome, worktreesRoot, worktreeSlug, location }));
     await mkdir(dirname(worktreePath), { recursive: true });
 
     // Primitive owner for `git worktree add`; callers route through createWorktreeCore.

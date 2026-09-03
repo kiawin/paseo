@@ -13,7 +13,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { win32 } from "node:path";
-import { tmpdir } from "os";
+import { homedir, tmpdir } from "os";
 import pino from "pino";
 import { base64EncryptedWireByteLength, maxSecuredPlaintextByteLength } from "@getpaseo/relay";
 import {
@@ -4653,12 +4653,23 @@ const x = 1;
   });
 
   describe("isPaseoWorktreePath", () => {
-    it("matches Unix .paseo/worktrees/ paths", () => {
-      expect(isPaseoWorktreePath("/home/user/.paseo/worktrees/feature")).toBe(true);
+    it("matches paths under the configured Paseo home", () => {
+      const testPaseoHome = process.env.PASEO_HOME ?? join(homedir(), ".paseo");
+      expect(
+        isPaseoWorktreePath(join(testPaseoHome, "worktrees", "feature"), {
+          paseoHome: testPaseoHome,
+        }),
+      ).toBe(true);
     });
 
-    it("matches Windows .paseo\\worktrees\\ paths", () => {
-      expect(isPaseoWorktreePath("C:\\Users\\dev\\.paseo\\worktrees\\feature")).toBe(true);
+    it("matches platform-native .paseo\\worktrees\\ paths", () => {
+      const testPaseoHome =
+        process.platform === "win32" ? "C:\\Users\\dev\\.paseo" : "/home/dev/.paseo";
+      const worktreePath =
+        process.platform === "win32"
+          ? "C:\\Users\\dev\\.paseo\\worktrees\\feature"
+          : "/home/dev/.paseo/worktrees/feature";
+      expect(isPaseoWorktreePath(worktreePath, { paseoHome: testPaseoHome })).toBe(true);
     });
 
     it("matches worktrees under a custom PASEO_HOME", () => {

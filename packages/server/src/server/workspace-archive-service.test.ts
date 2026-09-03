@@ -394,7 +394,11 @@ describe("archiveByScope", () => {
           },
         ],
       }),
-      { scope: { kind: "workspace", workspaceId }, requestId: "req-registry-proven-workspace" },
+      {
+        scope: { kind: "workspace", workspaceId },
+        requestId: "req-registry-proven-workspace",
+        removeWorktreeDirectory: true,
+      },
     );
 
     assertArchiveResult(result, { archivedWorkspaceIds: [workspaceId], removedDirectory: true });

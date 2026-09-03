@@ -31,6 +31,7 @@ import { resolveFirstAgentPromptTitle } from "./agent/create-agent-title.js";
 import { buildAgentBranchNameSeed } from "./agent/prompt-attachments.js";
 import type { FirstAgentContext } from "@getpaseo/protocol/messages";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
+import { classifyWorktreePlacementByPath } from "./worktree/ownership.js";
 
 export interface CreatePaseoWorktreeInput extends CreateWorktreeCoreInput {
   workspaceId?: string;
@@ -39,6 +40,7 @@ export interface CreatePaseoWorktreeInput extends CreateWorktreeCoreInput {
   metadata?: Record<string, JsonValue>;
   background?: boolean;
   callerWorkspaceId?: string;
+  prepareWorktree?: (worktreeRoot: string) => Promise<void>;
 }
 
 export interface CreatePaseoWorktreeResult {
@@ -86,6 +88,7 @@ async function createPaseoWorktreeWithPriority(
   const workspaceCwdPlan = await planWorkspaceCwdForWorktree(input.cwd, deps.workspaceGitService);
   const createdWorktree = await createWorktreeCore(input, deps);
   try {
+    await input.prepareWorktree?.(createdWorktree.worktree.worktreePath);
     if (createdWorktree.created) {
       await deps.lifecycle?.wait("worktree.create.after", {
         worktree: {
@@ -117,6 +120,10 @@ async function createPaseoWorktreeWithPriority(
       repoRoot: createdWorktree.repoRoot,
       cwd: workspaceCwd,
       worktreeRoot: createdWorktree.worktree.worktreePath,
+      worktreePlacement: classifyWorktreePlacementByPath(createdWorktree.worktree.worktreePath, {
+        paseoHome: input.paseoHome,
+        worktreesRoot: input.worktreesRoot,
+      }),
       branch: createdWorktree.worktree.branchName || null,
       baseBranch: createdWorktree.worktree.comparisonBaseRef,
       worktreeManagerPluginId: createdWorktree.worktree.worktreeManagerPluginId ?? null,
@@ -145,6 +152,7 @@ async function createPaseoWorktreeWithPriority(
       {
         cwd: createdWorktree.repoRoot,
         worktreePath: createdWorktree.worktree.worktreePath,
+        createdByCurrentOperation: true,
         teardownCwds: [],
         paseoHome: input.paseoHome,
         worktreesBaseRoot: input.worktreesRoot,

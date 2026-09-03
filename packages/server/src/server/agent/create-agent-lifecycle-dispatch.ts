@@ -133,6 +133,7 @@ export class CreateAgentLifecycleDispatch {
     await this.archiveAutoCreatedWorktree({
       agentId: null,
       createdWorktree,
+      removeWorktreeDirectory: true,
     }).catch((archiveError) => {
       this.dependencies.logger.warn(
         {
@@ -179,6 +180,7 @@ export class CreateAgentLifecycleDispatch {
   private async archiveAutoCreatedWorktree(options: {
     agentId: string | null;
     createdWorktree: CreatePaseoWorktreeWorkflowResult;
+    removeWorktreeDirectory?: boolean;
   }): Promise<void> {
     const { createdWorktree } = options;
     const worktreePath = createdWorktree.worktree.worktreePath;
@@ -215,6 +217,7 @@ export class CreateAgentLifecycleDispatch {
       {
         scope: { kind: "workspace", workspaceId: createdWorktree.workspace.workspaceId },
         requestId: randomUUID(),
+        ...(options.removeWorktreeDirectory ? { removeWorktreeDirectory: true } : {}),
       },
     );
 

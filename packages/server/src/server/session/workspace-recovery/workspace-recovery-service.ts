@@ -32,6 +32,7 @@ export type WorkspaceRecoveryState =
       workspaceName: string;
       action: WorkspaceRecoveryAction;
       branch: string | null;
+      removableWorktreePath?: string | null;
     }
   | {
       kind: "unavailable";
@@ -116,7 +117,14 @@ export function createWorkspaceRecoveryService(deps: {
     }
 
     if (await deps.isDirectory(workspace.cwd)) {
-      return createRecoveryPlan({ action: "unarchive", workspace });
+      const removableWorktreePath =
+        workspace.kind === "worktree" &&
+        workspace.worktreePlacement === "external" &&
+        workspace.worktreeRoot &&
+        (await deps.isDirectory(workspace.worktreeRoot))
+          ? workspace.worktreeRoot
+          : undefined;
+      return createRecoveryPlan({ action: "unarchive", workspace, removableWorktreePath });
     }
 
     if (workspace.kind !== "worktree") {
@@ -402,7 +410,11 @@ function parseWorkspaceHead(
 
 function createRecoveryPlan(
   input:
-    | { action: "unarchive"; workspace: PersistedWorkspaceRecord }
+    | {
+        action: "unarchive";
+        workspace: PersistedWorkspaceRecord;
+        removableWorktreePath?: string;
+      }
     | { action: "restore"; workspace: PersistedWorkspaceRecord; sourceRepoRoot: string },
 ): RecoveryPlan {
   const checkout = parseWorkspaceHead(input.workspace);
@@ -411,6 +423,9 @@ function createRecoveryPlan(
     workspaceId: input.workspace.workspaceId,
     workspaceName: resolveWorkspaceDisplayName(input.workspace),
     branch: checkout.kind === "branch" ? checkout.branch : null,
+    ...(input.action === "unarchive" && input.removableWorktreePath
+      ? { removableWorktreePath: input.removableWorktreePath }
+      : {}),
   };
   if (input.action === "restore") {
     return {

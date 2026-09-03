@@ -6825,6 +6825,7 @@ export class Session {
         cwd: workspace.cwd,
         kind: workspace.kind,
         worktreeRoot: workspace.worktreeRoot,
+        worktreePlacement: workspace.worktreePlacement,
         isPaseoOwnedWorktree: workspace.isPaseoOwnedWorktree,
         mainRepoRoot: workspace.mainRepoRoot,
         worktreeManagerPluginId: workspace.worktreeManagerPluginId,
@@ -8425,6 +8426,7 @@ export class Session {
               scope: { kind: "workspace", workspaceId: existing.workspaceId },
               requestId: request.requestId,
               signal,
+              removeWorktreeDirectory: request.removeWorktreeDirectory,
             },
           );
         },

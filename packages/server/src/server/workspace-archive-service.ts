@@ -31,10 +31,17 @@ import {
 } from "./workspace-automation-gate.js";
 import type { PluginWorktreeManagerRuntime } from "./plugins/runtime.js";
 import type { WorkspaceArchiveOperations } from "./workspace-archive-operations.js";
+import { resolveWorktreeDeletionPolicy } from "./worktree/ownership.js";
 
 export type ActiveWorkspaceRef = Pick<
   PersistedWorkspaceRecord,
-  "workspaceId" | "cwd" | "kind" | "worktreeRoot" | "isPaseoOwnedWorktree" | "mainRepoRoot"
+  | "workspaceId"
+  | "cwd"
+  | "kind"
+  | "worktreeRoot"
+  | "isPaseoOwnedWorktree"
+  | "mainRepoRoot"
+  | "worktreePlacement"
 > & {
   worktreeManagerPluginId?: string | null;
   untrustedSource?: PersistedWorkspaceRecord["untrustedSource"];
@@ -97,6 +104,19 @@ export interface ArchiveByScopeRequest {
   // Aborting cancels the archive at its next checkpoint. Removing the worktree directory is the
   // point of no return: once it starts the archive completes.
   signal?: AbortSignal;
+  /** Explicitly remove worktrees created outside Paseo's managed root. */
+  removeWorktreeDirectory?: boolean;
+}
+
+function shouldKeepGitValidatedWorktree(
+  backing: BackingDirectory,
+  removeWorktreeDirectory: boolean | undefined,
+): boolean {
+  return (
+    backing.deletionPolicy.kind === "git-validated" &&
+    removeWorktreeDirectory !== true &&
+    backing.worktreeManagerPluginId === null
+  );
 }
 
 // Cancellation carries the operation stamp even before the workspace record is archived.
@@ -134,6 +154,7 @@ interface BackingDirectory {
   registryProven: boolean;
   mainRepoRoot: string | null;
   paseoWorktreesRoot: string | null;
+  deletionPolicy: import("../utils/worktree.js").WorktreeDeletionPolicy;
   worktreeManagerPluginId: string | null;
   untrustedSource: UntrustedWorkspaceSource | null;
 }
@@ -238,7 +259,11 @@ async function archiveByScopeWithPriority(
       if (target.backing !== null) {
         const removal = await maybeRemoveDirectory(
           dependencies,
-          { requestId: request.requestId, checkpoint },
+          {
+            requestId: request.requestId,
+            checkpoint,
+            removeWorktreeDirectory: request.removeWorktreeDirectory,
+          },
           target,
           archivedWorkspaceIds,
         );
@@ -434,18 +459,28 @@ async function resolveWorkspaceBackingDirectory(
       registryProven: false,
       mainRepoRoot: workspace.mainRepoRoot ?? null,
       paseoWorktreesRoot: null,
+      deletionPolicy: { kind: "managed" },
       worktreeManagerPluginId,
       untrustedSource,
     };
   }
   if (workspace.isPaseoOwnedWorktree && workspace.worktreeRoot && workspace.mainRepoRoot) {
+    const deletionPolicy = resolveWorktreeDeletionPolicy({
+      workspace,
+      options: {
+        paseoHome: dependencies.paseoHome,
+        worktreesRoot: dependencies.paseoWorktreesBaseRoot,
+      },
+    });
     return {
       path: resolve(workspace.worktreeRoot),
       isPaseoOwnedWorktree: true,
       expectsPaseoOwnership: true,
       registryProven: true,
       mainRepoRoot: workspace.mainRepoRoot,
-      paseoWorktreesRoot: null,
+      paseoWorktreesRoot:
+        deletionPolicy.kind === "managed" ? null : resolve(workspace.worktreeRoot, ".."),
+      deletionPolicy,
       worktreeManagerPluginId,
       untrustedSource,
     };
@@ -458,6 +493,7 @@ async function resolveWorkspaceBackingDirectory(
       registryProven: false,
       mainRepoRoot: workspace.mainRepoRoot ?? null,
       paseoWorktreesRoot: null,
+      deletionPolicy: { kind: "managed" },
       worktreeManagerPluginId,
       untrustedSource,
     };
@@ -493,6 +529,7 @@ async function resolveBackingDirectory(
     registryProven: false,
     mainRepoRoot: ownership.repoRoot ?? null,
     paseoWorktreesRoot: ownership.worktreeRoot ?? null,
+    deletionPolicy: { kind: "managed" },
     worktreeManagerPluginId: null,
     untrustedSource: null,
   };
@@ -546,7 +583,11 @@ async function archiveTargetRecords(
 
 async function maybeRemoveDirectory(
   dependencies: ArchiveDependencies,
-  request: { requestId: string; checkpoint: () => void },
+  request: {
+    requestId: string;
+    checkpoint: () => void;
+    removeWorktreeDirectory?: boolean;
+  },
   target: ArchiveTarget,
   archivedWorkspaceIds: string[],
 ): Promise<{
@@ -572,7 +613,6 @@ async function maybeRemoveDirectory(
     }
     return { removedDirectory: false };
   }
-
   const archivedWorkspaceIdSet = new Set(archivedWorkspaceIds);
   const teardownTargets = target.teardownTargets.filter((teardownTarget) =>
     archivedWorkspaceIdSet.has(teardownTarget.workspaceId),
@@ -618,6 +658,13 @@ async function maybeRemoveDirectory(
     return { removedDirectory: false };
   }
 
+  // Teardown can block while a user undoes the archive. Check cancellation
+  // before an external worktree's keep-on-disk policy returns.
+  request.checkpoint();
+
+  if (shouldKeepGitValidatedWorktree(backing, request.removeWorktreeDirectory))
+    return { removedDirectory: false };
+
   // Last chance to keep the directory. Teardown commands already ran, so a cancel here restores
   // a workspace whose teardown hooks fired; that beats deleting what the user asked to keep.
   request.checkpoint();
@@ -630,6 +677,7 @@ async function maybeRemoveDirectory(
       paseoHome: dependencies.paseoHome,
       worktreesBaseRoot: dependencies.paseoWorktreesBaseRoot,
       registryProven: backing.registryProven,
+      policy: backing.deletionPolicy,
       worktreeManagers: dependencies.worktreeManagers,
       worktreeManagerPluginId: backing.worktreeManagerPluginId,
       removeReason: "archive",
