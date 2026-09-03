@@ -1,10 +1,10 @@
 import { lightHighlightColors } from "@getpaseo/highlight";
 import { lightTheme } from "../src/styles/theme";
-
 const testTheme = {
   colorScheme: "light",
   colors: {
     syntax: lightHighlightColors,
+    terminal: lightTheme.colors.terminal,
     foreground: "#111111",
     foregroundMuted: "#666666",
     statusSuccess: "#15803d",
