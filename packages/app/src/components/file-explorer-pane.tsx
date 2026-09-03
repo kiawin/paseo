@@ -26,6 +26,7 @@ import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
+import { hasActiveTextSelection } from "@/utils/text-selection";
 import * as Clipboard from "expo-clipboard";
 import { ChevronDown, Eye, EyeOff, FilePlus, FolderPlus, RotateCw } from "lucide-react-native";
 import { MaterialFileIcon } from "@/components/material-file-icon";
@@ -306,8 +307,7 @@ function TreeRowItem({
   });
 
   const handlePress = useCallback(() => {
-    const selection = isWeb ? window.getSelection() : null;
-    if (selection && !selection.isCollapsed && selection.toString().length > 0) {
+    if (hasActiveTextSelection()) {
       return;
     }
     onEntryPress(entry);
