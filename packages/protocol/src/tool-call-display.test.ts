@@ -21,6 +21,62 @@ describe("shared tool-call display mapping", () => {
     });
   });
 
+  it("names the line range when a read is bounded", () => {
+    const display = buildToolCallDisplayModel({
+      name: "read_file",
+      status: "running",
+      error: null,
+      detail: {
+        type: "read",
+        filePath: "/tmp/repo/settings.json",
+        offset: 53,
+        limit: 14,
+      },
+      cwd: "/tmp/repo",
+    });
+
+    expect(display).toEqual({
+      displayName: "Read",
+      summary: "settings.json (lines 53-66)",
+    });
+  });
+
+  it("counts a limit-only read from the first line", () => {
+    const display = buildToolCallDisplayModel({
+      name: "read_file",
+      status: "running",
+      error: null,
+      detail: { type: "read", filePath: "/tmp/repo/a.ts", limit: 40 },
+      cwd: "/tmp/repo",
+    });
+
+    expect(display.summary).toBe("a.ts (lines 1-40)");
+  });
+
+  it("names only the start when a read is open ended", () => {
+    const display = buildToolCallDisplayModel({
+      name: "read_file",
+      status: "running",
+      error: null,
+      detail: { type: "read", filePath: "/tmp/repo/a.ts", offset: 53 },
+      cwd: "/tmp/repo",
+    });
+
+    expect(display.summary).toBe("a.ts (from line 53)");
+  });
+
+  it("drops provider range values that are not positive integers", () => {
+    const display = buildToolCallDisplayModel({
+      name: "read_file",
+      status: "running",
+      error: null,
+      detail: { type: "read", filePath: "/tmp/repo/a.ts", offset: 0, limit: -5 },
+      cwd: "/tmp/repo",
+    });
+
+    expect(display.summary).toBe("a.ts");
+  });
+
   it("does not infer summaries from unknown raw detail", () => {
     const display = buildToolCallDisplayModel({
       name: "exec_command",
