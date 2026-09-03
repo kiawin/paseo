@@ -1,14 +1,18 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import type { Logger } from "pino";
 
 import type { AgentManager } from "./agent/agent-manager.js";
 import type { AgentStorage, StoredAgentRecord } from "./agent/agent-storage.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
+import { resolveWorktreeDeletionPolicy } from "./worktree/ownership.js";
 import type { ForgeService } from "../services/forge-service.js";
 import {
   deletePaseoWorktree,
   isPaseoOwnedWorktreeCwd,
+  WorktreeRemovalRefusedError,
+  type WorktreeDeletionPolicy,
+  type WorktreeRemovalRefusal,
   runWorktreeTeardownCommands,
   WorktreeTeardownError,
 } from "../utils/worktree.js";
@@ -19,12 +23,19 @@ import type {
   WorkspaceRegistry,
 } from "./workspace-registry.js";
 import { createRealpathAwarePathMatcher } from "../utils/path.js";
+import { withWorkspaceBackingDirectory } from "./worktree/backing-directory.js";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
 import { WorkspaceAutomationBlockedError } from "./workspace-automation-gate.js";
 
 export type ActiveWorkspaceRef = Pick<
   PersistedWorkspaceRecord,
-  "workspaceId" | "cwd" | "kind" | "worktreeRoot" | "isPaseoOwnedWorktree" | "mainRepoRoot"
+  | "workspaceId"
+  | "cwd"
+  | "kind"
+  | "worktreeRoot"
+  | "isPaseoOwnedWorktree"
+  | "worktreePlacement"
+  | "mainRepoRoot"
 >;
 
 export interface ArchiveDependencies {
@@ -65,19 +76,41 @@ export type ArchiveScope =
   | { kind: "workspace"; workspaceId: string }
   | { kind: "worktree"; targetPath: string };
 
+/**
+ * What archive did to the backing directory it was asked to remove.
+ *
+ * Null when nothing was attempted — either the request did not ask, or the
+ * workspace has no directory Paseo may delete. Distinct from an attempt that
+ * failed, which the caller has to be able to say out loud: the workspace is
+ * archived either way, so a refusal is otherwise invisible.
+ */
+export interface WorktreeRemovalOutcome {
+  removed: boolean;
+  /** Git's reason for declining. Null when the attempt failed before git ran. */
+  refusal: WorktreeRemovalRefusal | null;
+  path: string;
+}
+
 export interface ArchiveResult {
   archivedAgentIds: string[];
   archivedWorkspaceIds: string[];
+  /** Convenience for callers that only branch on success. */
   removedDirectory: boolean;
-  // Set when the record archived but its worktree directory was left on
-  // disk because no ownership proof held for it. The directory is never
-  // deleted in that case; the path and reason surface here and in the log.
+  // Set when a worktree-backed record lacks an ownership proof; archive leaves its directory in place.
   directoryLeftBehind?: { path: string; reason: string };
+  worktreeRemoval: WorktreeRemovalOutcome | null;
 }
 
 export interface ArchiveByScopeRequest {
   scope: ArchiveScope;
   requestId: string;
+  /**
+   * Only consulted for worktrees outside the managed root, which are left on
+   * disk by default. Absent means "leave the directory", so a client that
+   * cannot ask gets the non-destructive path. Managed worktrees always remove
+   * their directory and ignore this.
+   */
+  removeWorktreeDirectory?: boolean;
 }
 
 export async function requireActiveWorkspaceForArchive(
@@ -107,6 +140,12 @@ interface BackingDirectory {
   registryProven: boolean;
   mainRepoRoot: string | null;
   paseoWorktreesRoot: string | null;
+  deletionPolicy: WorktreeDeletionPolicy;
+  // True when the project's worktree location put this worktree in a root the user chose.
+  // People keep their own worktrees there too, so archive leaves it unless removal was
+  // requested. A worktree placed anywhere else on registry proof, such as by a plugin, is
+  // Paseo's to remove; git still refuses one with uncommitted work.
+  inUserChosenRoot: boolean;
 }
 
 interface ArchiveTarget {
@@ -153,7 +192,7 @@ async function archiveByScopeWithPriority(
     dependencies.markWorkspaceArchiving(targetWorkspaceIds, new Date().toISOString());
   }
 
-  let removedDirectory = false;
+  let worktreeRemoval: WorktreeRemovalOutcome | null = null;
   let directoryLeftBehind: ArchiveResult["directoryLeftBehind"];
 
   try {
@@ -188,14 +227,15 @@ async function archiveByScopeWithPriority(
         target,
         archivedWorkspaceIds,
       );
-      removedDirectory = removal.removedDirectory;
+      worktreeRemoval = removal.worktreeRemoval;
       directoryLeftBehind = removal.directoryLeftBehind;
     }
 
     return {
       archivedAgentIds: Array.from(archivedAgents),
       archivedWorkspaceIds,
-      removedDirectory,
+      removedDirectory: worktreeRemoval?.removed === true,
+      worktreeRemoval,
       ...(directoryLeftBehind ? { directoryLeftBehind } : {}),
     };
   } finally {
@@ -298,16 +338,34 @@ async function resolveWorkspaceBackingDirectory(
       registryProven: false,
       mainRepoRoot: workspace.mainRepoRoot ?? null,
       paseoWorktreesRoot: null,
+      deletionPolicy: { kind: "managed" },
+      inUserChosenRoot: false,
     };
   }
   if (workspace.isPaseoOwnedWorktree && workspace.worktreeRoot && workspace.mainRepoRoot) {
+    const deletionPolicy = resolveWorktreeDeletionPolicy({
+      workspace,
+      options: {
+        paseoHome: dependencies.paseoHome,
+        worktreesRoot: dependencies.paseoWorktreesBaseRoot,
+      },
+    });
     return {
       path: resolve(workspace.worktreeRoot),
       isPaseoOwnedWorktree: true,
       expectsPaseoOwnership: true,
       registryProven: true,
       mainRepoRoot: workspace.mainRepoRoot,
-      paseoWorktreesRoot: null,
+      // deletePaseoWorktree checks the target is contained by this root. For a
+      // worktree outside the managed layout the hash-derived root is the wrong
+      // one and the check would refuse every removal, so hand it the holder the
+      // worktree actually sits in.
+      paseoWorktreesRoot:
+        deletionPolicy.kind === "managed" ? null : dirname(resolve(workspace.worktreeRoot)),
+      // Fixed when the worktree was created. Never re-derived from the
+      // project's current mode, which is mutable while placement is not.
+      deletionPolicy,
+      inUserChosenRoot: workspace.worktreePlacement === "external",
     };
   }
   if (workspace.kind !== "worktree") {
@@ -318,6 +376,8 @@ async function resolveWorkspaceBackingDirectory(
       registryProven: false,
       mainRepoRoot: workspace.mainRepoRoot ?? null,
       paseoWorktreesRoot: null,
+      deletionPolicy: { kind: "managed" },
+      inUserChosenRoot: false,
     };
   }
 
@@ -346,6 +406,8 @@ async function resolveBackingDirectory(
     registryProven: false,
     mainRepoRoot: ownership.repoRoot ?? null,
     paseoWorktreesRoot: ownership.worktreeRoot ?? null,
+    deletionPolicy: { kind: "managed" },
+    inUserChosenRoot: false,
   };
 }
 
@@ -384,33 +446,36 @@ async function archiveTargetRecords(
 
 async function maybeRemoveDirectory(
   dependencies: ArchiveDependencies,
-  request: Pick<ArchiveByScopeRequest, "requestId">,
+  request: Pick<ArchiveByScopeRequest, "requestId" | "removeWorktreeDirectory">,
   target: ArchiveTarget,
   archivedWorkspaceIds: string[],
 ): Promise<{
-  removedDirectory: boolean;
+  worktreeRemoval: WorktreeRemovalOutcome | null;
   directoryLeftBehind?: { path: string; reason: string };
 }> {
   const backing = target.backing;
   if (!backing?.isPaseoOwnedWorktree) {
-    // Missing ownership proof for a worktree-backed directory: the record
-    // still archives, but the directory is left in place and surfaced.
-    // Never delete an unproven directory.
-    if (backing?.expectsPaseoOwnership) {
-      const reason =
-        "no ownership proof (not under the Paseo worktrees root, no paseo/worktree.json marker, no registry record)";
-      dependencies.sessionLogger?.warn(
-        { targetPath: backing.path, requestId: request.requestId },
-        `Worktree directory left in place during archive: ${reason}`,
-      );
-      return {
-        removedDirectory: false,
-        directoryLeftBehind: { path: backing.path, reason },
-      };
-    }
-    return { removedDirectory: false };
+    if (!backing?.expectsPaseoOwnership) return { worktreeRemoval: null };
+    const reason =
+      "no ownership proof (not under the Paseo worktrees root, no paseo/worktree.json marker, no registry record)";
+    dependencies.sessionLogger?.warn(
+      { targetPath: backing.path, requestId: request.requestId },
+      `Worktree directory left in place during archive: ${reason}`,
+    );
+    return {
+      worktreeRemoval: null,
+      directoryLeftBehind: { path: backing.path, reason },
+    };
   }
 
+  if (backing.inUserChosenRoot && request.removeWorktreeDirectory !== true) {
+    return { worktreeRemoval: null };
+  }
+
+  const attempted = (outcome: Omit<WorktreeRemovalOutcome, "path">): WorktreeRemovalOutcome => ({
+    ...outcome,
+    path: backing.path,
+  });
   const archivedWorkspaceIdSet = new Set(archivedWorkspaceIds);
   const teardownTargets = target.teardownTargets.filter(
     (teardownTarget) =>
@@ -430,48 +495,68 @@ async function maybeRemoveDirectory(
       });
     }
   } catch (error) {
-    if (error instanceof WorktreeTeardownError) {
-      dependencies.sessionLogger?.warn(
-        { err: error, targetPath: backing.path, requestId: request.requestId },
-        "Worktree teardown failed during archive; workspace already archived",
-      );
-      return { removedDirectory: false };
-    }
-    throw error;
-  }
-
-  const remainingActive = await dependencies.listActiveWorkspaces();
-  if (
-    !(await isDirectoryUnreferenced(
-      remainingActive,
-      backing.path,
-      new Set(archivedWorkspaceIds),
-      dependencies,
-    ))
-  ) {
-    return { removedDirectory: false };
-  }
-
-  try {
-    await deletePaseoWorktree({
-      cwd: backing.mainRepoRoot,
-      worktreePath: backing.path,
-      teardownCwds: [],
-      worktreesRoot: backing.paseoWorktreesRoot ?? undefined,
-      paseoHome: dependencies.paseoHome,
-      worktreesBaseRoot: dependencies.paseoWorktreesBaseRoot,
-      registryProven: backing.registryProven,
-    });
-    dependencies.workspaceGitService.invalidateWorktrees();
-    dependencies.github.invalidate({ cwd: backing.path });
-    return { removedDirectory: true };
-  } catch (error) {
+    if (!(error instanceof WorktreeTeardownError)) throw error;
     dependencies.sessionLogger?.warn(
       { err: error, targetPath: backing.path, requestId: request.requestId },
-      "Worktree disk removal failed during archive; workspace already archived",
+      "Worktree teardown failed during archive; workspace already archived",
     );
-    return { removedDirectory: false };
+    return { worktreeRemoval: attempted({ removed: false, refusal: null }) };
   }
+
+  // Serialize the last-reference check with provisioning so a new workspace cannot
+  // start using the directory between the check and deletion.
+  return withWorkspaceBackingDirectory(backing.path, async () => {
+    const remainingActive = await dependencies.listActiveWorkspaces();
+    if (
+      !(await isDirectoryUnreferenced(
+        remainingActive,
+        backing.path,
+        new Set(archivedWorkspaceIds),
+        dependencies,
+      ))
+    ) {
+      return { worktreeRemoval: attempted({ removed: false, refusal: null }) };
+    }
+
+    try {
+      await deletePaseoWorktree({
+        cwd: backing.mainRepoRoot,
+        worktreePath: backing.path,
+        teardownCwds: [],
+        worktreesRoot: backing.paseoWorktreesRoot ?? undefined,
+        paseoHome: dependencies.paseoHome,
+        worktreesBaseRoot: dependencies.paseoWorktreesBaseRoot,
+        registryProven: backing.registryProven,
+        policy: backing.deletionPolicy,
+      });
+      dependencies.workspaceGitService.invalidateWorktrees();
+      dependencies.github.invalidate({ cwd: backing.path });
+      return { worktreeRemoval: attempted({ removed: true, refusal: null }) };
+    } catch (error) {
+      const explicitlyRequested = request.removeWorktreeDirectory === true;
+      const log = explicitlyRequested
+        ? dependencies.sessionLogger?.error.bind(dependencies.sessionLogger)
+        : dependencies.sessionLogger?.warn.bind(dependencies.sessionLogger);
+      log?.(
+        {
+          err: error,
+          targetPath: backing.path,
+          requestId: request.requestId,
+          explicitlyRequested,
+          refusal: error instanceof WorktreeRemovalRefusedError ? error.refusal : null,
+        },
+        explicitlyRequested
+          ? "Requested worktree removal was refused; the directory is still on disk"
+          : "Worktree disk removal failed during archive; workspace already archived",
+      );
+      return {
+        worktreeRemoval: attempted({
+          removed: false,
+          refusal: error instanceof WorktreeRemovalRefusedError ? error.refusal : null,
+        }),
+      };
+    }
+  });
 }
 
 async function filterAllowedTeardownTargets(
