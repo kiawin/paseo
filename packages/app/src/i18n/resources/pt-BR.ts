@@ -1900,6 +1900,9 @@ export const ptBR: TranslationResources = {
     subAgentActivity: "Atividade do subagente",
     input: "Entrada",
     output: "Saída",
+    clickToExpand: "Clique para expandir",
+    inLabel: "ENT",
+    outLabel: "SAÍ",
   },
   toolCallGroup: {
     editedFiles: {
@@ -2099,6 +2102,15 @@ export const ptBR: TranslationResources = {
         options: {
           overview: "Resumo",
           detailed: "Detalhes completos",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "Estilo da transcrição",
+        description: "Como um turno concluído é organizado",
+        accessibilityLabel: "Selecionar estilo da transcrição ({{value}})",
+        options: {
+          cards: "Cartões",
+          trace: "Rastro",
         },
       },
       language: {

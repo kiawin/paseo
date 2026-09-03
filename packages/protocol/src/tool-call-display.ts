@@ -80,6 +80,26 @@ function buildFilePathDisplay(
   };
 }
 
+function isPositiveInteger(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+/**
+ * Providers send `offset` as a 1-based start line and `limit` as a line count, so a bounded
+ * read names its range and an open-ended one names only its start. Both are optional and
+ * provider-supplied, so anything that is not a positive integer is dropped rather than shown.
+ */
+function buildReadRangeSuffix(offset: number | undefined, limit: number | undefined): string {
+  const start = isPositiveInteger(offset) ? offset : 1;
+  if (isPositiveInteger(limit)) {
+    return ` (lines ${start}-${start + limit - 1})`;
+  }
+  if (isPositiveInteger(offset)) {
+    return ` (from line ${offset})`;
+  }
+  return "";
+}
+
 function buildCanonicalDetailDisplay(input: ToolCallDisplayInput): DetailDisplay {
   switch (input.detail.type) {
     case "shell":
@@ -87,8 +107,11 @@ function buildCanonicalDetailDisplay(input: ToolCallDisplayInput): DetailDisplay
         displayName: "Shell",
         summary: input.detail.command,
       };
-    case "read":
-      return buildFilePathDisplay("Read", input.detail.filePath, input.cwd);
+    case "read": {
+      const display = buildFilePathDisplay("Read", input.detail.filePath, input.cwd);
+      const range = buildReadRangeSuffix(input.detail.offset, input.detail.limit);
+      return range ? { ...display, summary: `${display.summary}${range}` } : display;
+    }
     case "edit":
       return buildFilePathDisplay("Edit", input.detail.filePath, input.cwd);
     case "write":
