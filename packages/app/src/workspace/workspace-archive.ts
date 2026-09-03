@@ -6,6 +6,7 @@ import {
 import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 import { i18n } from "@/i18n/i18next";
+import type { WorktreeRemovalRefusal } from "@getpaseo/protocol/messages";
 
 export interface WorkspaceArchiveTarget {
   serverId: string;
@@ -13,7 +14,20 @@ export interface WorkspaceArchiveTarget {
 }
 
 interface WorkspaceArchiveClient {
-  archiveWorkspace: (workspaceId: string) => Promise<{ error: string | null }>;
+  archiveWorkspace: (
+    workspaceId: string,
+    options?: { removeWorktreeDirectory?: boolean },
+  ) => Promise<ArchiveWorkspaceOutcome>;
+}
+
+/**
+ * What the daemon did. The worktree fields are absent from a daemon predating
+ * them, which never removed a directory it was not asked about.
+ */
+export interface ArchiveWorkspaceOutcome {
+  error: string | null;
+  worktreeDirectoryRemoved?: boolean | null;
+  worktreeRemovalRefusal?: WorktreeRemovalRefusal | null;
 }
 
 interface OptimisticWorkspaceArchiveSnapshot {
@@ -72,23 +86,30 @@ function restoreOptimisticallyHiddenWorkspace(input: {
 async function archiveWorkspaceOrThrow(input: {
   client: WorkspaceArchiveClient;
   workspaceId: string;
-}): Promise<void> {
-  const payload = await input.client.archiveWorkspace(input.workspaceId);
+  removeWorktreeDirectory?: boolean;
+}): Promise<ArchiveWorkspaceOutcome> {
+  const payload = await input.client.archiveWorkspace(
+    input.workspaceId,
+    input.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : undefined,
+  );
   if (payload.error) {
     throw new Error(payload.error);
   }
+  return payload;
 }
 
 export async function archiveWorkspaceOptimistically(input: {
   client: WorkspaceArchiveClient;
   workspace: WorkspaceArchiveTarget;
-}): Promise<void> {
+  removeWorktreeDirectory?: boolean;
+}): Promise<ArchiveWorkspaceOutcome> {
   const snapshot = hideWorkspaceOptimistically(input.workspace);
 
   try {
-    await archiveWorkspaceOrThrow({
+    return await archiveWorkspaceOrThrow({
       client: input.client,
       workspaceId: input.workspace.workspaceId,
+      ...(input.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : {}),
     });
   } catch (error) {
     restoreOptimisticallyHiddenWorkspace({
