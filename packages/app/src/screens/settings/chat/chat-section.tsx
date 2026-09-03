@@ -15,6 +15,8 @@ const TOOL_CALL_DETAIL_LEVELS: readonly AppSettings["toolCallDetailLevel"][] = [
   "overview",
 ];
 
+const CHAT_TRANSCRIPT_STYLES: readonly AppSettings["chatTranscriptStyle"][] = ["cards", "trace"];
+
 export function ChatSection() {
   const { t } = useTranslation();
   const { settings, updateSettings } = useAppSettings();
@@ -28,6 +30,15 @@ export function ChatSection() {
     [t],
   );
 
+  const chatTranscriptStyleOptions = useMemo(
+    () =>
+      CHAT_TRANSCRIPT_STYLES.map((value) => ({
+        value,
+        label: t(`settings.general.chatTranscriptStyle.options.${value}`),
+      })),
+    [t],
+  );
+
   const changeToolCallDetailLevel = useCallback(
     (toolCallDetailLevel: AppSettings["toolCallDetailLevel"]) =>
       void updateSettings({ toolCallDetailLevel }),
@@ -35,6 +46,11 @@ export function ChatSection() {
   );
   const changeAutoExpandReasoning = useCallback(
     (autoExpandReasoning: boolean) => void updateSettings({ autoExpandReasoning }),
+    [updateSettings],
+  );
+  const changeChatTranscriptStyle = useCallback(
+    (chatTranscriptStyle: AppSettings["chatTranscriptStyle"]) =>
+      void updateSettings({ chatTranscriptStyle }),
     [updateSettings],
   );
   const changeChatOutline = useCallback(
@@ -58,6 +74,13 @@ export function ChatSection() {
             value={settings.toolCallDetailLevel}
             options={toolCallDetailOptions}
             onValueChange={changeToolCallDetailLevel}
+          />
+          <SettingsSelect
+            label={t("settings.general.chatTranscriptStyle.label")}
+            hint={t("settings.general.chatTranscriptStyle.description")}
+            value={settings.chatTranscriptStyle}
+            options={chatTranscriptStyleOptions}
+            onValueChange={changeChatTranscriptStyle}
           />
           {isNative ? null : (
             <SettingsSwitch
