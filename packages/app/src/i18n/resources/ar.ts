@@ -2126,6 +2126,11 @@ export const ar: TranslationResources = {
     empty: "لا توجد تفاصيل إضافية متاحة",
     input: "مدخل",
     output: "الإخراج",
+    clickToExpand: "انقر للتوسيع",
+    inLabel: "دخل",
+    outLabel: "خرج",
+    copyCommand: "نسخ الأمر",
+    copyOutput: "نسخ الإخراج",
   },
   turnSummary: {
     details: "عرض تفاصيل الجولة",
@@ -2544,6 +2549,15 @@ export const ar: TranslationResources = {
           full: "كامل",
           collapseToolCalls: "طيّ استدعاءات الأدوات",
           collapseTurns: "طيّ الأدوار",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "نمط سجل المحادثة",
+        description: "كيفية تخطيط الدور المكتمل",
+        accessibilityLabel: "اختر نمط سجل المحادثة ({{value}})",
+        options: {
+          cards: "بطاقات",
+          trace: "تتبّع",
         },
       },
       language: {
