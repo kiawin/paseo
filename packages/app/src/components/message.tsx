@@ -16,7 +16,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
 import { useRevealedText, type MarkdownPhase } from "@/hooks/use-revealed-text";
-import { ICON_SIZE, type Theme } from "@/styles/theme";
+import { FONT_SIZE, ICON_SIZE, type Theme } from "@/styles/theme";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { buildToolCallPresentation } from "@/tool-calls/presentation";
 import type { TaskActivity, TodoEntry, UserMessageImageAttachment } from "@/types/stream";
@@ -82,6 +82,10 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { capAssistantMessageForRender, getUtf8ByteLength } from "./assistant-message-render-limit";
 import { getTurnDurationLabel } from "./assistant-turn-footer-label";
 import { getCompactionMarkerLabel } from "./message-compaction-label";
+import { useSettings } from "@/hooks/use-settings";
+import { useCopyFeedback } from "@/hooks/use-copy-feedback";
+import { canPressDetailSurface } from "./expandable-badge-press";
+import { hasActiveTextSelection } from "@/utils/text-selection";
 import { PlanCard } from "./plan-card";
 import { ToolCallDetailsContent } from "./tool-call-details";
 import { useToolCallSheet } from "./tool-call-sheet";
@@ -288,6 +292,77 @@ function shouldStopDetailWheelPropagation(detailRoot: HTMLElement, event: WheelE
   return canScrollHorizontally;
 }
 
+/**
+ * The trace style hangs every node off one vertical rail. Tool rows get their marker from the
+ * badge's icon slot; prose and user messages have no such slot, so they indent by this much and
+ * draw the rail themselves. Both land on the same column — see the spec.
+ */
+const TRANSCRIPT_MARKER_COLUMN_WIDTH = 19;
+const TRANSCRIPT_DOT_SIZE = 6;
+
+/**
+ * The marker hangs off a zero-size anchor placed as the node's first in-flow child, so Yoga
+ * resolves every ancestor's padding for us and the offsets below only have to describe the
+ * content itself. Positioning from the node box instead meant re-deriving each spacing variant's
+ * padding by hand, and a variant nobody updated left its dot floating.
+ */
+const transcriptDotAnchor = {
+  width: 0,
+  height: 0,
+  alignSelf: "flex-start" as const,
+};
+
+/**
+ * Centres the marker on the first line of the content rather than on the node box, so it reads
+ * as belonging to that line. `leadIn` is whatever the first line adds above itself — a heading's
+ * top margin, a bubble's padding.
+ */
+function transcriptDotTop(lineHeight: number, leadIn: number): number {
+  return leadIn + Math.round((lineHeight - TRANSCRIPT_DOT_SIZE) / 2);
+}
+
+/** The anchor sits at the content edge, so the dot reaches back across the marker column. */
+const TRANSCRIPT_DOT_LEFT = -(TRANSCRIPT_MARKER_COLUMN_WIDTH + TRANSCRIPT_DOT_SIZE / 2);
+
+function transcriptDotBase(theme: Theme) {
+  return {
+    position: "absolute" as const,
+    left: TRANSCRIPT_DOT_LEFT,
+    width: TRANSCRIPT_DOT_SIZE,
+    height: TRANSCRIPT_DOT_SIZE,
+    borderRadius: TRANSCRIPT_DOT_SIZE / 2,
+    backgroundColor: theme.colors.foregroundMuted,
+  };
+}
+
+/** Which style governs the first rendered line of a Markdown message. */
+type MarkdownLeadingKind =
+  | "body"
+  | "heading1"
+  | "heading2"
+  | "heading3"
+  | "heading4"
+  | "heading5"
+  | "heading6";
+
+// Stylesheets below call markdownLeadingLineHeight while the module loads, so this table must
+// be declared above them.
+const LEADING_HEADING_TIER: Record<Exclude<MarkdownLeadingKind, "body">, keyof typeof FONT_SIZE> = {
+  heading1: "4xl",
+  heading2: "3xl",
+  heading3: "2xl",
+  heading4: "xl",
+  heading5: "lg",
+  heading6: "lg",
+};
+
+function markdownLeadingLineHeight(kind: MarkdownLeadingKind, contentSize: number): number {
+  if (kind === "body") return Math.round(contentSize * 1.4);
+  const tier = LEADING_HEADING_TIER[kind];
+  const headingSize = Math.round(contentSize * (FONT_SIZE[tier] / FONT_SIZE.base));
+  return Math.round(headingSize * 1.3);
+}
+
 const userMessageStylesheet = StyleSheet.create((theme) => ({
   container: {
     flexDirection: "row",
@@ -316,6 +391,48 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[4],
     minWidth: 0,
     flexShrink: 1,
+  },
+  // Trace puts the user message on the same left edge as every other node, so the bubble flips
+  // from a right-aligned fill to a full-width outline. Three changes at once: alignment, fill,
+  // and width — which is why the style is opt-in.
+  containerTrace: {
+    justifyContent: "flex-start",
+    paddingLeft: TRANSCRIPT_MARKER_COLUMN_WIDTH,
+  },
+  // Margins become padding for the same reason the badge's do — see containerSpacingTrace.
+  containerSpacingTrace: {
+    marginBottom: 0,
+    paddingBottom: theme.spacing[1],
+  },
+  containerFirstInGroupTrace: {
+    marginTop: 0,
+    paddingTop: theme.spacing[4],
+  },
+  containerLastInGroupTrace: {
+    marginBottom: 0,
+    paddingBottom: theme.spacing[4],
+  },
+  nodeDotAnchorTrace: transcriptDotAnchor,
+  // The anchor sits at the container's content edge; the bubble's border and padding are the
+  // only thing between it and the first line.
+  nodeDotTrace: {
+    ...transcriptDotBase(theme),
+    top: transcriptDotTop(
+      markdownLeadingLineHeight("body", theme.fontSize.content),
+      theme.spacing[4] + 1,
+    ),
+  },
+  contentTrace: {
+    alignItems: "stretch",
+    width: "100%",
+  },
+  bubbleTrace: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    borderTopRightRadius: theme.borderRadius.md,
+    width: "100%",
   },
   text: {
     color: theme.colors.foreground,
@@ -431,16 +548,39 @@ export const UserMessage = memo(function UserMessage({
     [rewindMutation],
   );
 
+  const isTraceTranscript = useSettings((settings) => settings.chatTranscriptStyle === "trace");
   const containerStyle = useMemo(
     () => [
       userMessageStylesheet.container,
+      isTraceTranscript ? userMessageStylesheet.containerTrace : null,
       !resolvedDisableOuterSpacing && [
         isFirstInGroup ? userMessageStylesheet.containerFirstInGroup : null,
         isLastInGroup ? userMessageStylesheet.containerLastInGroup : null,
         !isFirstInGroup || !isLastInGroup ? userMessageStylesheet.containerSpacing : null,
+        isTraceTranscript && isFirstInGroup
+          ? userMessageStylesheet.containerFirstInGroupTrace
+          : null,
+        isTraceTranscript && isLastInGroup ? userMessageStylesheet.containerLastInGroupTrace : null,
+        isTraceTranscript && (!isFirstInGroup || !isLastInGroup)
+          ? userMessageStylesheet.containerSpacingTrace
+          : null,
       ],
     ],
-    [resolvedDisableOuterSpacing, isFirstInGroup, isLastInGroup],
+    [resolvedDisableOuterSpacing, isFirstInGroup, isLastInGroup, isTraceTranscript],
+  );
+  const contentStyle = useMemo(
+    () => [
+      userMessageStylesheet.content,
+      isTraceTranscript ? userMessageStylesheet.contentTrace : null,
+    ],
+    [isTraceTranscript],
+  );
+  const bubbleStyle = useMemo(
+    () => [
+      userMessageStylesheet.bubble,
+      isTraceTranscript ? userMessageStylesheet.bubbleTrace : null,
+    ],
+    [isTraceTranscript],
   );
   const imagePreviewContainerStyle = useMemo(
     () => [
@@ -468,12 +608,17 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <View style={containerStyle} testID="user-message" aria-busy={isPending}>
+      {isTraceTranscript ? (
+        <View style={userMessageStylesheet.nodeDotAnchorTrace}>
+          <View style={userMessageStylesheet.nodeDotTrace} testID="transcript-node-dot" />
+        </View>
+      ) : null}
       <View
-        style={userMessageStylesheet.content}
+        style={contentStyle}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
       >
-        <View style={userMessageStylesheet.bubble}>
+        <View style={bubbleStyle} testID="user-message-bubble">
           {hasImages ? (
             <View style={imagePreviewContainerStyle}>
               {images.map((image) => (
@@ -726,6 +871,55 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[3],
     ...(isWeb ? { userSelect: "text" as const } : {}),
   },
+  // Trace indents prose by the marker column so the rail has a lane of its own, instead of
+  // running through the text. TRANSCRIPT_MARKER_COLUMN_WIDTH is asserted against the tool rows'
+  // rail position in chat-trace-style.spec.ts, so drift fails the suite rather than the eye.
+  containerTrace: {
+    paddingLeft: TRANSCRIPT_MARKER_COLUMN_WIDTH,
+  },
+  nodeDotAnchorTrace: transcriptDotAnchor,
+  // One entry per style that can govern the node's first line. The lead-in repeats the heading
+  // margin used by the shared Markdown renderer.
+  nodeDotTraceBody: {
+    ...transcriptDotBase(theme),
+    top: transcriptDotTop(markdownLeadingLineHeight("body", theme.fontSize.content), 0),
+  },
+  nodeDotTraceHeading1: {
+    ...transcriptDotBase(theme),
+    top: transcriptDotTop(
+      markdownLeadingLineHeight("heading1", theme.fontSize.content),
+      theme.spacing[3],
+    ),
+  },
+  nodeDotTraceHeading2: {
+    ...transcriptDotBase(theme),
+    top: transcriptDotTop(
+      markdownLeadingLineHeight("heading2", theme.fontSize.content),
+      theme.spacing[3],
+    ),
+  },
+  nodeDotTraceHeading3: {
+    ...transcriptDotBase(theme),
+    top: transcriptDotTop(
+      markdownLeadingLineHeight("heading3", theme.fontSize.content),
+      theme.spacing[1],
+    ),
+  },
+  nodeDotTraceHeading4: {
+    ...transcriptDotBase(theme),
+    top: transcriptDotTop(
+      markdownLeadingLineHeight("heading4", theme.fontSize.content),
+      theme.spacing[1],
+    ),
+  },
+  nodeDotTraceHeading5: {
+    ...transcriptDotBase(theme),
+    top: transcriptDotTop(markdownLeadingLineHeight("heading5", theme.fontSize.content), 0),
+  },
+  nodeDotTraceHeading6: {
+    ...transcriptDotBase(theme),
+    top: transcriptDotTop(markdownLeadingLineHeight("heading6", theme.fontSize.content), 0),
+  },
   containerCompactTop: {
     paddingTop: 0,
   },
@@ -776,6 +970,44 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
   },
 }));
 
+const ATX_HEADING = /^(#{1,6})\s/;
+
+function markdownLeadingKind(block: string): MarkdownLeadingKind {
+  for (const line of block.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const match = ATX_HEADING.exec(trimmed);
+    return match ? (`heading${match[1].length}` as MarkdownLeadingKind) : "body";
+  }
+  return "body";
+}
+
+const THEMATIC_BREAK = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
+
+function markdownBlockIsRuleOnly(block: string): boolean {
+  let sawRule = false;
+  for (const line of block.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (!THEMATIC_BREAK.test(line)) return false;
+    sawRule = true;
+  }
+  return sawRule;
+}
+
+/** Which marker style a prose node uses is decided by the style its first line renders with. */
+const ASSISTANT_NODE_DOT_STYLE: Record<
+  MarkdownLeadingKind,
+  (typeof assistantMessageStylesheet)["nodeDotTraceBody"]
+> = {
+  body: assistantMessageStylesheet.nodeDotTraceBody,
+  heading1: assistantMessageStylesheet.nodeDotTraceHeading1,
+  heading2: assistantMessageStylesheet.nodeDotTraceHeading2,
+  heading3: assistantMessageStylesheet.nodeDotTraceHeading3,
+  heading4: assistantMessageStylesheet.nodeDotTraceHeading4,
+  heading5: assistantMessageStylesheet.nodeDotTraceHeading5,
+  heading6: assistantMessageStylesheet.nodeDotTraceHeading6,
+};
 const turnCopyButtonStylesheet = StyleSheet.create((theme) => ({
   container: {
     alignSelf: "flex-start",
@@ -791,6 +1023,10 @@ const turnCopyButtonStylesheet = StyleSheet.create((theme) => ({
   },
 }));
 
+function writeTurnToClipboard(content: string): Promise<void> {
+  return writeMarkdownToRichClipboard(content, getDefaultMarkdownClipboardEnvironment());
+}
+
 interface TurnCopyButtonProps {
   getContent: () => string;
   containerStyle?: StyleProp<ViewStyle>;
@@ -805,35 +1041,8 @@ export const TurnCopyButton = memo(function TurnCopyButton({
   copiedAccessibilityLabel,
 }: TurnCopyButtonProps) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleCopy = useCallback(async () => {
-    const content = getContent();
-    if (!content) {
-      return;
-    }
-
-    await writeMarkdownToRichClipboard(content, getDefaultMarkdownClipboardEnvironment());
-    setCopied(true);
-
-    if (copyTimeoutRef.current) {
-      clearTimeout(copyTimeoutRef.current);
-    }
-
-    copyTimeoutRef.current = setTimeout(() => {
-      setCopied(false);
-      copyTimeoutRef.current = null;
-    }, 1500);
-  }, [getContent]);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimeoutRef.current) {
-        clearTimeout(copyTimeoutRef.current);
-      }
-    };
-  }, []);
+  // A turn also goes across as rich markdown, so it writes the clipboard itself.
+  const { copied, copy } = useCopyFeedback({ getContent, write: writeTurnToClipboard });
 
   const pressableStyle = useMemo(
     () => [turnCopyButtonStylesheet.container, containerStyle],
@@ -842,7 +1051,7 @@ export const TurnCopyButton = memo(function TurnCopyButton({
 
   return (
     <Pressable
-      onPress={handleCopy}
+      onPress={copy}
       style={pressableStyle}
       accessibilityRole="button"
       accessibilityLabel={
@@ -869,11 +1078,43 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   container: {
     marginHorizontal: -13,
   },
+  // Every node marker is the same 6px circle, so the left edge stays straight no matter which
+  // tool the row is for. Colour carries the status the glyph used to spend its width on.
+  statusDotSlot: {
+    marginLeft: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    width: 6,
+    alignSelf: "stretch",
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusDotComplete: {
+    backgroundColor: theme.colors.success,
+  },
+  statusDotFailed: {
+    backgroundColor: theme.colors.destructive,
+  },
+  statusDotActive: {
+    backgroundColor: theme.colors.foregroundMuted,
+  },
   containerSpacing: {
     marginBottom: theme.spacing[1],
   },
   containerLastInSequence: {
     marginBottom: theme.spacing[4],
+  },
+  // Trace pays for its spacing with padding instead of margin. A margin sits outside the node,
+  // so a rail drawn inside the node cannot reach across it and the column breaks between rows.
+  // As padding, the node owns the gap and adjacent rails meet with nothing to bridge.
+  containerSpacingTrace: {
+    paddingBottom: theme.spacing[1],
+  },
+  containerLastInSequenceTrace: {
+    paddingBottom: theme.spacing[4],
   },
   pressable: {
     borderRadius: theme.borderRadius.lg,
@@ -950,6 +1191,13 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     width: 14,
     height: 14,
   },
+  // The card would otherwise start left of the rail and paint over it. Indent it to the same
+  // column every other node's content uses.
+  detailWrapperTrace: {
+    marginLeft: 13 + TRANSCRIPT_MARKER_COLUMN_WIDTH,
+    borderRadius: theme.borderRadius.md,
+    borderTopWidth: theme.borderWidth[1],
+  },
   detailWrapper: {
     borderBottomLeftRadius: theme.borderRadius.lg,
     borderBottomRightRadius: theme.borderRadius.lg,
@@ -963,6 +1211,9 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     overflow: "hidden",
     ...(isWeb ? { cursor: "auto" as const, userSelect: "text" as const } : {}),
   },
+  // A clamped preview is a click target, so it points like one. Expanded, the same box goes back
+  // to `cursor: auto` because it is content by then.
+  detailWrapperPreview: isWeb ? { cursor: "pointer" as const } : {},
   pressableExpanded: {
     backgroundColor: theme.colors.surface1,
   },
@@ -1152,16 +1403,20 @@ export const AssistantMessage = memo(function AssistantMessage({
     [message, phase, renderedMessage.capped],
   );
 
+  const isTraceTranscript = useSettings((settings) => settings.chatTranscriptStyle === "trace");
   const assistantContainerStyle = useMemo(
     () => [
       assistantMessageStylesheet.container,
+      isTraceTranscript && assistantMessageStylesheet.containerTrace,
       (spacing === "compactTop" || spacing === "compactBoth") &&
         assistantMessageStylesheet.containerCompactTop,
       (spacing === "compactBottom" || spacing === "compactBoth") &&
         assistantMessageStylesheet.containerCompactBottom,
     ],
-    [spacing],
+    [spacing, isTraceTranscript],
   );
+  const assistantNodeDotStyle = ASSISTANT_NODE_DOT_STYLE[markdownLeadingKind(revealedMessage)];
+  const showsTraceNodeDot = isTraceTranscript && !markdownBlockIsRuleOnly(revealedMessage);
   const revealDataSet = useMemo(
     () =>
       isRenderProfileEnabled()
@@ -1184,6 +1439,11 @@ export const AssistantMessage = memo(function AssistantMessage({
       style={assistantContainerStyle}
       onLayout={measureMessage}
     >
+      {showsTraceNodeDot ? (
+        <View style={assistantMessageStylesheet.nodeDotAnchorTrace}>
+          <View style={assistantNodeDotStyle} testID="transcript-node-dot" />
+        </View>
+      ) : null}
       <MarkdownRenderer
         text={revealedMessage}
         streaming={phase !== "complete" || revealedMessage.length < renderedMessage.text.length}
@@ -1509,9 +1769,26 @@ interface ExpandableBadgeProps {
   onToggle?: () => void;
   onOpenFile?: () => void;
   onDetailHoverChange?: (hovered: boolean) => void;
-  renderDetails?: () => ReactNode;
+  renderDetails?: (options: { isPreview: boolean }) => ReactNode;
+  /**
+   * Show the detail card clamped instead of hiding it until clicked. A payload tool's card is
+   * the point of the row — a Bash call is its IN/OUT, an Edit is its diff — so trace previews a
+   * few lines and expands to full on click, rather than starting from nothing.
+   */
+  showCollapsedPreview?: boolean;
   isLoading?: boolean;
   isError?: boolean;
+  /**
+   * Draw a status dot instead of the per-tool glyph. Every node then occupies the same width,
+   * which is what lets the trace style show one straight left edge.
+   */
+  showStatusDot?: boolean;
+  /**
+   * Colours the status dot when the call errored. Wider than `isError`: a shell command that ran
+   * and exited non-zero is a failure worth seeing, but not a warning triangle under "cards", so
+   * the two stay separate. Callers that draw dots pass the whole truth; it does not fall back.
+   */
+  hasErrored?: boolean;
   isLastInSequence?: boolean;
   disableOuterSpacing?: boolean;
   borderlessWhenExpanded?: boolean;
@@ -1713,15 +1990,71 @@ function ExpandableBadgeLabelRow({
 const LUCIDE_TOOL_ICON_NUDGE_LEFT: ViewStyle = { marginLeft: -1 };
 const LUCIDE_CHEVRON_NUDGE_LEFT: ViewStyle = { marginLeft: -4 };
 
+/**
+ * Lines of content a collapsed payload card shows. A pixel clamp slices whatever line it lands
+ * in and leaves a half-rendered row, so the card is bounded by whole lines instead.
+ */
+const COLLAPSED_PREVIEW_LINES = 3;
+/** Rows stack fast on a phone, so the teaser is shorter there. */
+const COMPACT_COLLAPSED_PREVIEW_LINES = 2;
+
+function resolveDetailContent(input: {
+  renderDetails?: (options: { isPreview: boolean }) => ReactNode;
+  isExpanded: boolean;
+  showCollapsedPreview: boolean | undefined;
+}): ReactNode {
+  if (!input.renderDetails) {
+    return null;
+  }
+  if (input.isExpanded) {
+    return input.renderDetails({ isPreview: false });
+  }
+  return input.showCollapsedPreview ? input.renderDetails({ isPreview: true }) : null;
+}
+
+function badgeSpacingStyle(isLastInSequence: boolean, showStatusDot: boolean) {
+  if (isLastInSequence) {
+    return showStatusDot
+      ? expandableBadgeStylesheet.containerLastInSequenceTrace
+      : expandableBadgeStylesheet.containerLastInSequence;
+  }
+  return showStatusDot
+    ? expandableBadgeStylesheet.containerSpacingTrace
+    : expandableBadgeStylesheet.containerSpacing;
+}
+
+function statusDotToneStyle(hasErrored: boolean | undefined, isActive: boolean) {
+  if (hasErrored) {
+    return expandableBadgeStylesheet.statusDotFailed;
+  }
+  if (isActive) {
+    return expandableBadgeStylesheet.statusDotActive;
+  }
+  return expandableBadgeStylesheet.statusDotComplete;
+}
+
 function renderExpandableBadgeIcon({
   isError,
+  hasErrored,
   isActive,
+  showStatusDot,
   ThemedIcon,
 }: {
   isError: boolean;
+  hasErrored: boolean | undefined;
   isActive: boolean;
+  showStatusDot: boolean;
   ThemedIcon: ComponentType<{ size?: number; uniProps?: typeof foregroundColorMapping }> | null;
 }): ReactNode {
+  if (showStatusDot) {
+    return (
+      <View style={expandableBadgeStylesheet.statusDotSlot}>
+        <View
+          style={[expandableBadgeStylesheet.statusDot, statusDotToneStyle(hasErrored, isActive)]}
+        />
+      </View>
+    );
+  }
   if (isError) {
     return (
       <View style={LUCIDE_TOOL_ICON_NUDGE_LEFT}>
@@ -1875,6 +2208,9 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   renderDetails,
   isLoading = false,
   isError = false,
+  showStatusDot = false,
+  hasErrored,
+  showCollapsedPreview,
   isLastInSequence = false,
   disableOuterSpacing,
   borderlessWhenExpanded = false,
@@ -1886,8 +2222,17 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const [isPressed, setIsPressed] = useState(false);
   const isInteractive = Boolean(onToggle);
   const hasDetailContent = Boolean(renderDetails);
-  const detailContent = hasDetailContent && isExpanded ? renderDetails?.() : null;
+  const detailContent = resolveDetailContent({ renderDetails, isExpanded, showCollapsedPreview });
   const detailWrapperRef = useRef<View | null>(null);
+  const canPressDetailContent = canPressDetailSurface({
+    hasDetailContent: Boolean(detailContent),
+    isExpanded,
+    showCollapsedPreview,
+    isInteractive,
+  });
+  // Pointer cursor on the collapsed teaser only. Expanded, the card is code you select, and a
+  // pointer over it would promise a click where a drag is what you want.
+  const showDetailPressCursor = canPressDetailContent && !isExpanded;
 
   const handleHoverIn = useCallback(() => setIsHovered(true), []);
   const handleHoverOut = useCallback(() => {
@@ -1896,6 +2241,12 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   }, []);
   const handlePressIn = useCallback(() => setIsPressed(true), []);
   const handlePressOut = useCallback(() => setIsPressed(false), []);
+  const handleDetailPress = useCallback(() => {
+    if (hasActiveTextSelection()) {
+      return;
+    }
+    onToggle?.();
+  }, [onToggle]);
   const handleDetailHoverIn = useCallback(() => onDetailHoverChange?.(true), [onDetailHoverChange]);
   const handleDetailHoverOut = useCallback(
     () => onDetailHoverChange?.(false),
@@ -2034,13 +2385,10 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const containerStyle = useMemo(
     () => [
       expandableBadgeStylesheet.container,
-      !resolvedDisableOuterSpacing &&
-        (isLastInSequence
-          ? expandableBadgeStylesheet.containerLastInSequence
-          : expandableBadgeStylesheet.containerSpacing),
+      !resolvedDisableOuterSpacing && badgeSpacingStyle(isLastInSequence, showStatusDot),
       style,
     ],
-    [isLastInSequence, resolvedDisableOuterSpacing, style],
+    [isLastInSequence, resolvedDisableOuterSpacing, showStatusDot, style],
   );
 
   const pressableStyle = useMemo(
@@ -2057,13 +2405,25 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     () => [
       expandableBadgeStylesheet.detailWrapper,
       borderlessWhenExpanded && expandableBadgeStylesheet.detailWrapperBorderless,
+      showStatusDot && expandableBadgeStylesheet.detailWrapperTrace,
+      showDetailPressCursor && expandableBadgeStylesheet.detailWrapperPreview,
     ],
-    [borderlessWhenExpanded],
+    [borderlessWhenExpanded, showDetailPressCursor, showStatusDot],
   );
 
   const accessibilityState = useMemo(
     () => (isInteractive ? { expanded: isExpanded } : undefined),
     [isExpanded, isInteractive],
+  );
+
+  /**
+   * No button role here, deliberately. The header row is already the announced toggle, and the
+   * detail surface holds its own controls — a copy button, a link — which a button role would
+   * nest inside another button. This press is a pointer convenience over the same action.
+   */
+  const detailPressProps = useMemo(
+    () => (canPressDetailContent ? { onPress: handleDetailPress } : {}),
+    [canPressDetailContent, handleDetailPress],
   );
 
   const isActive = isHovered || isExpanded;
@@ -2116,7 +2476,13 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   );
 
   const ThemedIcon = useMemo(() => (icon ? withUnistyles(icon) : null), [icon]);
-  const iconNode = renderExpandableBadgeIcon({ isError, isActive, ThemedIcon });
+  const iconNode = renderExpandableBadgeIcon({
+    isError,
+    hasErrored,
+    isActive,
+    showStatusDot,
+    ThemedIcon,
+  });
   const iconSlotNode = renderExpandableBadgeIconSlot({
     showChevron: isInteractive && (isHovered || isExpanded),
     chevronStyle,
@@ -2177,7 +2543,9 @@ export const ExpandableBadge = memo(function ExpandableBadge({
       {detailContent ? (
         <Pressable
           ref={detailWrapperRef}
+          testID="tool-call-detail"
           style={detailWrapperStyle}
+          {...detailPressProps}
           onHoverIn={handleDetailHoverIn}
           onHoverOut={handleDetailHoverOut}
         >
@@ -2269,6 +2637,10 @@ export const ToolCall = memo(function ToolCall({
   }, [detail, args, result]);
 
   const targetAgentTitle = useTargetAgentTitle({ serverId, toolName, detail: effectiveDetail });
+
+  // useSettings is a selector, so the two renderers that vary read the style where they use it
+  // rather than threading a prop through the memoized row tree.
+  const isTraceTranscript = useSettings((settings) => settings.chatTranscriptStyle === "trace");
   const presentation = useMemo(
     () =>
       buildToolCallPresentation({
@@ -2284,6 +2656,9 @@ export const ToolCall = memo(function ToolCall({
       }),
     [toolName, status, error, effectiveDetail, metadata, cwd, agentMessage, targetAgentTitle],
   );
+  const canOpenDetails =
+    presentation.canOpenDetails &&
+    !isSelfContainedShellRow(effectiveDetail, error, isTraceTranscript);
   const handleOpenFile = useMemo(() => {
     const openFilePath = presentation.openFilePath;
     if (!openFilePath || !onOpenFilePath) {
@@ -2346,25 +2721,35 @@ export const ToolCall = memo(function ToolCall({
   }, [onInlineDetailsExpandedChange]);
 
   // Render inline details for desktop
-  const renderDetails = useCallback(() => {
-    if (!shouldRenderInline) return null;
-    return (
-      <ToolCallDetailsContent
-        toolName={toolName}
-        detail={presentation.detail}
-        errorText={presentation.errorText}
-        maxHeight={maxDetailHeight}
-        showLoadingSkeleton={presentation.isLoadingDetails}
-      />
-    );
-  }, [
-    shouldRenderInline,
-    toolName,
-    presentation.detail,
-    presentation.errorText,
-    presentation.isLoadingDetails,
-    maxDetailHeight,
-  ]);
+  const previewLineCount = isMobile ? COMPACT_COLLAPSED_PREVIEW_LINES : COLLAPSED_PREVIEW_LINES;
+  const renderDetails = useCallback(
+    ({ isPreview }: { isPreview: boolean }) => {
+      // Compact keeps the expanded view in the sheet but still shows the teaser inline: the
+      // preview is what makes a trace row readable without opening anything.
+      if (!isPreview && !shouldRenderInline) return null;
+      return (
+        <ToolCallDetailsContent
+          toolName={toolName}
+          detail={effectiveDetail}
+          errorText={presentation.errorText}
+          maxHeight={maxDetailHeight}
+          previewLines={isPreview ? previewLineCount : undefined}
+          fullExpand={isTraceTranscript && !isPreview}
+          showLoadingSkeleton={presentation.isLoadingDetails}
+        />
+      );
+    },
+    [
+      shouldRenderInline,
+      toolName,
+      previewLineCount,
+      effectiveDetail,
+      presentation.errorText,
+      presentation.isLoadingDetails,
+      maxDetailHeight,
+      isTraceTranscript,
+    ],
+  );
 
   if (presentation.isPlan && effectiveDetail?.type === "plan") {
     return (
@@ -2381,20 +2766,66 @@ export const ToolCall = memo(function ToolCall({
     <ExpandableBadge
       testID="tool-call-badge"
       label={presentation.displayName}
-      secondaryLabel={presentation.summary}
+      secondaryLabel={
+        showsCollapsedPreview(effectiveDetail, isTraceTranscript) &&
+        effectiveDetail?.type === "shell"
+          ? undefined
+          : presentation.summary
+      }
       icon={presentation.icon}
       isExpanded={shouldRenderInline && isExpanded}
-      onToggle={presentation.canOpenDetails ? handleToggle : undefined}
+      onToggle={canOpenDetails ? handleToggle : undefined}
       onOpenFile={handleOpenFile}
-      renderDetails={presentation.canOpenDetails && shouldRenderInline ? renderDetails : undefined}
+      renderDetails={
+        presentation.canOpenDetails &&
+        (shouldRenderInline || showsCollapsedPreview(effectiveDetail, isTraceTranscript))
+          ? renderDetails
+          : undefined
+      }
       isLoading={status === "running" || status === "executing"}
       isError={status === "failed"}
+      hasErrored={hasToolCallErrored(effectiveDetail, status)}
+      showStatusDot={isTraceTranscript}
+      showCollapsedPreview={showsCollapsedPreview(effectiveDetail, isTraceTranscript)}
       isLastInSequence={isLastInSequence}
       disableOuterSpacing={disableOuterSpacing}
       onDetailHoverChange={onInlineDetailsHoverChange}
     />
   );
 }, areToolCallPropsEqual);
+
+/**
+ * A shell row's summary is the command itself. Once trace lets that summary wrap, the header
+ * holds the whole payload and the chevron would open a card that only repeats it. Output or an
+ * error means the card still carries something the header does not, so the chevron stays.
+ */
+/**
+ * Nothing maps a non-zero shell exit to `status: "failed"` — the exit code rides on the detail
+ * instead — so a failing test run would otherwise read as a clean call.
+ */
+function hasToolCallErrored(detail: ToolCallDetail | undefined, status: string): boolean {
+  if (status === "failed") {
+    return true;
+  }
+  return detail?.type === "shell" && typeof detail.exitCode === "number" && detail.exitCode !== 0;
+}
+
+const PAYLOAD_DETAIL_TYPES = new Set(["shell", "edit"]);
+
+function showsCollapsedPreview(detail: ToolCallDetail | undefined, isTrace: boolean): boolean {
+  return isTrace && detail !== undefined && PAYLOAD_DETAIL_TYPES.has(detail.type);
+}
+
+function isSelfContainedShellRow(
+  detail: ToolCallDetail | undefined,
+  error: unknown,
+  isTrace: boolean,
+): boolean {
+  if (!isTrace || error || detail?.type !== "shell") {
+    return false;
+  }
+  return (detail.output ?? "").trim().length === 0;
+}
 
 function areToolCallPropsEqual(previous: ToolCallProps, next: ToolCallProps) {
   if (previous.toolName !== next.toolName) return false;

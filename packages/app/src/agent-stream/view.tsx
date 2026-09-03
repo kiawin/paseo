@@ -176,7 +176,11 @@ function renderStreamItemWithTurnFooter(input: {
     />
   ) : null;
   const content = (
-    <StreamItemWrapper itemId={input.layoutItem.item.id} gapBelow={input.layoutItem.gapBelow}>
+    <StreamItemWrapper
+      itemId={input.layoutItem.item.id}
+      gapBelow={input.layoutItem.gapBelow}
+      selectableGap={input.layoutItem.item.kind === "assistant_message"}
+    >
       {input.content}
     </StreamItemWrapper>
   );
@@ -1673,6 +1677,18 @@ const stylesheet = StyleSheet.create((theme) => ({
     alignSelf: "center",
     paddingHorizontal: theme.spacing[2],
   },
+  streamItemWrapperSelectableGap: isWeb
+    ? { cursor: "auto" as const, userSelect: "text" as const }
+    : {},
+  // Sits on the wrapper's own horizontal padding, which is the column every node indents past.
+  transcriptRail: {
+    position: "absolute",
+    left: theme.spacing[2],
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: theme.colors.border,
+  },
   emptyState: {
     flex: 1,
     alignItems: "center",
@@ -1800,13 +1816,39 @@ const permissionStyles = StyleSheet.create((theme) => ({
 interface StreamItemWrapperProps {
   itemId: string;
   gapBelow: number;
+  /**
+   * Whether a drag that starts in the gap below this item starts a text selection. Markdown
+   * blocks carry no vertical margin of their own, so the space under an assistant block is this
+   * gap, and a press there would otherwise land on the list's `userSelect: none` and select
+   * nothing.
+   */
+  selectableGap: boolean;
   children: ReactNode;
 }
 
-function StreamItemWrapper({ gapBelow, children }: StreamItemWrapperProps) {
+function StreamItemWrapper({ gapBelow, selectableGap, children }: StreamItemWrapperProps) {
+  // The rail is drawn here, by the one element that owns the gap between items. Drawn inside a
+  // node instead it can never reach across that gap, whatever the node does with its own
+  // spacing — which is why per-node rails needed an overshoot constant and still broke.
+  // Holding the gap as padding keeps it inside this box, so top:0/bottom:0 spans item plus gap
+  // and consecutive wrappers meet with nothing to bridge.
+  const isTraceTranscript = useSettings((settings) => settings.chatTranscriptStyle === "trace");
+  // A selectable gap is padding for the same reason: a margin sits outside the box, where the
+  // wrapper's userSelect cannot reach it.
   const wrapperStyle = useMemo(
-    () => [stylesheet.streamItemWrapper, { marginBottom: gapBelow }],
-    [gapBelow],
+    () => [
+      stylesheet.streamItemWrapper,
+      isTraceTranscript || selectableGap ? { paddingBottom: gapBelow } : { marginBottom: gapBelow },
+      selectableGap && stylesheet.streamItemWrapperSelectableGap,
+    ],
+    [gapBelow, isTraceTranscript, selectableGap],
   );
-  return <View style={wrapperStyle}>{children}</View>;
+  return (
+    <View style={wrapperStyle}>
+      {isTraceTranscript ? (
+        <View style={stylesheet.transcriptRail} testID="transcript-rail" />
+      ) : null}
+      {children}
+    </View>
+  );
 }
