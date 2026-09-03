@@ -13,7 +13,7 @@ import { type Theme } from "@/styles/theme";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { FileActionsContextMenuContent } from "@/components/file-actions-menu";
-import { isWeb } from "@/constants/platform";
+import { hasActiveTextSelection } from "@/utils/text-selection";
 
 interface DiffFolderRowProps {
   /** full uncompressed directory path — the collapse identity */
@@ -75,8 +75,7 @@ export function DiffFolderRow({
   const hideNameHover = useCallback(() => setIsHovered(false), []);
 
   const handlePress = useCallback(() => {
-    const selection = isWeb ? window.getSelection() : null;
-    if (selection && !selection.isCollapsed && selection.toString().length > 0) {
+    if (hasActiveTextSelection()) {
       return;
     }
     handleSelect();
