@@ -1923,6 +1923,11 @@ export const es: TranslationResources = {
     subAgentActivity: "Actividad de subagente",
     input: "Aporte",
     output: "Producción",
+    clickToExpand: "Clic para ampliar",
+    inLabel: "ENT",
+    outLabel: "SAL",
+    copyCommand: "Copiar comando",
+    copyOutput: "Copiar salida",
   },
   toolCallGroup: {
     editedFiles: {
@@ -2124,6 +2129,15 @@ export const es: TranslationResources = {
         options: {
           overview: "Resumen",
           detailed: "Detalle completo",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "Estilo de la transcripción",
+        description: "Cómo se organiza un turno completado",
+        accessibilityLabel: "Seleccionar estilo de la transcripción ({{value}})",
+        options: {
+          cards: "Tarjetas",
+          trace: "Traza",
         },
       },
       language: {
