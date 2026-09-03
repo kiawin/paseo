@@ -11,6 +11,7 @@ import {
 import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 import { i18n } from "@/i18n/i18next";
+import type { WorktreeRemovalRefusal } from "@getpaseo/protocol/messages";
 
 export interface WorkspaceArchiveTarget {
   serverId: string;
@@ -18,7 +19,10 @@ export interface WorkspaceArchiveTarget {
 }
 
 interface WorkspaceArchiveClient {
-  archiveWorkspace: (workspaceId: string) => Promise<{ error: string | null; canceled?: boolean }>;
+  archiveWorkspace: (
+    workspaceId: string,
+    options?: { removeWorktreeDirectory?: boolean },
+  ) => Promise<ArchiveWorkspaceResponse>;
 }
 
 interface WorkspaceArchiveUndoClient {
@@ -32,6 +36,15 @@ export interface OptimisticWorkspaceArchive {
   /** The row as it was before the archive hid it, for undo to put back. */
   hidden: WorkspaceDescriptor | null;
   done: Promise<WorkspaceArchiveOutcome>;
+  response: Promise<ArchiveWorkspaceResponse>;
+}
+
+/** What the daemon did; worktree fields are absent on older daemons. */
+export interface ArchiveWorkspaceResponse {
+  error: string | null;
+  canceled?: boolean;
+  worktreeDirectoryRemoved?: boolean | null;
+  worktreeRemovalRefusal?: WorktreeRemovalRefusal | null;
 }
 
 interface OptimisticWorkspaceArchiveSnapshot {
@@ -107,15 +120,17 @@ function invalidateAgentHistory(serverId: string): void {
 async function archiveWorkspaceOrThrow(input: {
   client: WorkspaceArchiveClient;
   workspaceId: string;
-}): Promise<WorkspaceArchiveOutcome> {
-  const payload = await input.client.archiveWorkspace(input.workspaceId);
-  if (payload.canceled) {
-    return "canceled";
-  }
+  removeWorktreeDirectory?: boolean;
+}): Promise<ArchiveWorkspaceResponse> {
+  const payload = await input.client.archiveWorkspace(
+    input.workspaceId,
+    input.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : undefined,
+  );
   if (payload.error) {
+    if (payload.canceled) return payload;
     throw new Error(payload.error);
   }
-  return "archived";
+  return payload;
 }
 
 /**
@@ -125,33 +140,40 @@ async function archiveWorkspaceOrThrow(input: {
 export function beginOptimisticWorkspaceArchive(input: {
   client: WorkspaceArchiveClient;
   workspace: WorkspaceArchiveTarget;
+  removeWorktreeDirectory?: boolean;
 }): OptimisticWorkspaceArchive {
   const snapshot = hideWorkspaceOptimistically(input.workspace);
-  const done = (async () => {
+  const response = (async () => {
     try {
-      const outcome = await archiveWorkspaceOrThrow({
+      const result = await archiveWorkspaceOrThrow({
         client: input.client,
         workspaceId: input.workspace.workspaceId,
+        ...(input.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : {}),
       });
-      if (outcome === "canceled") {
+      if (result.canceled) {
         restoreOptimisticallyHiddenWorkspace({ serverId: input.workspace.serverId, snapshot });
       } else {
         invalidateAgentHistory(input.workspace.serverId);
       }
-      return outcome;
+      return result;
     } catch (error) {
       restoreOptimisticallyHiddenWorkspace({ serverId: input.workspace.serverId, snapshot });
       throw error;
     }
   })();
-  return { hidden: snapshot.workspace, done };
+  const done = response.then((result) => (result.canceled ? "canceled" : "archived"));
+  // Direct archive callers observe `response`; an undo window is the only consumer of `done`.
+  // Handle an unused rejection while leaving `done` rejected for callers that await it.
+  void done.catch(() => {});
+  return { hidden: snapshot.workspace, done, response };
 }
 
 export async function archiveWorkspaceOptimistically(input: {
   client: WorkspaceArchiveClient;
   workspace: WorkspaceArchiveTarget;
-}): Promise<WorkspaceArchiveOutcome> {
-  return beginOptimisticWorkspaceArchive(input).done;
+  removeWorktreeDirectory?: boolean;
+}): Promise<ArchiveWorkspaceResponse> {
+  return beginOptimisticWorkspaceArchive(input).response;
 }
 
 /**
