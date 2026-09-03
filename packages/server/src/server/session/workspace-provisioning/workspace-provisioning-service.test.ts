@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs";
 
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { getCheckoutStatus } from "../../../utils/checkout-git.js";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
@@ -852,7 +852,7 @@ test.each(["missing", "archived"] as const)(
   },
 );
 
-test("a failed import keeps an archived worktree's placement when its directory is gone", async () => {
+test("an import refuses an archived worktree whose directory is gone and keeps its placement", async () => {
   // The git port here is the production read: getCheckoutStatus against the real
   // filesystem, so "the worktree directory is gone" is observed, not modelled.
   const mainRepoRoot = path.join(tmpDir, "main-repo");
@@ -913,11 +913,13 @@ test("a failed import keeps an archived worktree's placement when its directory 
     }),
   });
 
+  const operation = vi.fn(async () => "resumed");
   await expect(
-    realCheckoutProvisioning.runInImportWorkspace({ cwd: worktreeCwd }, async () => {
-      throw new Error("provider resume failed");
-    }),
-  ).rejects.toThrow("provider resume failed");
+    realCheckoutProvisioning.runInImportWorkspace({ cwd: worktreeCwd }, operation),
+  ).rejects.toMatchObject({
+    code: "backing_directory_missing",
+  } satisfies Partial<WorkspaceProvisioningError>);
+  expect(operation).not.toHaveBeenCalled();
 
   expect(await workspaceRegistry.get(archived.workspaceId)).toMatchObject({
     kind: "worktree",
@@ -983,4 +985,47 @@ test("a directory that goes away while the git read is in flight keeps its place
     kind: "local_checkout",
     branch: "feature/vanishing",
   });
+});
+
+// Archive decides a backing directory is unreferenced and then removes it.
+// Provisioning writes the record that would have made it referenced. These
+// cover the interleaving of those two, which the shared backing-directory lock
+// is what resolves.
+
+function worktreeInput(repo: string, worktree: string) {
+  return {
+    sourceCwd: repo,
+    repoRoot: repo,
+    cwd: worktree,
+    worktreeRoot: worktree,
+    branch: "feat-x",
+    baseBranch: "main",
+    title: null,
+  };
+}
+
+test("worktree provisioning refuses to register a record for a directory archive already removed", async () => {
+  const repo = path.join(tmpDir, "repo");
+  const worktree = path.join(tmpDir, "repo-worktrees", "feat-x");
+  gitRoots.add(repo);
+  mkdirSync(repo, { recursive: true });
+
+  // The worktree was created and then removed by a concurrent archive before
+  // provisioning reached the registry write.
+  await expect(
+    provisioning.createWorkspaceForWorktree(worktreeInput(repo, worktree)),
+  ).rejects.toThrow(WorkspaceProvisioningError);
+
+  expect(await workspaceRegistry.list()).toHaveLength(0);
+});
+
+test("directory provisioning registers a record Paseo does not own without checking the directory", async () => {
+  const missing = path.join(tmpDir, "not-created-yet");
+
+  // Archive never removes a directory Paseo does not own, so the presence check
+  // does not apply and must not turn this into a failure.
+  const workspace = await provisioning.createWorkspaceForDirectory(missing);
+
+  expect(workspace.isPaseoOwnedWorktree).toBe(false);
+  expect(await workspaceRegistry.list()).toHaveLength(1);
 });
