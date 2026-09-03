@@ -2097,6 +2097,11 @@ export const ru: TranslationResources = {
     empty: "Дополнительные сведения отсутствуют",
     input: "Входные данные",
     output: "Выходные данные",
+    clickToExpand: "Нажмите, чтобы развернуть",
+    inLabel: "ВХОД",
+    outLabel: "ВЫХОД",
+    copyCommand: "Копировать команду",
+    copyOutput: "Копировать вывод",
   },
   turnSummary: {
     details: "Показать подробности хода",
@@ -2481,6 +2486,15 @@ export const ru: TranslationResources = {
           full: "Полностью",
           collapseToolCalls: "Сворачивать вызовы инструментов",
           collapseTurns: "Сворачивать ходы",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "Стиль расшифровки чата",
+        description: "Как располагается завершённый ход",
+        accessibilityLabel: "Выбрать стиль расшифровки чата ({{value}})",
+        options: {
+          cards: "Карточки",
+          trace: "Трассировка",
         },
       },
       language: {

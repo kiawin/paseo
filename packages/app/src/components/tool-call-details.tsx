@@ -1,13 +1,15 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   Pressable,
   View,
   Text,
   ScrollView as RNScrollView,
+  type GestureResponderEvent,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
 import { ScrollView as GHScrollView } from "react-native-gesture-handler";
+import { Check, Copy } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -22,6 +24,16 @@ import { hasMeaningfulToolCallDetail } from "@/utils/tool-call-detail-state";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { extensionFromPath, highlightToKeyedLines } from "@/utils/highlight-cache";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { isNative } from "@/constants/platform";
+import { useCopyFeedback } from "@/hooks/use-copy-feedback";
+import {
+  buildShellStreams,
+  takeLines,
+  type ShellStream,
+  type ShellStreams as ShellStreamsModel,
+} from "./shell-streams";
+import { diffPreviewIsClamped, selectDiffPreviewLines } from "@/utils/diff-preview";
 import { HighlightedLines } from "./highlighted-content";
 import { DiffViewer } from "./diff-viewer";
 import { getCodeInsets } from "./code-insets";
@@ -39,7 +51,17 @@ interface ToolCallDetailsContentProps {
   errorText?: string;
   maxHeight?: number;
   fillAvailableHeight?: boolean;
+  /**
+   * Show the whole card: no height cap, and text wraps instead of scrolling sideways. The expanded trace row sits in the transcript, where a scroller inside the page's
+   * own scroller is the thing the reader is trying to avoid.
+   */
+  fullExpand?: boolean;
   showLoadingSkeleton?: boolean;
+  /**
+   * Clamp the card to this many lines of content. A pixel height slices whatever line it lands
+   * in, leaving a half-rendered row; truncating the text keeps the card a whole number of lines.
+   */
+  previewLines?: number;
 }
 
 interface DetailStyles {
@@ -55,6 +77,7 @@ interface DetailStyles {
   resolvedMaxHeight: number | undefined;
   shouldFill: boolean;
   isFullBleed: boolean;
+  wrap: boolean;
 }
 
 function resolveIsFullBleed(detail: ToolCallDetail | undefined): boolean {
@@ -74,6 +97,7 @@ function useDetailStyles(
   detail: ToolCallDetail | undefined,
   resolvedMaxHeight: number | undefined,
   fillAvailableHeight: boolean,
+  wrap: boolean,
 ): DetailStyles {
   const isFullBleed = resolveIsFullBleed(detail);
   const shouldFill = resolveShouldFill(detail, fillAvailableHeight);
@@ -137,6 +161,7 @@ function useDetailStyles(
     resolvedMaxHeight,
     shouldFill,
     isFullBleed,
+    wrap,
   };
 }
 
@@ -150,16 +175,389 @@ function useDiffLines(detail: ToolCallDetail | undefined): DiffLine[] | undefine
   }, [detail]);
 }
 
+/** A sideways scroller, or when `wrap` is set a plain box: the content wraps to its width. */
+function HorizontalScroll({
+  wrap,
+  style,
+  contentContainerStyle,
+  children,
+}: {
+  wrap: boolean;
+  style?: StyleProp<ViewStyle>;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  if (wrap) {
+    return <View style={[style, contentContainerStyle]}>{children}</View>;
+  }
+  return (
+    <ScrollView
+      horizontal
+      nestedScrollEnabled
+      showsHorizontalScrollIndicator
+      style={style}
+      contentContainerStyle={contentContainerStyle}
+    >
+      {children}
+    </ScrollView>
+  );
+}
+
+/** Sized to the gutter's mono line rather than the app's icon scale, which is taller. */
+const SHELL_COPY_ICON_SIZE = 12;
+
 interface ShellDetailProps {
   command: string;
   output: string | null | undefined;
   ds: DetailStyles;
+  previewLines?: number;
+  wrap?: boolean;
 }
 
-function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
-  const normalizedCommand = command.replace(/\n+$/, "");
-  const commandOutput = (output ?? "").replace(/^\n+/, "");
-  const hasOutput = commandOutput.length > 0;
+function ShellDetailSection({ command, output, ds, previewLines, wrap = false }: ShellDetailProps) {
+  const isCompact = useIsCompactFormFactor();
+  const streams = useMemo(
+    () => buildShellStreams(command, output, previewLines),
+    [command, output, previewLines],
+  );
+  // A preview on a phone is a teaser for the sheet behind it, so it clips and ellipsises rather
+  // than handing the reader a sideways scroller to fight inside the transcript list.
+  const isCompactPreview = isCompact && previewLines !== undefined;
+  const body = (
+    <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
+      <ShellStreamsView
+        streams={streams}
+        isCompact={isCompact}
+        clip={isCompactPreview}
+        wrap={wrap}
+      />
+    </View>
+  );
+  return (
+    <View style={ds.sectionFillStyle}>
+      <View style={ds.codeBlockFillStyle}>
+        <ScrollView
+          style={ds.codeVerticalScrollStyle}
+          contentContainerStyle={styles.codeVerticalContent}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+          scrollEnabled={!isCompactPreview}
+        >
+          {isCompactPreview || wrap ? (
+            <View style={styles.codeHorizontalClip}>{body}</View>
+          ) : (
+            <ScrollView
+              horizontal
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator
+              contentContainerStyle={styles.codeHorizontalContent}
+            >
+              {body}
+            </ScrollView>
+          )}
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Copies one stream whole. It lives in the label gutter because that column is what names the
+ * stream — the card's own right edge belongs to whatever line is longest, and scrolls with it.
+ */
+function ShellStreamCopyButton({
+  text,
+  accessibilityLabel,
+  visible,
+}: {
+  text: string;
+  accessibilityLabel: string;
+  visible: boolean;
+}) {
+  const { t } = useTranslation();
+  const getContent = useCallback(() => text, [text]);
+  const { copied, copy } = useCopyFeedback({ getContent });
+  // The card toggles on press, so copying out of it must not also close it.
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation?.();
+      void copy();
+    },
+    [copy],
+  );
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      style={[styles.shellStreamCopy, visible ? styles.copyVisible : styles.copyHidden]}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={copied ? t("message.actions.copied") : accessibilityLabel}
+      testID="tool-call-shell-copy"
+    >
+      {({ hovered }) => {
+        const color = hovered ? styles.copyIconHovered.color : styles.copyIcon.color;
+        return copied ? (
+          <Check size={SHELL_COPY_ICON_SIZE} color={color} />
+        ) : (
+          <Copy size={SHELL_COPY_ICON_SIZE} color={color} />
+        );
+      }}
+    </Pressable>
+  );
+}
+
+function ShellStreamRow({
+  label,
+  stream,
+  copyLabel,
+  wrap,
+}: {
+  label: string;
+  stream: ShellStream;
+  copyLabel: string;
+  wrap: boolean;
+}) {
+  // Hover tracking sits on a plain View wrapping the button, per docs/hover.md: a Pressable that
+  // owns hover would hand it to the button the moment the cursor arrived, and flicker.
+  const [isHovered, setIsHovered] = useState(false);
+  const handlePointerEnter = useCallback(() => setIsHovered(true), []);
+  const handlePointerLeave = useCallback(() => setIsHovered(false), []);
+
+  return (
+    <View
+      style={styles.shellStreamRow}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+    >
+      <View style={styles.shellStreamGutter}>
+        <Text style={styles.shellStreamLabel}>{label}</Text>
+        <ShellStreamCopyButton
+          text={stream.full}
+          accessibilityLabel={copyLabel}
+          visible={isHovered || isNative}
+        />
+      </View>
+      <Text selectable style={wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}>
+        {stream.shown}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * One `Text` per line, because `numberOfLines` truncates a block as a whole — a single Text
+ * holding newlines would drop whole trailing lines instead of ellipsising each one.
+ */
+function ClippedLines({ text, prompt }: { text: string; prompt?: boolean }) {
+  return (
+    <>
+      {text.split("\n").map((line, index) => (
+        // Lines have no identity of their own here, and the list is re-clamped on every render.
+        // eslint-disable-next-line react/no-array-index-key
+        <Text key={index} numberOfLines={1} ellipsizeMode="tail" style={styles.scrollText}>
+          {prompt && index === 0 ? <Text style={styles.shellPrompt}>$ </Text> : null}
+          {line}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+function ShellStreamsView({
+  streams,
+  isCompact,
+  clip = false,
+  wrap = false,
+}: {
+  streams: ShellStreamsModel;
+  isCompact: boolean;
+  clip?: boolean;
+  wrap?: boolean;
+}) {
+  const { t } = useTranslation();
+  const { command, output } = streams;
+
+  if (isCompact) {
+    if (clip) {
+      return (
+        <>
+          <ClippedLines text={command.shown} prompt />
+          {output === null ? null : <ClippedLines text={output.shown} />}
+        </>
+      );
+    }
+    // The gutter costs width a phone does not have, so compact goes back to the shell prompt to
+    // tell command from output — and with no gutter there is nowhere to hang a copy button.
+    return (
+      <Text selectable style={wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}>
+        <Text style={styles.shellPrompt}>$ </Text>
+        {command.shown}
+        {output === null ? "" : `\n\n${output.shown}`}
+      </Text>
+    );
+  }
+
+  return (
+    <>
+      <ShellStreamRow
+        label={t("toolCallDetails.inLabel")}
+        stream={command}
+        copyLabel={t("toolCallDetails.copyCommand")}
+        wrap={wrap}
+      />
+      {output === null ? null : (
+        <ShellStreamRow
+          label={t("toolCallDetails.outLabel")}
+          stream={output}
+          copyLabel={t("toolCallDetails.copyOutput")}
+          wrap={wrap}
+        />
+      )}
+    </>
+  );
+}
+
+function resolveSubAgentFallbackHeader(
+  subAgentType: string | null | undefined,
+  description: string | null | undefined,
+  fallbackText: string,
+): string {
+  if (subAgentType && description) {
+    return `${subAgentType}: ${description}`;
+  }
+  return subAgentType ?? description ?? fallbackText;
+}
+
+interface SubAgentDetailProps {
+  log: string;
+  childSessionId: string | null | undefined;
+  subAgentType: string | null | undefined;
+  description: string | null | undefined;
+  ds: DetailStyles;
+}
+
+interface SubAgentActivityRow {
+  index: number;
+  toolName: string;
+  summary?: string;
+}
+
+interface ParsedSubAgentLog {
+  actions: SubAgentActivityRow[];
+  remainingLog: string;
+}
+
+function parseBracketedSubAgentLine(line: string, index: number): SubAgentActivityRow | null {
+  const match = line.match(/^\[([^\]]+)\](?:\s+(.*))?$/);
+  if (!match) {
+    return null;
+  }
+  const toolName = match[1]?.trim();
+  if (!toolName) {
+    return null;
+  }
+  const summary = match[2]?.trim();
+  return {
+    index,
+    toolName,
+    ...(summary ? { summary } : {}),
+  };
+}
+
+function parseSubAgentLog(log: string): ParsedSubAgentLog {
+  const actions: SubAgentActivityRow[] = [];
+  const remainingLines: string[] = [];
+  for (const line of log.replace(/^\n+/, "").split("\n")) {
+    const normalizedLine = line.trim();
+    if (!normalizedLine) {
+      continue;
+    }
+    const parsedAction = parseBracketedSubAgentLine(normalizedLine, actions.length + 1);
+    if (parsedAction) {
+      actions.push(parsedAction);
+    } else {
+      remainingLines.push(line);
+    }
+  }
+  return {
+    actions,
+    remainingLog: remainingLines.join("\n").replace(/^\n+/, ""),
+  };
+}
+
+function SubAgentActionRow({ action }: { action: SubAgentActivityRow }) {
+  return (
+    <View style={styles.subAgentActionRow}>
+      <Text selectable style={styles.subAgentActionTool}>
+        {formatSubAgentToolName(action.toolName)}
+      </Text>
+      {action.summary ? (
+        <Text selectable style={styles.subAgentActionSummary}>
+          {action.summary}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function formatSubAgentToolName(toolName: string): string {
+  const trimmed = toolName.trim();
+  if (!trimmed) {
+    return toolName;
+  }
+  return trimmed
+    .replace(/[._-]+/g, " ")
+    .split(" ")
+    .filter((segment) => segment.length > 0)
+    .map((segment) => `${segment[0]?.toUpperCase() ?? ""}${segment.slice(1)}`)
+    .join(" ");
+}
+
+function SubAgentLogText({
+  activityLog,
+  fallbackHeader,
+  hasActions,
+  wrap,
+}: {
+  activityLog: string;
+  fallbackHeader: string;
+  hasActions: boolean;
+  wrap: boolean;
+}) {
+  const textStyle = wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText;
+  if (activityLog.length > 0) {
+    return (
+      <Text selectable style={textStyle}>
+        {activityLog}
+      </Text>
+    );
+  }
+  if (!hasActions) {
+    return (
+      <Text selectable style={textStyle}>
+        {fallbackHeader}
+      </Text>
+    );
+  }
+  return null;
+}
+
+function SubAgentDetailSection({
+  log,
+  childSessionId,
+  subAgentType,
+  description,
+  ds,
+}: SubAgentDetailProps) {
+  const { t } = useTranslation();
+  const { actions, remainingLog } = useMemo(() => parseSubAgentLog(log), [log]);
+  const fallbackHeader = resolveSubAgentFallbackHeader(
+    subAgentType,
+    description,
+    t("toolCallDetails.subAgentActivity"),
+  );
+  const hasActions = actions.length > 0;
   return (
     <View style={ds.sectionFillStyle}>
       <View style={ds.codeBlockFillStyle}>
@@ -169,20 +567,28 @@ function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
           nestedScrollEnabled
           showsVerticalScrollIndicator
         >
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            showsHorizontalScrollIndicator
-            contentContainerStyle={styles.codeHorizontalContent}
-          >
+          <HorizontalScroll wrap={ds.wrap} contentContainerStyle={styles.codeHorizontalContent}>
             <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
-              <Text selectable style={styles.scrollText}>
-                <Text style={styles.shellPrompt}>$ </Text>
-                {normalizedCommand}
-                {hasOutput ? `\n\n${commandOutput}` : ""}
-              </Text>
+              {childSessionId ? (
+                <Text selectable style={styles.subAgentSessionText}>
+                  session {childSessionId}
+                </Text>
+              ) : null}
+              {hasActions ? (
+                <View style={styles.subAgentActions}>
+                  {actions.map((action) => (
+                    <SubAgentActionRow key={action.index} action={action} />
+                  ))}
+                </View>
+              ) : null}
+              <SubAgentLogText
+                activityLog={remainingLog}
+                fallbackHeader={fallbackHeader}
+                hasActions={hasActions}
+                wrap={ds.wrap}
+              />
             </View>
-          </ScrollView>
+          </HorizontalScroll>
         </ScrollView>
       </View>
     </View>
@@ -192,9 +598,14 @@ function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
 interface EditDetailProps {
   diffLines: DiffLine[] | undefined;
   ds: DetailStyles;
+  previewLines?: number;
+  wrap?: boolean;
 }
 
-function EditDetailSection({ diffLines, ds }: EditDetailProps) {
+function EditDetailSection({ diffLines, ds, previewLines, wrap = false }: EditDetailProps) {
+  // Two columns need width, so this follows the form factor rather than a user preference.
+  const isCompact = useIsCompactFormFactor();
+
   return (
     <View style={ds.sectionFillStyle}>
       {diffLines ? (
@@ -203,6 +614,9 @@ function EditDetailSection({ diffLines, ds }: EditDetailProps) {
             diffLines={diffLines}
             maxHeight={ds.resolvedMaxHeight}
             fillAvailableHeight={ds.shouldFill}
+            split={!isCompact}
+            clipHorizontally={isCompact && previewLines !== undefined}
+            wrap={wrap}
           />
         </View>
       ) : null}
@@ -237,15 +651,19 @@ function ScrollableTextSection({
       nestedScrollEnabled
       showsVerticalScrollIndicator={true}
     >
-      <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={true}>
+      <HorizontalScroll wrap={ds.wrap}>
         {keyedLines ? (
-          <HighlightedLines lines={keyedLines} startLine={startLine} />
+          <HighlightedLines lines={keyedLines} startLine={startLine} wrap={ds.wrap} />
         ) : (
-          <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+          <Text
+            selectable
+            style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
+            dataSet={CODE_SURFACE_DATASET}
+          >
             {content}
           </Text>
         )}
-      </ScrollView>
+      </HorizontalScroll>
     </ScrollView>
   );
   if (!wrapInSectionFill) return body;
@@ -267,11 +685,15 @@ function FetchDetailSection({ url, result, ds }: FetchDetailProps) {
         nestedScrollEnabled
         showsVerticalScrollIndicator
       >
-        <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator>
-          <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+        <HorizontalScroll wrap={ds.wrap}>
+          <Text
+            selectable
+            style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
+            dataSet={CODE_SURFACE_DATASET}
+          >
             {result ? `${url}\n\n${result}` : url}
           </Text>
-        </ScrollView>
+        </HorizontalScroll>
       </ScrollView>
     </View>
   );
@@ -280,9 +702,14 @@ function FetchDetailSection({ url, result, ds }: FetchDetailProps) {
 function ArtifactDetailSection({ url, title }: { url: string; title?: string }) {
   const { t } = useTranslation();
   const host = useMemo(() => externalLinkHost(url), [url]);
-  const handlePress = useCallback(() => {
-    void openExternalUrl(url);
-  }, [url]);
+  // The card around this link toggles on press, so opening the link must not also close the card.
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation?.();
+      void openExternalUrl(url);
+    },
+    [url],
+  );
 
   return (
     <View style={styles.section}>
@@ -337,11 +764,15 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
           nestedScrollEnabled
           showsVerticalScrollIndicator
         >
-          <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator>
-            <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+          <HorizontalScroll wrap={ds.wrap}>
+            <Text
+              selectable
+              style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
+              dataSet={CODE_SURFACE_DATASET}
+            >
               {detail.content}
             </Text>
-          </ScrollView>
+          </HorizontalScroll>
         </ScrollView>
       </View>,
     );
@@ -349,7 +780,11 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
   if (detail.filePaths && detail.filePaths.length > 0) {
     out.push(
       <View key="search-files" style={styles.section}>
-        <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+        <Text
+          selectable
+          style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
+          dataSet={CODE_SURFACE_DATASET}
+        >
           {detail.filePaths.join("\n")}
         </Text>
       </View>,
@@ -358,7 +793,11 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
   if (detail.webResults && detail.webResults.length > 0) {
     out.push(
       <View key="search-web-results" style={styles.section}>
-        <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+        <Text
+          selectable
+          style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
+          dataSet={CODE_SURFACE_DATASET}
+        >
           {detail.webResults.map((entry) => `${entry.title}\n${entry.url}`).join("\n\n")}
         </Text>
       </View>,
@@ -367,7 +806,11 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
   if (detail.annotations && detail.annotations.length > 0) {
     out.push(
       <View key="search-annotations" style={styles.section}>
-        <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+        <Text
+          selectable
+          style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
+          dataSet={CODE_SURFACE_DATASET}
+        >
           {detail.annotations.join("\n\n")}
         </Text>
       </View>,
@@ -421,17 +864,19 @@ function buildUnknownSections(detail: UnknownDetail, ds: DetailStyles, t: TFunct
     );
     out.push(
       <View key={`${section.title}-value`} style={styles.section}>
-        <ScrollView
-          horizontal
-          nestedScrollEnabled
+        <HorizontalScroll
+          wrap={ds.wrap}
           style={ds.jsonScrollCombined}
           contentContainerStyle={styles.jsonContent}
-          showsHorizontalScrollIndicator={true}
         >
-          <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+          <Text
+            selectable
+            style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
+            dataSet={CODE_SURFACE_DATASET}
+          >
             {value}
           </Text>
-        </ScrollView>
+        </HorizontalScroll>
       </View>,
     );
   }
@@ -472,22 +917,68 @@ function buildPaseoUnknownSections(
   return sections.map((section) => <PaseoDetailSection key={section.title} section={section} />);
 }
 
+function exceedsPreview(
+  detail: ToolCallDetail | undefined,
+  diffLines: DiffLine[] | undefined,
+  previewLines: number | undefined,
+): boolean {
+  if (detail === undefined || previewLines === undefined) {
+    return false;
+  }
+  if (detail.type === "shell") {
+    return (
+      takeLines(detail.command.replace(/\n+$/, ""), previewLines).truncated ||
+      takeLines((detail.output ?? "").replace(/^\n+/, ""), previewLines).truncated
+    );
+  }
+  return diffLines !== undefined && diffPreviewIsClamped(diffLines, previewLines);
+}
+
 function buildDetailSections(
   toolName: string | undefined,
   detail: ToolCallDetail | undefined,
   diffLines: DiffLine[] | undefined,
   ds: DetailStyles,
   t: TFunction,
+  previewLines?: number,
+  wrap = false,
 ): ReactNode[] {
   if (!detail) return [];
   if (detail.type === "shell") {
     return [
-      <ShellDetailSection key="shell" command={detail.command} output={detail.output} ds={ds} />,
+      <ShellDetailSection
+        key="shell"
+        command={detail.command}
+        output={detail.output}
+        ds={ds}
+        previewLines={previewLines}
+        wrap={wrap}
+      />,
     ];
   }
-  if (detail.type === "worktree_setup" || detail.type === "sub_agent") return [];
+  if (detail.type === "worktree_setup") return [];
+  if (detail.type === "sub_agent") {
+    return [
+      <SubAgentDetailSection
+        key="sub-agent"
+        log={detail.log ?? ""}
+        childSessionId={detail.childSessionId}
+        subAgentType={detail.subAgentType}
+        description={detail.description}
+        ds={ds}
+      />,
+    ];
+  }
   if (detail.type === "edit") {
-    return [<EditDetailSection key="edit" diffLines={diffLines} ds={ds} />];
+    return [
+      <EditDetailSection
+        key="edit"
+        diffLines={diffLines}
+        ds={ds}
+        previewLines={previewLines}
+        wrap={wrap}
+      />,
+    ];
   }
   if (detail.type === "write") {
     return [
@@ -539,21 +1030,22 @@ function ErrorSection({ errorText, ds }: { errorText: string; ds: DetailStyles }
   return (
     <View style={styles.section}>
       <Text style={[styles.sectionTitle, styles.errorText]}>{t("toolCallDetails.error")}</Text>
-      <ScrollView
-        horizontal
-        nestedScrollEnabled
+      <HorizontalScroll
+        wrap={ds.wrap}
         style={ds.jsonScrollErrorCombined}
         contentContainerStyle={styles.jsonContent}
-        showsHorizontalScrollIndicator={true}
       >
         <Text
           selectable
-          style={[styles.scrollText, styles.errorText]}
+          style={[
+            ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText,
+            styles.errorText,
+          ]}
           dataSet={CODE_SURFACE_DATASET}
         >
           {errorText}
         </Text>
-      </ScrollView>
+      </HorizontalScroll>
     </View>
   );
 }
@@ -574,14 +1066,32 @@ export function ToolCallDetailsContent({
   errorText,
   maxHeight,
   fillAvailableHeight = false,
+  fullExpand = false,
   showLoadingSkeleton = false,
+  previewLines,
 }: ToolCallDetailsContentProps) {
   const { t } = useTranslation();
-  const resolvedMaxHeight = fillAvailableHeight ? undefined : (maxHeight ?? 300);
-  const ds = useDetailStyles(detail, resolvedMaxHeight, fillAvailableHeight);
-  const diffLines = useDiffLines(detail);
+  const isCompactLayout = useIsCompactFormFactor();
+  const resolvedMaxHeight = fillAvailableHeight || fullExpand ? undefined : (maxHeight ?? 300);
+  const ds = useDetailStyles(detail, resolvedMaxHeight, fillAvailableHeight, fullExpand);
+  const allDiffLines = useDiffLines(detail);
+  const diffLines = useMemo(() => {
+    if (previewLines === undefined || allDiffLines === undefined) return allDiffLines;
+    return selectDiffPreviewLines(allDiffLines, previewLines);
+  }, [allDiffLines, previewLines]);
 
-  const sections: ReactNode[] = buildDetailSections(toolName, detail, diffLines, ds, t);
+  const sections: ReactNode[] = buildDetailSections(
+    toolName,
+    detail,
+    diffLines,
+    ds,
+    t,
+    previewLines,
+    fullExpand,
+  );
+  // Compact routes the whole row to the sheet on tap, so the pill would be a second affordance
+  // for a gesture the row already has.
+  const showExpandPill = !isCompactLayout && exceedsPreview(detail, allDiffLines, previewLines);
 
   if (errorText) {
     sections.push(<ErrorSection key="error" errorText={errorText} ds={ds} />);
@@ -594,7 +1104,16 @@ export function ToolCallDetailsContent({
     return <Text style={styles.emptyStateText}>{t("toolCallDetails.empty")}</Text>;
   }
 
-  return <View style={ds.fullBleedContainerStyle}>{sections}</View>;
+  return (
+    <View style={ds.fullBleedContainerStyle}>
+      {sections}
+      {showExpandPill ? (
+        <View style={styles.expandPill} pointerEvents="none">
+          <Text style={styles.expandPillText}>{t("toolCallDetails.clickToExpand")}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 // ---- Styles ----
@@ -714,6 +1233,9 @@ const styles = StyleSheet.create((theme) => {
       flexGrow: 1,
       paddingBottom: insets.extraBottom,
     },
+    codeHorizontalClip: {
+      overflow: "hidden" as const,
+    },
     codeHorizontalContent: {
       paddingRight: insets.extraRight,
     },
@@ -743,8 +1265,104 @@ const styles = StyleSheet.create((theme) => {
           }
         : null),
     },
+    // Layered over `scrollText`, which pins web to `white-space: pre` with no break opportunities.
+    wrapText: {
+      flexShrink: 1,
+      minWidth: 0,
+      ...(isWeb
+        ? {
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+          }
+        : null),
+    },
     shellPrompt: {
       color: theme.colors.foregroundMuted,
+    },
+    shellStreamRow: {
+      flexDirection: "row" as const,
+      alignItems: "flex-start" as const,
+      gap: theme.spacing[3],
+    },
+    // Fixed width so IN and OUT content starts on the same column.
+    shellStreamLabel: {
+      width: 28,
+      fontFamily: theme.fontFamily.mono,
+      fontSize: theme.fontSize.code,
+      color: theme.colors.foregroundMuted,
+    },
+    // The button is always mounted so the gutter is one width, hovered or not — a column that
+    // widened under the cursor would shift the code beside it on every hover.
+    shellStreamGutter: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: theme.spacing[1],
+    },
+    shellStreamCopy: {
+      width: SHELL_COPY_ICON_SIZE,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+    // Hidden by opacity rather than unmounted: mounting on hover would reflow the gutter under
+    // the cursor. `pointerEvents` rides on the style so the deprecated prop form stays out.
+    copyVisible: {
+      opacity: 1,
+      pointerEvents: "auto" as const,
+    },
+    copyHidden: {
+      opacity: 0,
+      pointerEvents: "none" as const,
+    },
+    copyIcon: {
+      color: theme.colors.foregroundMuted,
+    },
+    copyIconHovered: {
+      color: theme.colors.foreground,
+    },
+    // Sits over the bottom-right of a clamped card. Whole-line truncation is silent on its own,
+    // so without this a clamped card and a complete one look identical.
+    expandPill: {
+      position: "absolute",
+      right: theme.spacing[2],
+      bottom: theme.spacing[2],
+      paddingHorizontal: theme.spacing[2],
+      paddingVertical: theme.spacing[1],
+      borderRadius: theme.borderRadius.sm,
+      backgroundColor: theme.colors.surface3,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    expandPillText: {
+      fontSize: theme.fontSize.sm,
+      color: theme.colors.foregroundMuted,
+    },
+    subAgentSessionText: {
+      fontFamily: theme.fontFamily.mono,
+      fontSize: theme.fontSize.code,
+      color: theme.colors.foregroundMuted,
+      lineHeight: 18,
+      marginBottom: theme.spacing[2],
+    },
+    subAgentActions: {
+      gap: theme.spacing[1],
+      marginBottom: theme.spacing[2],
+    },
+    subAgentActionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing[2],
+    },
+    subAgentActionTool: {
+      fontFamily: theme.fontFamily.mono,
+      fontSize: theme.fontSize.code,
+      color: theme.colors.foregroundMuted,
+      lineHeight: 18,
+    },
+    subAgentActionSummary: {
+      fontFamily: theme.fontFamily.mono,
+      fontSize: theme.fontSize.code,
+      color: theme.colors.foreground,
+      lineHeight: 18,
     },
     jsonScroll: {
       borderWidth: theme.borderWidth[1],

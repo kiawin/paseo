@@ -2042,6 +2042,11 @@ export const zhCN: TranslationResources = {
     empty: "没有可用的更多详情",
     input: "输入",
     output: "输出",
+    clickToExpand: "点击展开",
+    inLabel: "输入",
+    outLabel: "输出",
+    copyCommand: "复制命令",
+    copyOutput: "复制输出",
   },
   turnSummary: {
     details: "查看轮次详情",
@@ -2415,6 +2420,15 @@ export const zhCN: TranslationResources = {
           full: "完整",
           collapseToolCalls: "折叠工具调用",
           collapseTurns: "折叠轮次",
+        },
+      },
+      chatTranscriptStyle: {
+        label: "聊天记录样式",
+        description: "已完成回合的排布方式",
+        accessibilityLabel: "选择聊天记录样式（{{value}}）",
+        options: {
+          cards: "卡片",
+          trace: "轨迹",
         },
       },
       language: {
