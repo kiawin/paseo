@@ -445,6 +445,106 @@ describe("OMP agent client and session", () => {
     expect(omp.completedTurnCount()).toBe(1);
   });
 
+  test("streams extension status and widget updates as one live tool card", async () => {
+    const scheduler = new ManualNoTurnScheduler();
+    const omp = new OmpHarness({ noTurnScheduler: scheduler });
+    await omp.start();
+    const prompt = await omp.startPromptWithFalseLocalOnlyResult("/hydra auto audit the change");
+    const runtime = omp.runtime();
+
+    runtime.emit({
+      type: "extension_ui_request",
+      id: "ordinary-status",
+      method: "setStatus",
+      statusKey: "ordinary-extension",
+      statusText: "working",
+    });
+    runtime.emit({
+      type: "extension_ui_request",
+      id: "status-start",
+      method: "setStatus",
+      statusKey: "paseo-progress:hydrafusion-lite",
+      statusText: "HydraFusion-lite · CASCADE · stage 1/2",
+    });
+    runtime.emit({
+      type: "extension_ui_request",
+      id: "widget-progress",
+      method: "setWidget",
+      widgetKey: "paseo-progress:hydrafusion-lite",
+      widgetLines: [
+        "HydraFusion-lite · CASCADE",
+        "Stage 1/2 · Flash solver",
+        "Model: openrouter/z-ai/glm-5.3-flash",
+        "Current activity: grep completed",
+      ],
+      widgetPlacement: "aboveEditor",
+    });
+    runtime.emit({
+      type: "extension_ui_request",
+      id: "status-end",
+      method: "setStatus",
+      statusKey: "paseo-progress:hydrafusion-lite",
+      statusText: undefined,
+    });
+
+    const progress = omp
+      .timeline()
+      .filter((item) => item.type === "tool_call" && item.name === "HydraFusion-lite");
+    expect(omp.timeline().filter((item) => item.type === "tool_call")).toHaveLength(3);
+    expect(progress).toHaveLength(3);
+    expect(progress.map((item) => item.callId)).toEqual([
+      progress[0]?.callId,
+      progress[0]?.callId,
+      progress[0]?.callId,
+    ]);
+    expect(progress).toEqual([
+      expect.objectContaining({
+        type: "tool_call",
+        name: "HydraFusion-lite",
+        status: "running",
+        detail: {
+          type: "plain_text",
+          label: "HydraFusion-lite · CASCADE · stage 1/2",
+          text: "HydraFusion-lite · CASCADE · stage 1/2",
+        },
+      }),
+      expect.objectContaining({
+        type: "tool_call",
+        name: "HydraFusion-lite",
+        status: "running",
+        detail: {
+          type: "plain_text",
+          label: "HydraFusion-lite · CASCADE · stage 1/2",
+          text: [
+            "HydraFusion-lite · CASCADE",
+            "Stage 1/2 · Flash solver",
+            "Model: openrouter/z-ai/glm-5.3-flash",
+            "Current activity: grep completed",
+          ].join("\n"),
+        },
+      }),
+      expect.objectContaining({
+        type: "tool_call",
+        name: "HydraFusion-lite",
+        status: "completed",
+        detail: {
+          type: "plain_text",
+          label: "HydraFusion-lite · CASCADE · stage 1/2",
+          text: [
+            "HydraFusion-lite · CASCADE",
+            "Stage 1/2 · Flash solver",
+            "Model: openrouter/z-ai/glm-5.3-flash",
+            "Current activity: grep completed",
+          ].join("\n"),
+        },
+      }),
+    ]);
+
+    scheduler.settle();
+    await expect(prompt.completion).resolves.toMatchObject({ finalText: "" });
+    expect(omp.completedTurnCount()).toBe(1);
+  });
+
   test("cancels an async local-only settle when the OMP session closes", async () => {
     const scheduler = new ManualNoTurnScheduler();
     const omp = new OmpHarness({ noTurnScheduler: scheduler });

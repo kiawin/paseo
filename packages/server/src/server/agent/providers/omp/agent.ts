@@ -110,6 +110,10 @@ import {
 import { DEFAULT_OMP_THINKING_LEVEL, mapOmpModel } from "./map-omp-model.js";
 
 const OMP_PROVIDER = "omp";
+// OMP extensions opt into a Paseo-visible, coalesced tool card by using the
+// same prefixed key for setStatus and setWidget. Ordinary TUI-only surfaces
+// remain ignored by the headless provider adapter.
+const OMP_PASEO_PROGRESS_PREFIX = "paseo-progress:";
 const QUESTION_RESPONSE_HEADER = "Response";
 const QUESTION_COMMENT_HEADER = "Comment";
 const OMP_ASK_USER_FREEFORM_SENTINEL = "✏️ Type custom response...";
@@ -222,6 +226,15 @@ interface ActiveAskUserDialog {
   allowComment: boolean;
   allowFreeform: boolean;
   allowMultiple: boolean;
+}
+
+interface ExtensionUiProgressSurface {
+  callId: string;
+  key: string;
+  label: string;
+  name: string;
+  text: string;
+  turnId: string;
 }
 
 interface PendingCombinedAskUserResponse {
@@ -860,6 +873,7 @@ export class OmpAgentSession implements AgentSession {
   private activePromptRequestId: string | null = null;
   private activePromptAgentInvoked: boolean | null = null;
   private readonly pendingPromptResults = new Map<string, boolean>();
+  private readonly extensionUiProgressSurfaces = new Map<string, ExtensionUiProgressSurface>();
   private pendingNoTurnCompletionAbort: AbortController | null = null;
   private lastKnownThinkingOptionId: string | null;
   private outOfBandCompactionEmit: ((event: AgentStreamEvent) => void) | null = null;
@@ -1177,6 +1191,7 @@ export class OmpAgentSession implements AgentSession {
   private clearOmpTurnState(): void {
     clearOmpHostToolState(this.runtimeSession);
     this.subagentCardTracker.clear();
+    this.extensionUiProgressSurfaces.clear();
   }
 
   private terminalizeActiveWork(): void {
@@ -1184,6 +1199,7 @@ export class OmpAgentSession implements AgentSession {
       this.emitToolCallEvent(toolCallId, toolCall, "canceled", null, null);
     }
     this.activeToolCalls.clear();
+    this.finishExtensionUiProgress(this.currentTurnIdForEvent(), "canceled");
     for (const event of this.subagentIndex.terminalizeRunning(this.runtimeSession)) {
       this.emit(event);
     }
@@ -1521,6 +1537,10 @@ export class OmpAgentSession implements AgentSession {
       this.bufferNoTurnOutput(message);
     }
 
+    if (this.handleExtensionUiProgress(event)) {
+      return;
+    }
+
     const sideEffectItem = this.mapExtensionUiSideEffect(event);
     if (sideEffectItem) {
       this.emit({
@@ -1559,6 +1579,117 @@ export class OmpAgentSession implements AgentSession {
       request,
       turnId: this.currentTurnIdForEvent(),
     });
+  }
+
+  private handleExtensionUiProgress(
+    event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
+  ): boolean {
+    if (event.method === "setStatus") return this.handleExtensionStatusProgress(event);
+    if (event.method === "setWidget") return this.handleExtensionWidgetProgress(event);
+    return false;
+  }
+
+  private handleExtensionStatusProgress(
+    event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
+  ): boolean {
+    const turnId = this.activeTurnId;
+    const key = this.readExtensionUiProgressKey(event.statusKey);
+    if (!key) return false;
+    if (!turnId) return true;
+    const statusText = optionalString(event.statusText);
+    if (statusText === undefined) {
+      this.completeExtensionUiSurface(turnId, key);
+      return true;
+    }
+    this.upsertExtensionUiSurface({ turnId, key, statusText });
+    return true;
+  }
+
+  private handleExtensionWidgetProgress(
+    event: Extract<OmpRuntimeEvent, { type: "extension_ui_request" }>,
+  ): boolean {
+    const turnId = this.activeTurnId;
+    const key = this.readExtensionUiProgressKey(event.widgetKey);
+    if (!key) return false;
+    if (!turnId) return true;
+    if (!Array.isArray(event.widgetLines)) {
+      this.completeExtensionUiSurface(turnId, key);
+      return true;
+    }
+    this.upsertExtensionUiSurface({ turnId, key, widgetLines: event.widgetLines });
+    return true;
+  }
+
+  private readExtensionUiProgressKey(value: unknown): string | null {
+    if (typeof value !== "string" || !value.startsWith(OMP_PASEO_PROGRESS_PREFIX)) return null;
+    const key = value.slice(OMP_PASEO_PROGRESS_PREFIX.length).trim();
+    return key.length > 0 ? key : null;
+  }
+
+  private upsertExtensionUiSurface(input: {
+    turnId: string;
+    key: string;
+    statusText?: string;
+    widgetLines?: string[];
+  }): void {
+    const surfaceKey = `${input.turnId}:${input.key}`;
+    const previous = this.extensionUiProgressSurfaces.get(surfaceKey);
+    const widgetText = input.widgetLines?.join("\n").trim();
+    const label = previous?.label ?? input.statusText ?? input.widgetLines?.[0] ?? input.key;
+    const name = previous?.name ?? label.split(/\s+·\s+/, 1)[0]?.trim() ?? input.key;
+    const surface: ExtensionUiProgressSurface = {
+      callId: previous?.callId ?? `omp-extension-ui:${input.turnId}:${input.key}`,
+      key: input.key,
+      label,
+      name,
+      text: widgetText || input.statusText || previous?.text || label,
+      turnId: input.turnId,
+    };
+    this.extensionUiProgressSurfaces.set(surfaceKey, surface);
+    this.emitExtensionUiProgress(surface, "running");
+  }
+
+  private completeExtensionUiSurface(turnId: string, key: string): void {
+    const surfaceKey = `${turnId}:${key}`;
+    const surface = this.extensionUiProgressSurfaces.get(surfaceKey);
+    if (!surface) return;
+    this.emitExtensionUiProgress(surface, "completed");
+    this.extensionUiProgressSurfaces.delete(surfaceKey);
+  }
+
+  private emitExtensionUiProgress(
+    surface: ExtensionUiProgressSurface,
+    status: "running" | "completed" | "canceled",
+  ): void {
+    this.emit({
+      type: "timeline",
+      provider: this.provider,
+      turnId: surface.turnId,
+      item: {
+        type: "tool_call",
+        callId: surface.callId,
+        name: surface.name,
+        status,
+        error: null,
+        detail: {
+          type: "plain_text",
+          label: surface.label,
+          text: surface.text,
+        },
+      },
+    });
+  }
+
+  private finishExtensionUiProgress(
+    turnId: string | undefined,
+    status: "completed" | "canceled",
+  ): void {
+    if (!turnId) return;
+    for (const [surfaceKey, surface] of this.extensionUiProgressSurfaces) {
+      if (surface.turnId !== turnId) continue;
+      this.emitExtensionUiProgress(surface, status);
+      this.extensionUiProgressSurfaces.delete(surfaceKey);
+    }
   }
 
   private mapExtensionUiSideEffect(
@@ -2126,6 +2257,7 @@ export class OmpAgentSession implements AgentSession {
   }
 
   private completeTurn(turnId: string | undefined, messages: OmpAgentMessage[]): void {
+    this.finishExtensionUiProgress(turnId, "completed");
     this.activeTurnId = null;
     this.activeClientMessageId = null;
     this.activeAssistantMessageId = null;
