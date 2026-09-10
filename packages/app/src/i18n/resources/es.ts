@@ -2114,6 +2114,17 @@ export const es: TranslationResources = {
           queue: "Cola",
         },
       },
+      sendKey: {
+        label: "Enviar mensaje con",
+        descriptions: {
+          enter: "Enter envía. Shift+Enter inserta un salto de línea.",
+          shiftEnter: "Shift+Enter envía. Enter inserta un salto de línea.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+        },
+      },
       serviceUrls: {
         label: "URL de servicio",
         description: "Dónde abrir URL desde scripts en ejecución",

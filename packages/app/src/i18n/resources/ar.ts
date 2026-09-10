@@ -2064,6 +2064,17 @@ export const ar: TranslationResources = {
           queue: "طابور",
         },
       },
+      sendKey: {
+        label: "إرسال الرسالة بـ",
+        descriptions: {
+          enter: "Enter يرسل. Shift+Enter يضيف سطرًا جديدًا.",
+          shiftEnter: "Shift+Enter يرسل. Enter يضيف سطرًا جديدًا.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+        },
+      },
       serviceUrls: {
         label: "عناوين URL للخدمة",
         description: "مكان فتح عناوين URL من تشغيل البرامج النصية",
