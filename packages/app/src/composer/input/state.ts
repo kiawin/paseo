@@ -1,9 +1,62 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import type { MessagePayload } from "@/composer/types";
+import type { ComposerSendKey } from "@/hooks/use-settings";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
 
 export type SendBehavior = ActiveTurnBehavior | "queue";
+
+export interface ComposerEnterModifiers {
+  shiftKey: boolean;
+  /** Command on macOS, Control elsewhere. Either one counts. */
+  modKey: boolean;
+}
+
+export type ComposerEnterChord = "send" | "alternate-send";
+
+/**
+ * Which modifiers each Enter chord carries, per send key. The chords are exclusive: anything not
+ * listed here is left to the textarea, which inserts a line break — so "shift-enter" makes plain
+ * Enter a newline, and "meta-enter" makes both Enter and Shift+Enter newlines.
+ *
+ * The alternate send adds the modifier the send chord leaves free, which lands on Mod+Shift+Enter
+ * once the send chord already uses Mod.
+ */
+const COMPOSER_ENTER_CHORDS: Record<
+  ComposerSendKey,
+  Record<ComposerEnterChord, ComposerEnterModifiers>
+> = {
+  enter: {
+    send: { shiftKey: false, modKey: false },
+    "alternate-send": { shiftKey: false, modKey: true },
+  },
+  "shift-enter": {
+    send: { shiftKey: true, modKey: false },
+    "alternate-send": { shiftKey: true, modKey: true },
+  },
+  "meta-enter": {
+    send: { shiftKey: false, modKey: true },
+    "alternate-send": { shiftKey: true, modKey: true },
+  },
+};
+
+export function composerSendChordModifiers(sendKey: ComposerSendKey): ComposerEnterModifiers {
+  return COMPOSER_ENTER_CHORDS[sendKey].send;
+}
+
+export function resolveComposerEnterChord(
+  sendKey: ComposerSendKey,
+  modifiers: ComposerEnterModifiers,
+): ComposerEnterChord | null {
+  const chords = COMPOSER_ENTER_CHORDS[sendKey];
+  for (const chord of ["send", "alternate-send"] as const) {
+    const expected = chords[chord];
+    if (expected.shiftKey === modifiers.shiftKey && expected.modKey === modifiers.modKey) {
+      return chord;
+    }
+  }
+  return null;
+}
 
 export function resolveActiveSendBehavior(
   sendBehavior: SendBehavior,

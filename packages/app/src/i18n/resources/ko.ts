@@ -2202,6 +2202,19 @@ export const ko: TranslationResources = {
           queue: "대기열",
         },
       },
+      sendKey: {
+        label: "메시지 전송 키",
+        descriptions: {
+          enter: "Enter로 전송합니다. Shift+Enter는 줄바꿈합니다.",
+          shiftEnter: "Shift+Enter로 전송합니다. Enter는 줄바꿈합니다.",
+          metaEnter: "{{mod}}+Enter로 전송합니다. Enter와 Shift+Enter는 줄바꿈합니다.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "물어보기",
