@@ -1,5 +1,8 @@
 {
-  "platforms": ["ios"],
+  "platforms": ["android", "ios"],
+  "android": {
+    "modules": ["sh.paseo.keyboard.PaseoHardwareKeyboardModule"]
+  },
   "ios": {
     "modules": ["PaseoHardwareKeyboardModule"],
     "reactDelegateHandlers": ["PaseoHardwareKeyboardReactDelegateHandler"]
