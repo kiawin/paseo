@@ -2255,6 +2255,19 @@ export const es: TranslationResources = {
           queue: "Cola",
         },
       },
+      sendKey: {
+        label: "Enviar mensaje con",
+        descriptions: {
+          enter: "Enter envía. Shift+Enter inserta un salto de línea.",
+          shiftEnter: "Shift+Enter envía. Enter inserta un salto de línea.",
+          metaEnter: "{{mod}}+Enter envía. Enter y Shift+Enter insertan un salto de línea.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "Preguntar",

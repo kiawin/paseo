@@ -2176,6 +2176,19 @@ export const zhCN: TranslationResources = {
           queue: "排队",
         },
       },
+      sendKey: {
+        label: "发送消息的按键",
+        descriptions: {
+          enter: "Enter 发送，Shift+Enter 换行。",
+          shiftEnter: "Shift+Enter 发送，Enter 换行。",
+          metaEnter: "{{mod}}+Enter 发送，Enter 和 Shift+Enter 换行。",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "询问",
