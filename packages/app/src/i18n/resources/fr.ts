@@ -2478,7 +2478,21 @@ export const fr: TranslationResources = {
         label: "Raccourci d’envoi",
         options: {
           enter: "Enter",
+          "shift-enter": "Maj+Entrée",
           "mod-enter": "{{modifier}}+Enter",
+        },
+      },
+      sendKey: {
+        label: "Envoyer le message avec",
+        descriptions: {
+          enter: "Entrée envoie. Maj+Entrée insère un saut de ligne.",
+          shiftEnter: "Maj+Entrée envoie. Entrée insère un saut de ligne.",
+          metaEnter: "{{mod}}+Entrée envoie. Entrée et Maj+Entrée insèrent un saut de ligne.",
+        },
+        options: {
+          enter: "Entrée",
+          shiftEnter: "Maj+Entrée",
+          metaEnter: "{{mod}}+Entrée",
         },
       },
       serviceUrls: {
