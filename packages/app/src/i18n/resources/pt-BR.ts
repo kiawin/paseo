@@ -2469,7 +2469,21 @@ export const ptBR: TranslationResources = {
         label: "Atalho de envio",
         options: {
           enter: "Enter",
+          "shift-enter": "Shift+Enter",
           "mod-enter": "{{modifier}}+Enter",
+        },
+      },
+      sendKey: {
+        label: "Enviar mensagem com",
+        descriptions: {
+          enter: "Enter envia. Shift+Enter insere uma quebra de linha.",
+          shiftEnter: "Shift+Enter envia. Enter insere uma quebra de linha.",
+          metaEnter: "{{mod}}+Enter envia. Enter e Shift+Enter inserem uma quebra de linha.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
         },
       },
       serviceUrls: {

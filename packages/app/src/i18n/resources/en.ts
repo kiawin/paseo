@@ -2560,7 +2560,21 @@ export const en = {
         label: "Send shortcut",
         options: {
           enter: "Enter",
+          "shift-enter": "Shift+Enter",
           "mod-enter": "{{modifier}}+Enter",
+        },
+      },
+      sendKey: {
+        label: "Send message with",
+        descriptions: {
+          enter: "Enter sends. Shift+Enter inserts a line break.",
+          shiftEnter: "Shift+Enter sends. Enter inserts a line break.",
+          metaEnter: "{{mod}}+Enter sends. Enter and Shift+Enter insert a line break.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
         },
       },
       serviceUrls: {
