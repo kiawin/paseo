@@ -16,6 +16,13 @@ import com.facebook.react.interfaces.ExtraWindowEventListener
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
+internal object PaseoHardwareKeyboardState {
+  var module: PaseoHardwareKeyboardModule? = null
+  var enabled = false
+  var requireShift = false
+  var requireMod = false
+}
+
 internal object HardwareKeyboard {
   var module: PaseoHardwareKeyboardModule? = null
   @Volatile var overlayKeys: Set<String> = emptySet()
@@ -131,9 +138,10 @@ class PaseoHardwareKeyboardModule : Module(), ExtraWindowEventListener, InputMan
   override fun onExtraWindowDestroy(window: Window) { HardwareKeyboard.release(window) }
   override fun definition() = ModuleDefinition {
     Name("PaseoHardwareKeyboard")
-    Events("onHardwareKeyboardShortcut", "onHardwareKeyboardPresenceChanged")
+    Events("onHardwareKeyboardShortcut", "onHardwareKeyboardPresenceChanged", "onHardwareKeyboardSubmit")
     OnCreate {
       HardwareKeyboard.module = this@PaseoHardwareKeyboardModule
+      PaseoHardwareKeyboardState.module = this@PaseoHardwareKeyboardModule
       val context = appContext.reactContext
       require(context is ReactContext) { "Hardware keyboard observation requires a React context" }
       registeredReactContext = context
@@ -154,11 +162,27 @@ class PaseoHardwareKeyboardModule : Module(), ExtraWindowEventListener, InputMan
         HardwareKeyboard.overlayKeys = emptySet()
         UiThreadUtil.runOnUiThread { if (HardwareKeyboard.module == null) HardwareKeyboard.releaseAll() }
       }
+      if (PaseoHardwareKeyboardState.module === this@PaseoHardwareKeyboardModule) {
+        PaseoHardwareKeyboardState.module = null
+        PaseoHardwareKeyboardState.enabled = false
+      }
     }
     Function("getHardwareKeyboardPresent") { keyboardPresent() }
+    Function("setHardwareKeyboardSubmitEnabled") {
+      enabled: Boolean,
+      requireShift: Boolean,
+      requireMod: Boolean ->
+      PaseoHardwareKeyboardState.enabled = enabled
+      PaseoHardwareKeyboardState.requireShift = requireShift
+      PaseoHardwareKeyboardState.requireMod = requireMod
+    }
+    Function("hasHardwareKeyboard") { keyboardPresent() }
     Function("setOverlayKeys") { keys: List<String> ->
       HardwareKeyboard.overlayKeys = keys.filter { it in setOf("Escape", "Enter", "ArrowUp", "ArrowDown") }.toSet()
     }
   }
   internal fun emit(event: Map<String, Any>) { sendEvent("onHardwareKeyboardShortcut", event) }
+  internal fun emitHardwareKeyboardSubmit(shiftKey: Boolean, modKey: Boolean) {
+    sendEvent("onHardwareKeyboardSubmit", mapOf("shiftKey" to shiftKey, "modKey" to modKey))
+  }
 }

@@ -303,7 +303,7 @@ async function sendDraftWithShortcut(
 test("send shortcut selection persists and controls the composer", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   const workspace = await seedWorkspace({ repoPrefix: "send-shortcut-" });
-  const modifierLabel = process.platform === "darwin" ? "⌘" : "Ctrl";
+  const modifierLabel = process.platform === "darwin" ? "Cmd" : "Ctrl";
   try {
     const agent = await createMockIdleAgent(workspace.client, {
       cwd: workspace.repoPath,
@@ -325,17 +325,24 @@ test("send shortcut selection persists and controls the composer", async ({ page
     await test.step("choose the explicit modifier shortcut and retain it after reload", async () => {
       await pressSettingsToggleShortcut(page);
       await expect(
-        page.getByRole("button", { name: "Send shortcut: Enter", exact: true }),
+        page.getByRole("button", { name: "Send message with: Enter", exact: true }),
       ).toBeVisible();
-      await page.getByRole("button", { name: "Send shortcut: Enter", exact: true }).click();
-      await expect(page.getByRole("menuitem")).toHaveText(["Enter", `${modifierLabel}+Enter`]);
+      await page.getByRole("button", { name: "Send message with: Enter", exact: true }).click();
+      await expect(page.getByRole("menuitem")).toHaveText([
+        "Enter",
+        "Shift+Enter",
+        `${modifierLabel}+Enter`,
+      ]);
       // Let the menu opening animation settle for visual QA.
       await page.waitForTimeout(300);
       await page.screenshot({ path: testInfo.outputPath("send-shortcut-selector.png") });
       await page.getByRole("menuitem", { name: `${modifierLabel}+Enter`, exact: true }).click();
       await page.reload();
       await expect(
-        page.getByRole("button", { name: `Send shortcut: ${modifierLabel}+Enter`, exact: true }),
+        page.getByRole("button", {
+          name: `Send message with: ${modifierLabel}+Enter`,
+          exact: true,
+        }),
       ).toBeVisible();
       await pressSettingsToggleShortcut(page);
       await expect(composer).toBeVisible();
@@ -351,7 +358,7 @@ test("send shortcut selection persists and controls the composer", async ({ page
     });
     await test.step("switch back to Enter without changing the default send behavior", async () => {
       await pressSettingsToggleShortcut(page);
-      await selectSendingOption(page, "Send shortcut", "Enter");
+      await selectSendingOption(page, "Send message with", "Enter");
       await pressSettingsToggleShortcut(page);
       await composer.fill("Shift still edits");
       await composer.press("Shift+Enter");
@@ -370,12 +377,12 @@ for (const behavior of ["Steer", "Interrupt", "Queue"] as const) {
       title: "Running send shortcut",
       model: "one-minute-stream",
     });
-    const modifierLabel = process.platform === "darwin" ? "⌘" : "Ctrl";
+    const modifierLabel = process.platform === "darwin" ? "Cmd" : "Ctrl";
     try {
       await openAgentRoute(page, agent);
       await expect(page.getByRole("textbox", { name: "Message agent..." })).toBeVisible();
       await pressSettingsToggleShortcut(page);
-      await selectSendingOption(page, "Send shortcut", `${modifierLabel}+Enter`);
+      await selectSendingOption(page, "Send message with", `${modifierLabel}+Enter`);
       await selectSendingOption(page, "Default send", behavior);
       await pressSettingsToggleShortcut(page);
       await sendDraftWithShortcut(page, "Stay running while I write a follow-up", "Control+Enter");
