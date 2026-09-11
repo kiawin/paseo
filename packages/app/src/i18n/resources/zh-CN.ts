@@ -2040,6 +2040,17 @@ export const zhCN: TranslationResources = {
           queue: "排队",
         },
       },
+      sendKey: {
+        label: "发送消息的按键",
+        descriptions: {
+          enter: "Enter 发送，Shift+Enter 换行。",
+          shiftEnter: "Shift+Enter 发送，Enter 换行。",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+        },
+      },
       serviceUrls: {
         label: "服务 URL",
         description: "运行脚本中的 URL 打开位置",

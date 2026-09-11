@@ -32,6 +32,11 @@ export { APP_SETTINGS_KEY } from "./keys";
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
 
 export type SendBehavior = ActiveTurnBehavior | "queue";
+/**
+ * Which Enter chord sends from the composer. The chord that does not send inserts a line break,
+ * so "shift-enter" makes plain Enter a newline.
+ */
+export type ComposerSendKey = "enter" | "shift-enter";
 export type ReleaseChannel = "stable" | "beta";
 export type ServiceUrlBehavior = "ask" | "in-app" | "external";
 /**
@@ -84,6 +89,7 @@ export interface AppSettings {
   pluginThemeId: string | null;
   language: AppLanguage;
   sendBehavior: SendBehavior;
+  composerSendKey: ComposerSendKey;
   serviceUrlBehavior: ServiceUrlBehavior;
   agentLinkBehavior: AgentLinkBehavior;
   terminalScrollbackLines: number;
@@ -141,6 +147,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   pluginThemeId: null,
   language: "system",
   sendBehavior: "steer",
+  composerSendKey: "enter",
   serviceUrlBehavior: "ask",
   agentLinkBehavior: "external",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
@@ -219,6 +226,7 @@ const StoredAppSettingsSchema = z
       .enum(["system", "ar", "en", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-CN"])
       .catch("system"),
     sendBehavior: z.enum(["interrupt", "steer", "queue"]).catch("steer"),
+    composerSendKey: z.enum(["enter", "shift-enter"]).catch("enter"),
     serviceUrlBehavior: z.enum(["ask", "in-app", "external"]).catch("ask"),
     agentLinkBehavior: z.enum(["in-app", "external"]).catch("external"),
     terminalScrollbackLines: clampedNumber(

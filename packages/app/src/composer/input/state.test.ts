@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyDictationTranscript,
   computeCanStartDictation,
+  isComposerSendChord,
   resolveActiveSendBehavior,
   resolveComposerSurfacePresentation,
   runAlternateSendAction,
@@ -193,6 +194,16 @@ describe("composer send behavior", () => {
     expect(resolveActiveSendBehavior("queue", true)).toBe("interrupt");
     expect(resolveActiveSendBehavior("queue", false)).toBe("queue");
     expect(resolveActiveSendBehavior("steer", true)).toBe("steer");
+  });
+
+  it("sends on plain Enter and breaks the line on Shift+Enter by default", () => {
+    expect(isComposerSendChord("enter", false)).toBe(true);
+    expect(isComposerSendChord("enter", true)).toBe(false);
+  });
+
+  it("swaps the chords when Shift+Enter is the send key", () => {
+    expect(isComposerSendChord("shift-enter", true)).toBe(true);
+    expect(isComposerSendChord("shift-enter", false)).toBe(false);
   });
 
   function actions() {
