@@ -2317,6 +2317,19 @@ export const en = {
           queue: "Queue",
         },
       },
+      sendKey: {
+        label: "Send message with",
+        descriptions: {
+          enter: "Enter sends. Shift+Enter inserts a line break.",
+          shiftEnter: "Shift+Enter sends. Enter inserts a line break.",
+          metaEnter: "{{mod}}+Enter sends. Enter and Shift+Enter insert a line break.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "Ask",
