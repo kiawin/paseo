@@ -1,17 +1,33 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsCard, SettingsSection, SettingsSelect } from "@/components/settings";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { useAppSettings, type SendShortcut, type SendBehavior } from "@/hooks/use-settings";
 import { useKeyboardShortcutsAvailable } from "@/keyboard/availability";
 import { getShortcutOs } from "@/utils/shortcut-platform";
 
 const SEND_BEHAVIORS: readonly SendBehavior[] = ["interrupt", "steer", "queue"];
+const SEND_SHORTCUTS: readonly SendShortcut[] = ["enter", "shift-enter", "mod-enter"];
+
+const SEND_KEY_LABEL_KEYS: Record<SendShortcut, string> = {
+  enter: "settings.general.sendKey.options.enter",
+  "shift-enter": "settings.general.sendKey.options.shiftEnter",
+  "mod-enter": "settings.general.sendKey.options.metaEnter",
+};
+
+const SEND_KEY_DESCRIPTION_KEYS: Record<SendShortcut, string> = {
+  enter: "settings.general.sendKey.descriptions.enter",
+  "shift-enter": "settings.general.sendKey.descriptions.shiftEnter",
+  "mod-enter": "settings.general.sendKey.descriptions.metaEnter",
+};
 
 export function SendingSection() {
   const { t } = useTranslation();
   const { settings, updateSettings } = useAppSettings();
   const shortcutsAvailable = useKeyboardShortcutsAvailable();
   const modifier = getShortcutOs() === "mac" ? "⌘" : "Ctrl";
+  const showSendKey = shortcutsAvailable && !useIsCompactFormFactor();
+  const modLabel = getShortcutOs() === "mac" ? "Cmd" : "Ctrl";
   const options = useMemo(
     () =>
       SEND_BEHAVIORS.map((value) => ({
@@ -24,13 +40,13 @@ export function SendingSection() {
     (sendBehavior: SendBehavior) => void updateSettings({ sendBehavior }),
     [updateSettings],
   );
-  const shortcutOptions = useMemo(
+  const sendKeyOptions = useMemo(
     () =>
-      (["enter", "mod-enter"] as const).map((value) => ({
+      SEND_SHORTCUTS.map((value) => ({
         value,
-        label: t(`settings.general.sendShortcut.options.${value}`, { modifier }),
+        label: t(SEND_KEY_LABEL_KEYS[value], { mod: modLabel }),
       })),
-    [t, modifier],
+    [modLabel, t],
   );
   const changeSendShortcut = useCallback(
     (sendShortcut: SendShortcut) => void updateSettings({ sendShortcut }),
@@ -39,18 +55,19 @@ export function SendingSection() {
   return (
     <SettingsSection title={t("settings.general.sending")}>
       <SettingsCard>
-        {shortcutsAvailable ? (
+        {showSendKey ? (
           <SettingsSelect
-            label={t("settings.general.sendShortcut.label")}
+            label={t("settings.general.sendKey.label")}
+            hint={t(SEND_KEY_DESCRIPTION_KEYS[settings.sendShortcut], { mod: modLabel })}
             value={settings.sendShortcut}
-            options={shortcutOptions}
+            options={sendKeyOptions}
             onValueChange={changeSendShortcut}
           />
         ) : null}
         <SettingsSelect
           label={t("settings.general.defaultSend.label")}
           hint={t(
-            shortcutsAvailable && settings.sendShortcut === "mod-enter"
+            showSendKey && settings.sendShortcut === "mod-enter"
               ? `settings.general.defaultSend.commandEnterDescriptions.${settings.sendBehavior}`
               : `settings.general.defaultSend.descriptions.${settings.sendBehavior}`,
             { modifier },

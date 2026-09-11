@@ -2466,7 +2466,21 @@ export const ru: TranslationResources = {
         label: "Сочетание клавиш для отправки",
         options: {
           enter: "Enter",
+          "shift-enter": "Shift+Enter",
           "mod-enter": "{{modifier}}+Enter",
+        },
+      },
+      sendKey: {
+        label: "Отправлять сообщение клавишей",
+        descriptions: {
+          enter: "Enter отправляет сообщение, а Shift+Enter переносит строку.",
+          shiftEnter: "Shift+Enter отправляет сообщение, а Enter переносит строку.",
+          metaEnter: "{{mod}}+Enter отправляет сообщение, а Enter и Shift+Enter переносят строку.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
         },
       },
       serviceUrls: {
