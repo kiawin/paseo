@@ -2165,6 +2165,17 @@ export const fr: TranslationResources = {
           queue: "File d'attente",
         },
       },
+      sendKey: {
+        label: "Envoyer le message avec",
+        descriptions: {
+          enter: "Entrée envoie. Maj+Entrée insère un saut de ligne.",
+          shiftEnter: "Maj+Entrée envoie. Entrée insère un saut de ligne.",
+        },
+        options: {
+          enter: "Entrée",
+          shiftEnter: "Maj+Entrée",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "Demander",

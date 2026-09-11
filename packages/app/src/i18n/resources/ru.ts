@@ -2145,6 +2145,17 @@ export const ru: TranslationResources = {
           queue: "Поставить в очередь",
         },
       },
+      sendKey: {
+        label: "Отправлять сообщение клавишей",
+        descriptions: {
+          enter: "Enter отправляет сообщение, а Shift+Enter переносит строку.",
+          shiftEnter: "Shift+Enter отправляет сообщение, а Enter переносит строку.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "Спрашивать",

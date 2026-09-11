@@ -2144,6 +2144,17 @@ export const ptBR: TranslationResources = {
           queue: "Fila",
         },
       },
+      sendKey: {
+        label: "Enviar mensagem com",
+        descriptions: {
+          enter: "Enter envia. Shift+Enter insere uma quebra de linha.",
+          shiftEnter: "Shift+Enter envia. Enter insere uma quebra de linha.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+        },
+      },
       serviceUrls: {
         options: {
           ask: "Perguntar",
