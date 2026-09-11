@@ -37,9 +37,14 @@ import { migrateAppSettings } from "./migrations";
 export { APP_SETTINGS_KEY } from "./keys";
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
 
-export type SendShortcut = "enter" | "mod-enter";
+export type SendShortcut = "enter" | "shift-enter" | "mod-enter";
 
 export type SendBehavior = ActiveTurnBehavior | "queue";
+/**
+ * Which Enter chord sends from the composer. The chords that do not send insert a line break, so
+ * "shift-enter" makes plain Enter a newline and "mod-enter" makes Enter a newline.
+ */
+export type ComposerSendKey = SendShortcut;
 export type ReleaseChannel = "stable" | "beta";
 export type ServiceUrlBehavior = "ask" | "in-app" | "external";
 /**
@@ -305,7 +310,7 @@ const StoredAppSettingsSchema = z
     compactToolCalls: z.boolean().optional().catch(undefined),
     chatOutlineEnabled: z.boolean().catch(true),
     vimKeybindings: z.boolean().catch(false),
-    sendShortcut: z.enum(["enter", "mod-enter"]).catch("enter"),
+    sendShortcut: z.enum(["enter", "shift-enter", "mod-enter"]).catch("enter"),
     filePanelAssociations: z.record(z.string(), z.string()).catch({}),
     openInSidePane: z
       .object({
