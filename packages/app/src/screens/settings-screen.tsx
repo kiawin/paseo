@@ -57,6 +57,7 @@ import {
   useSettings,
   parseTerminalScrollbackLines,
   type AgentLinkBehavior,
+  type ComposerSendKey,
   type AppSettings,
   type SendBehavior,
   type ServiceUrlBehavior,
@@ -287,6 +288,24 @@ function getAgentLinkBehaviorLabel(t: TFunction, value: AgentLinkBehavior): stri
 
 const AGENT_LINK_BEHAVIOR_VALUES: AgentLinkBehavior[] = ["external", "in-app"];
 
+function getComposerSendKeyLabel(t: TFunction, value: ComposerSendKey): string {
+  const labels: Record<ComposerSendKey, string> = {
+    enter: t("settings.general.sendKey.options.enter"),
+    "shift-enter": t("settings.general.sendKey.options.shiftEnter"),
+  };
+  return labels[value];
+}
+
+function getComposerSendKeyDescription(t: TFunction, value: ComposerSendKey): string {
+  const descriptions: Record<ComposerSendKey, string> = {
+    enter: t("settings.general.sendKey.descriptions.enter"),
+    "shift-enter": t("settings.general.sendKey.descriptions.shiftEnter"),
+  };
+  return descriptions[value];
+}
+
+const COMPOSER_SEND_KEY_VALUES: ComposerSendKey[] = ["enter", "shift-enter"];
+
 // ---------------------------------------------------------------------------
 // Section components
 // ---------------------------------------------------------------------------
@@ -295,10 +314,18 @@ interface GeneralSectionProps {
   settings: AppSettings;
   isDesktopApp: boolean;
   handleSendBehaviorChange: (behavior: SendBehavior) => void;
+  handleComposerSendKeyChange: (sendKey: ComposerSendKey) => void;
   handleServiceUrlBehaviorChange: (behavior: ServiceUrlBehavior) => void;
   handleAgentLinkBehaviorChange: (behavior: AgentLinkBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
   handleTerminalScrollbackLinesChange: (lines: number) => void;
+}
+
+interface ComposerSendKeyMenuItemProps {
+  value: ComposerSendKey;
+  label: string;
+  selected: boolean;
+  onChange: (value: ComposerSendKey) => void;
 }
 
 interface ServiceUrlBehaviorMenuItemProps {
@@ -323,6 +350,22 @@ interface SendBehaviorMenuItemProps {
 }
 
 function SendBehaviorMenuItem({ value, label, selected, onChange }: SendBehaviorMenuItemProps) {
+  const handleSelect = useCallback(() => {
+    onChange(value);
+  }, [onChange, value]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect}>
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
+function ComposerSendKeyMenuItem({
+  value,
+  label,
+  selected,
+  onChange,
+}: ComposerSendKeyMenuItemProps) {
   const handleSelect = useCallback(() => {
     onChange(value);
   }, [onChange, value]);
@@ -393,6 +436,7 @@ function GeneralSection({
   settings,
   isDesktopApp,
   handleSendBehaviorChange,
+  handleComposerSendKeyChange,
   handleServiceUrlBehaviorChange,
   handleAgentLinkBehaviorChange,
   handleLanguageChange,
@@ -400,6 +444,9 @@ function GeneralSection({
 }: GeneralSectionProps) {
   const { t, i18n } = useTranslation();
   const activeLocale = getActiveLocale(i18n.language);
+  // A soft keyboard has no Shift+Enter, and native compact layouts never send on Enter, so the
+  // choice would be inert there.
+  const showSendKeyRow = !useIsCompactFormFactor();
   const sendBehaviorOptions = useMemo(() => getSendBehaviorOptions(t), [t]);
   const selectedSendBehaviorLabel =
     sendBehaviorOptions.find((option) => option.value === settings.sendBehavior)?.label ??
@@ -469,6 +516,38 @@ function GeneralSection({
             </DropdownMenuContent>
           </DropdownMenu>
         </View>
+        {showSendKeyRow ? (
+          <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+            <View style={settingsStyles.rowContent}>
+              <Text style={settingsStyles.rowTitle}>{t("settings.general.sendKey.label")}</Text>
+              <Text style={settingsStyles.rowHint}>
+                {getComposerSendKeyDescription(t, settings.composerSendKey)}
+              </Text>
+            </View>
+            <DropdownMenu>
+              <DropdownTrigger
+                accessibilityRole="button"
+                accessibilityLabel={`${t("settings.general.sendKey.label")}: ${getComposerSendKeyLabel(t, settings.composerSendKey)}`}
+                style={themeTriggerStyle}
+              >
+                <Text style={styles.themeTriggerText}>
+                  {getComposerSendKeyLabel(t, settings.composerSendKey)}
+                </Text>
+              </DropdownTrigger>
+              <DropdownMenuContent side="bottom" align="end" width={200}>
+                {COMPOSER_SEND_KEY_VALUES.map((value) => (
+                  <ComposerSendKeyMenuItem
+                    key={value}
+                    value={value}
+                    label={getComposerSendKeyLabel(t, value)}
+                    selected={settings.composerSendKey === value}
+                    onChange={handleComposerSendKeyChange}
+                  />
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </View>
+        ) : null}
         <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
             <Text style={settingsStyles.rowTitle}>{t("settings.general.language.label")}</Text>
@@ -1342,6 +1421,13 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleComposerSendKeyChange = useCallback(
+    (sendKey: ComposerSendKey) => {
+      void updateSettings({ composerSendKey: sendKey });
+    },
+    [updateSettings],
+  );
+
   const handleServiceUrlBehaviorChange = useCallback(
     (behavior: ServiceUrlBehavior) => {
       void updateSettings({ serviceUrlBehavior: behavior });
@@ -1605,6 +1691,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
                   settings={settings}
                   isDesktopApp={isDesktopApp}
                   handleSendBehaviorChange={handleSendBehaviorChange}
+                  handleComposerSendKeyChange={handleComposerSendKeyChange}
                   handleServiceUrlBehaviorChange={handleServiceUrlBehaviorChange}
                   handleAgentLinkBehaviorChange={handleAgentLinkBehaviorChange}
                   handleLanguageChange={handleLanguageChange}
