@@ -2085,6 +2085,17 @@ export const ja: TranslationResources = {
           queue: "キュー",
         },
       },
+      sendKey: {
+        label: "メッセージの送信キー",
+        descriptions: {
+          enter: "Enterで送信します。Shift+Enterで改行します。",
+          shiftEnter: "Shift+Enterで送信します。Enterで改行します。",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+        },
+      },
       serviceUrls: {
         label: "サービスURL",
         description: "実行中のスクリプトからURLを開く場所",
