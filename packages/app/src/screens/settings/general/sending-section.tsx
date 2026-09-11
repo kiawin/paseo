@@ -1,13 +1,16 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsCard, SettingsSection, SettingsSelect } from "@/components/settings";
-import { useAppSettings, type SendBehavior } from "@/hooks/use-settings";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { useAppSettings, type ComposerSendKey, type SendBehavior } from "@/hooks/use-settings";
 
 const SEND_BEHAVIORS: readonly SendBehavior[] = ["interrupt", "steer", "queue"];
+const COMPOSER_SEND_KEYS: readonly ComposerSendKey[] = ["enter", "shift-enter"];
 
 export function SendingSection() {
   const { t } = useTranslation();
   const { settings, updateSettings } = useAppSettings();
+  const showSendKey = !useIsCompactFormFactor();
   const options = useMemo(
     () =>
       SEND_BEHAVIORS.map((value) => ({
@@ -20,6 +23,18 @@ export function SendingSection() {
     (sendBehavior: SendBehavior) => void updateSettings({ sendBehavior }),
     [updateSettings],
   );
+  const sendKeyOptions = useMemo(
+    () =>
+      COMPOSER_SEND_KEYS.map((value) => ({
+        value,
+        label: t(`settings.general.sendKey.options.${value}`),
+      })),
+    [t],
+  );
+  const changeSendKey = useCallback(
+    (composerSendKey: ComposerSendKey) => void updateSettings({ composerSendKey }),
+    [updateSettings],
+  );
   return (
     <SettingsSection title={t("settings.general.sending")}>
       <SettingsCard>
@@ -30,6 +45,15 @@ export function SendingSection() {
           options={options}
           onValueChange={change}
         />
+        {showSendKey ? (
+          <SettingsSelect
+            label={t("settings.general.sendKey.label")}
+            hint={t(`settings.general.sendKey.descriptions.${settings.composerSendKey}`)}
+            value={settings.composerSendKey}
+            options={sendKeyOptions}
+            onValueChange={changeSendKey}
+          />
+        ) : null}
       </SettingsCard>
     </SettingsSection>
   );
