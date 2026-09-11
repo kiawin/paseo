@@ -41,11 +41,9 @@ import {
   type AppSettings,
   type AppSettingsUpdate,
   type ChatDisplay,
-<<<<<<< HEAD
   type ContentWidthPreset,
-=======
+  type ComposerSendKey,
   type ForgeLinkBehavior,
->>>>>>> d1d3452c (feat(app): let agent message links open in the Paseo browser (#17))
   type OpenInSidePanePreferences,
   type PullRequestOpenLocation,
   type DesktopSettingsBridge,
@@ -94,6 +92,7 @@ export type {
   ChatDisplay,
   ContentWidthPreset,
   AppLanguage,
+  ComposerSendKey,
   ForgeLinkBehavior,
   OpenInSidePanePreferences,
   PullRequestOpenLocation,
