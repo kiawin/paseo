@@ -47,11 +47,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useIosHardwareKeyboardSubmit } from "@/hooks/use-ios-hardware-keyboard-submit";
+import { useAndroidHardwareKeyboardSubmit } from "@/hooks/use-android-hardware-keyboard-submit";
+import type { ComposerSendKey } from "@/hooks/use-settings";
 import { formatShortcut, type ShortcutKey } from "@/utils/format-shortcut";
 import { getShortcutOs } from "@/utils/shortcut-platform";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 import { isWeb } from "@/constants/platform";
+import { hasHardwareKeyboard } from "@/native/hardware-keyboard";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { RenderProfile } from "@/utils/render-profiler";
@@ -76,6 +79,7 @@ import {
 import {
   applyDictationTranscript,
   computeCanStartDictation,
+  isComposerSendChord,
   resolveComposerSurfacePresentation,
   runAlternateSendAction,
   runDefaultSendAction,
@@ -83,7 +87,10 @@ import {
   stopRealtimeVoice,
 } from "./state";
 
-const DEFAULT_SEND_KEYS: ShortcutKey[][] = [["Enter"]];
+const SEND_KEYS_BY_SEND_KEY: Record<ComposerSendKey, ShortcutKey[][]> = {
+  enter: [["Enter"]],
+  "shift-enter": [["shift", "Enter"]],
+};
 const COMPOSER_INPUT_DATASET = { composerInput: "" } as const;
 
 export interface AttachmentMenuItem {
@@ -151,6 +158,9 @@ export interface MessageInputProps {
    *  running. "interrupt" and "steer" send immediately, "queue" queues. Required so the default
    *  lives only in DEFAULT_CLIENT_SETTINGS. */
   defaultSendBehavior: "interrupt" | "steer" | "queue";
+  /** Which Enter chord sends. The other chord inserts a line break. Required so the default
+   *  lives only in DEFAULT_CLIENT_SETTINGS. */
+  composerSendKey: ComposerSendKey;
   /** Callback for queue button when agent is running */
   onQueue?: (payload: MessagePayload) => void;
   /** Optional handler used when submit button is in loading state. */
@@ -384,6 +394,7 @@ interface DesktopKeyPressContext {
   onKeyPressCallback: ((event: ComposerKeyPressEvent) => boolean) | undefined;
   input: ComposerKeyPressEvent["input"];
   submitOnEnter: boolean;
+  composerSendKey: ComposerSendKey;
   isAgentRunning: boolean;
   onQueue: ((payload: MessagePayload) => void) | undefined;
   isSubmitDisabled: boolean;
@@ -412,7 +423,7 @@ function handleDesktopKeyPressImpl(
 
   if (event.nativeEvent.key !== "Enter") return;
   if (!ctx.submitOnEnter) return;
-  if (shiftKey) return;
+  if (!isComposerSendChord(ctx.composerSendKey, shiftKey === true)) return;
 
   if ((metaKey || ctrlKey) && ctx.isAgentRunning && ctx.onQueue) {
     if (ctx.isSubmitDisabled || ctx.isSubmitLoading || ctx.disabled) return;
@@ -424,6 +435,58 @@ function handleDesktopKeyPressImpl(
   if (ctx.isSubmitDisabled || ctx.isSubmitLoading || ctx.disabled) return;
   event.preventDefault();
   ctx.handleDefaultSendAction();
+}
+
+/**
+ * iOS's hardware-keyboard command is plain Return with no modifiers, so it can only stand in for
+ * the "enter" chord. Under "shift-enter", Return has to fall through to the input as a line break.
+ */
+function shouldSubmitOnHardwareReturn(input: {
+  isInputFocused: boolean;
+  isSendButtonDisabled: boolean;
+  composerSendKey: ComposerSendKey;
+}): boolean {
+  return input.isInputFocused && !input.isSendButtonDisabled && input.composerSendKey === "enter";
+}
+
+function resolveNativeSubmitBehavior(composerSendKey: ComposerSendKey): "submit" | "newline" {
+  return composerSendKey === "enter" ? "submit" : "newline";
+}
+
+function resolveNativeInputSubmitBehavior(input: {
+  isWeb: boolean;
+  hasHardwareKeyboard: boolean;
+  composerSendKey: ComposerSendKey;
+}): EditingTextInputProps["submitBehavior"] {
+  if (input.isWeb) return undefined;
+  if (input.hasHardwareKeyboard) return "newline";
+  return resolveNativeSubmitBehavior(input.composerSendKey);
+}
+
+function resolveNativeSubmitHandler(input: {
+  isWeb: boolean;
+  hasHardwareKeyboard: boolean;
+  isSendButtonDisabled: boolean;
+  composerSendKey: ComposerSendKey;
+  onSubmit: () => void;
+}): (() => void) | undefined {
+  if (
+    input.isWeb ||
+    input.hasHardwareKeyboard ||
+    input.isSendButtonDisabled ||
+    input.composerSendKey !== "enter"
+  ) {
+    return undefined;
+  }
+  return input.onSubmit;
+}
+
+function shouldEnableAndroidHardwareKeyboard(input: {
+  hasHardwareKeyboard: boolean;
+  isInputFocused: boolean;
+  isSendButtonDisabled: boolean;
+}): boolean {
+  return input.hasHardwareKeyboard && input.isInputFocused && !input.isSendButtonDisabled;
 }
 
 function getTextInputNativeElement(current: ComposerTextInputHandle | null): HTMLElement | null {
@@ -640,6 +703,8 @@ interface ComposerTextSurfaceProps {
   scrollEnabled: boolean;
   autoFocus: boolean;
   onKeyPress: ((event: WebTextInputKeyPressEvent) => void) | undefined;
+  onSubmitEditing: (() => void) | undefined;
+  submitBehavior: EditingTextInputProps["submitBehavior"];
   onSelectionChange: (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => void;
   onPasteImages: ((files: readonly NativePastedFile[]) => void) | undefined;
   onPasteError: (message: string) => void;
@@ -679,6 +744,9 @@ function ComposerTextSurface(props: ComposerTextSurfaceProps): React.ReactElemen
         scrollEnabled={props.scrollEnabled}
         editable={props.editable}
         onKeyPress={props.onKeyPress}
+        onSubmitEditing={props.onSubmitEditing}
+        submitBehavior={props.submitBehavior}
+        showSoftInputOnFocus={!hasHardwareKeyboard()}
         onSelectionChange={props.onSelectionChange}
         onPasteImages={props.onPasteImages}
         onPasteError={props.onPasteError}
@@ -1071,6 +1139,7 @@ interface ResolvedMessageInputProps {
   voiceAgentId: string | undefined;
   isAgentRunning: boolean;
   defaultSendBehavior: "interrupt" | "steer" | "queue";
+  composerSendKey: ComposerSendKey;
   onQueue: ((payload: MessagePayload) => void) | undefined;
   onSubmitLoadingPress: (() => void) | undefined;
   onKeyPressCallback: ((event: ComposerKeyPressEvent) => boolean) | undefined;
@@ -1118,6 +1187,7 @@ function resolveMessageInputProps(props: MessageInputProps): ResolvedMessageInpu
     voiceAgentId: props.voiceAgentId,
     isAgentRunning: props.isAgentRunning ?? false,
     defaultSendBehavior: props.defaultSendBehavior,
+    composerSendKey: props.composerSendKey,
     onQueue: props.onQueue,
     onSubmitLoadingPress: props.onSubmitLoadingPress,
     onKeyPressCallback: props.onKeyPress,
@@ -1173,6 +1243,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       voiceAgentId,
       isAgentRunning,
       defaultSendBehavior,
+      composerSendKey,
       onQueue,
       onSubmitLoadingPress,
       onKeyPressCallback,
@@ -1594,6 +1665,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
 
     const shouldHandleWebKeyPress = isWeb;
     const shouldSubmitOnEnter = isWeb && !isCompact;
+    const hasPhysicalKeyboard = hasHardwareKeyboard();
 
     function handleDesktopKeyPress(event: WebTextInputKeyPressEvent) {
       if (!shouldHandleWebKeyPress) return;
@@ -1605,6 +1677,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           selectionRef.current,
         ),
         submitOnEnter: shouldSubmitOnEnter,
+        composerSendKey,
         isAgentRunning,
         onQueue,
         isSubmitDisabled,
@@ -1635,7 +1708,20 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         isAgentRunning,
       });
     useIosHardwareKeyboardSubmit({
-      isEnabled: isInputFocused && !isSendButtonDisabled,
+      isEnabled: shouldSubmitOnHardwareReturn({
+        isInputFocused,
+        isSendButtonDisabled,
+        composerSendKey,
+      }),
+      onSubmit: handleDefaultSendAction,
+    });
+    useAndroidHardwareKeyboardSubmit({
+      isEnabled: shouldEnableAndroidHardwareKeyboard({
+        hasHardwareKeyboard: hasPhysicalKeyboard,
+        isInputFocused,
+        isSendButtonDisabled,
+      }),
+      sendOnShiftEnter: composerSendKey === "shift-enter",
       onSubmit: handleDefaultSendAction,
     });
     const submitAccessibilityLabel = resolveSubmitAccessibilityLabel({
@@ -1815,6 +1901,18 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               scrollEnabled={isComposerScrollEnabled}
               autoFocus={false}
               onKeyPress={shouldHandleWebKeyPress ? handleDesktopKeyPress : undefined}
+              onSubmitEditing={resolveNativeSubmitHandler({
+                isWeb,
+                hasHardwareKeyboard: hasPhysicalKeyboard,
+                isSendButtonDisabled,
+                composerSendKey,
+                onSubmit: handleDefaultSendAction,
+              })}
+              submitBehavior={resolveNativeInputSubmitBehavior({
+                isWeb,
+                hasHardwareKeyboard: hasPhysicalKeyboard,
+                composerSendKey,
+              })}
               onSelectionChange={handleSelectionChange}
               onPasteImages={onPasteImages}
               onPasteError={handlePasteError}
@@ -1873,7 +1971,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
                 submitLabel={submitLabel}
                 submitButtonTestID={submitButtonTestID}
                 buttonIconSize={buttonIconSize}
-                sendKeys={DEFAULT_SEND_KEYS}
+                sendKeys={SEND_KEYS_BY_SEND_KEY[composerSendKey]}
                 sendTooltipLabel={sendTooltipLabel}
               />
             </View>
