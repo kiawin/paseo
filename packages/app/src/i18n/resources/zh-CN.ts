@@ -2400,7 +2400,21 @@ export const zhCN: TranslationResources = {
         label: "发送快捷键",
         options: {
           enter: "Enter",
+          "shift-enter": "Shift+Enter",
           "mod-enter": "{{modifier}}+Enter",
+        },
+      },
+      sendKey: {
+        label: "发送消息的按键",
+        descriptions: {
+          enter: "Enter 发送，Shift+Enter 换行。",
+          shiftEnter: "Shift+Enter 发送，Enter 换行。",
+          metaEnter: "{{mod}}+Enter 发送，Enter 和 Shift+Enter 换行。",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
         },
       },
       serviceUrls: {

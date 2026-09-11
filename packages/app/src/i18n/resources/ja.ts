@@ -2450,7 +2450,21 @@ export const ja: TranslationResources = {
         label: "送信ショートカット",
         options: {
           enter: "Enter",
+          "shift-enter": "Shift+Enter",
           "mod-enter": "{{modifier}}+Enter",
+        },
+      },
+      sendKey: {
+        label: "メッセージの送信キー",
+        descriptions: {
+          enter: "Enterで送信します。Shift+Enterで改行します。",
+          shiftEnter: "Shift+Enterで送信します。Enterで改行します。",
+          metaEnter: "{{mod}}+Enterで送信します。EnterとShift+Enterで改行します。",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
         },
       },
       serviceUrls: {

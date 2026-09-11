@@ -2464,7 +2464,21 @@ export const ar: TranslationResources = {
         label: "اختصار الإرسال",
         options: {
           enter: "Enter",
+          "shift-enter": "Shift+Enter",
           "mod-enter": "{{modifier}}+Enter",
+        },
+      },
+      sendKey: {
+        label: "إرسال الرسالة بـ",
+        descriptions: {
+          enter: "Enter يرسل. Shift+Enter يضيف سطرًا جديدًا.",
+          shiftEnter: "Shift+Enter يرسل. Enter يضيف سطرًا جديدًا.",
+          metaEnter: "{{mod}}+Enter يرسل. Enter وShift+Enter يضيفان سطرًا جديدًا.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
         },
       },
       serviceUrls: {
