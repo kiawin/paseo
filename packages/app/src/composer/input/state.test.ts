@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyDictationTranscript,
   computeCanStartDictation,
+  composerSendChordModifiers,
   resolveActiveSendBehavior,
+  resolveComposerEnterChord,
   resolveComposerSurfacePresentation,
   runAlternateSendAction,
   runDefaultSendAction,
@@ -193,6 +195,38 @@ describe("composer send behavior", () => {
     expect(resolveActiveSendBehavior("queue", true)).toBe("interrupt");
     expect(resolveActiveSendBehavior("queue", false)).toBe("queue");
     expect(resolveActiveSendBehavior("steer", true)).toBe("steer");
+  });
+
+  const chord = (shiftKey: boolean, modKey: boolean) => ({ shiftKey, modKey });
+
+  it("sends on plain Enter and breaks the line on Shift+Enter by default", () => {
+    expect(resolveComposerEnterChord("enter", chord(false, false))).toBe("send");
+    expect(resolveComposerEnterChord("enter", chord(true, false))).toBe(null);
+    expect(resolveComposerEnterChord("enter", chord(true, true))).toBe(null);
+  });
+
+  it("swaps the chords when Shift+Enter is the send key", () => {
+    expect(resolveComposerEnterChord("shift-enter", chord(true, false))).toBe("send");
+    expect(resolveComposerEnterChord("shift-enter", chord(false, false))).toBe(null);
+    expect(resolveComposerEnterChord("shift-enter", chord(false, true))).toBe(null);
+  });
+
+  it("leaves Enter and Shift+Enter as line breaks when Mod+Enter is the send key", () => {
+    expect(resolveComposerEnterChord("meta-enter", chord(false, true))).toBe("send");
+    expect(resolveComposerEnterChord("meta-enter", chord(false, false))).toBe(null);
+    expect(resolveComposerEnterChord("meta-enter", chord(true, false))).toBe(null);
+  });
+
+  it("puts the alternate send on the modifier the send chord leaves free", () => {
+    expect(resolveComposerEnterChord("enter", chord(false, true))).toBe("alternate-send");
+    expect(resolveComposerEnterChord("shift-enter", chord(true, true))).toBe("alternate-send");
+    expect(resolveComposerEnterChord("meta-enter", chord(true, true))).toBe("alternate-send");
+  });
+
+  it("reports the send chord modifiers the native keyboard has to claim", () => {
+    expect(composerSendChordModifiers("enter")).toEqual(chord(false, false));
+    expect(composerSendChordModifiers("shift-enter")).toEqual(chord(true, false));
+    expect(composerSendChordModifiers("meta-enter")).toEqual(chord(false, true));
   });
 
   function actions() {
