@@ -2480,7 +2480,21 @@ export const es: TranslationResources = {
         label: "Atajo de envío",
         options: {
           enter: "Enter",
+          "shift-enter": "Shift+Enter",
           "mod-enter": "{{modifier}}+Enter",
+        },
+      },
+      sendKey: {
+        label: "Enviar mensaje con",
+        descriptions: {
+          enter: "Enter envía. Shift+Enter inserta un salto de línea.",
+          shiftEnter: "Shift+Enter envía. Enter inserta un salto de línea.",
+          metaEnter: "{{mod}}+Enter envía. Enter y Shift+Enter insertan un salto de línea.",
+        },
+        options: {
+          enter: "Enter",
+          shiftEnter: "Shift+Enter",
+          metaEnter: "{{mod}}+Enter",
         },
       },
       serviceUrls: {
