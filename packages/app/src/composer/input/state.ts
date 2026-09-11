@@ -1,9 +1,18 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import type { MessagePayload } from "@/composer/types";
+import type { ComposerSendKey } from "@/hooks/use-settings";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
 
 export type SendBehavior = ActiveTurnBehavior | "queue";
+
+/**
+ * Whether this Enter press is the send chord. The two chords are exclusive: the one that does
+ * not send is left to the textarea, which inserts a line break.
+ */
+export function isComposerSendChord(sendKey: ComposerSendKey, shiftKey: boolean): boolean {
+  return shiftKey === (sendKey === "shift-enter");
+}
 
 export function resolveActiveSendBehavior(
   sendBehavior: SendBehavior,
