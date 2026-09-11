@@ -6,6 +6,58 @@ import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
 
 export type SendBehavior = ActiveTurnBehavior | "queue";
 
+export interface ComposerEnterModifiers {
+  shiftKey: boolean;
+  /** Command on macOS, Control elsewhere. Either one counts. */
+  modKey: boolean;
+}
+
+export type ComposerEnterChord = "send" | "alternate-send";
+
+/**
+ * Which modifiers each Enter chord carries, per send key. The chords are exclusive: anything not
+ * listed here is left to the textarea, which inserts a line break — so "shift-enter" makes plain
+ * Enter a newline, and "mod-enter" makes plain Enter a newline.
+ *
+ * Alternate send uses Mod+Enter after Enter and Mod+Shift+Enter after Shift+Enter. Mod+Enter keeps
+ * Shift+Mod+Enter as a line break for the upstream shortcut behavior.
+ */
+const COMPOSER_ENTER_CHORDS: Record<
+  SendShortcut,
+  { send: ComposerEnterModifiers; "alternate-send"?: ComposerEnterModifiers }
+> = {
+  enter: {
+    send: { shiftKey: false, modKey: false },
+    "alternate-send": { shiftKey: false, modKey: true },
+  },
+  "shift-enter": {
+    send: { shiftKey: true, modKey: false },
+    "alternate-send": { shiftKey: true, modKey: true },
+  },
+  "mod-enter": {
+    send: { shiftKey: false, modKey: true },
+  },
+};
+
+export function composerSendChordModifiers(sendKey: SendShortcut): ComposerEnterModifiers {
+  return COMPOSER_ENTER_CHORDS[sendKey].send;
+}
+
+export function resolveComposerEnterChord(
+  sendKey: SendShortcut,
+  modifiers: ComposerEnterModifiers,
+): ComposerEnterChord | null {
+  const chords = COMPOSER_ENTER_CHORDS[sendKey];
+  for (const chord of ["send", "alternate-send"] as const) {
+    const expected = chords[chord];
+    if (!expected) continue;
+    if (expected.shiftKey === modifiers.shiftKey && expected.modKey === modifiers.modKey) {
+      return chord;
+    }
+  }
+  return null;
+}
+
 export function resolveActiveSendBehavior(
   sendBehavior: SendBehavior,
   hasPendingPermission: boolean,
@@ -168,11 +220,14 @@ export function resolveMessageInputEnterAction(
   ctx: MessageInputEnterContext,
 ): MessageInputEnterAction | null {
   if (!ctx.submitOnEnter) return null;
-  if (ctx.shiftKey) return null;
-  const hasModifier = ctx.metaKey || ctx.ctrlKey;
-  if (ctx.sendShortcut === "mod-enter") return hasModifier ? "default-send" : null;
-  if (hasModifier && ctx.isAgentRunning && ctx.onQueue) return "alternate-send";
-  return "default-send";
+  const chord = resolveComposerEnterChord(ctx.sendShortcut, {
+    shiftKey: ctx.shiftKey,
+    modKey: ctx.metaKey || ctx.ctrlKey,
+  });
+  if (!chord) return null;
+  return chord === "alternate-send" && ctx.isAgentRunning && ctx.onQueue
+    ? "alternate-send"
+    : "default-send";
 }
 
 export function runMessageInputKeyboardAction(
