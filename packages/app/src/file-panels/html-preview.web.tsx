@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { withPreviewCsp } from "./html-preview-csp";
+import { type PreviewDocumentUrl, withPreviewCsp } from "./html-preview-csp";
 
 // `allow-scripts` alone: the file gets an opaque origin, so a plan page can run
 // its own scripts (Excalidraw, charts) but cannot reach the Paseo app's DOM,
@@ -16,6 +16,12 @@ import { withPreviewCsp } from "./html-preview-csp";
 // over with a directive browsers ignore.
 const SANDBOX = "allow-scripts";
 
+// The URL a `srcDoc` document loads under. It has to be handed to the policy so the
+// document gets a base of its own: a srcdoc document inherits the parent page's base
+// URL, and a preview whose links resolve against the app's URL navigates itself off
+// the pane the moment anyone clicks one. See html-preview-csp.ts.
+const DOCUMENT_URL: PreviewDocumentUrl = "about:srcdoc";
+
 const iframeStyle = {
   flex: 1,
   minHeight: 0,
@@ -25,7 +31,7 @@ const iframeStyle = {
 
 export function FileHtmlPreview({ html, testID }: { html: string; testID?: string }) {
   const { t } = useTranslation();
-  const document = useMemo(() => withPreviewCsp(html), [html]);
+  const document = useMemo(() => withPreviewCsp(html, DOCUMENT_URL), [html]);
   return (
     <iframe
       data-testid={testID}
