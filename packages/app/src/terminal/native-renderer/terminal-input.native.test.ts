@@ -54,6 +54,27 @@ describe("native terminal typed input", () => {
     expect(input.receiveTextChange("pwd")).toEqual({ data: "", shouldClear: false });
   });
 
+  it("uses text changes as the sole printable source when keypress forwarding is disabled", () => {
+    const input = createTerminalTextInputState({ forwardPrintableKeyPress: false });
+
+    expect(input.receiveTextChange("p")).toEqual({ data: "p", shouldClear: false });
+    expect(input.receiveKeyPress("p")).toEqual({ data: "", shouldClear: false });
+    expect(input.receiveTextChange("pw")).toEqual({ data: "w", shouldClear: false });
+    expect(input.receiveKeyPress("w")).toEqual({ data: "", shouldClear: false });
+    expect(input.receiveTextChange("pwd")).toEqual({ data: "d", shouldClear: false });
+    expect(input.receiveKeyPress("d")).toEqual({ data: "", shouldClear: false });
+  });
+
+  it("keeps text-change-first Backspace input aligned when keypress forwarding is disabled", () => {
+    const input = createTerminalTextInputState({ forwardPrintableKeyPress: false });
+
+    expect(input.receiveTextChange("abc")).toEqual({ data: "abc", shouldClear: false });
+    expect(input.receiveTextChange("ab")).toEqual({ data: "\x7f", shouldClear: false });
+    expect(input.receiveKeyPress("Backspace")).toEqual({ data: "", shouldClear: false });
+    expect(input.receiveTextChange("abX")).toEqual({ data: "X", shouldClear: false });
+    expect(input.receiveTextChange("ab")).toEqual({ data: "\x7f", shouldClear: false });
+  });
+
   it("keeps anticipated text aligned after software keyboard Backspace", () => {
     const input = createTerminalTextInputState();
 
