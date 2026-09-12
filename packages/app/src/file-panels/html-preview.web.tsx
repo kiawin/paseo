@@ -25,8 +25,7 @@ const iframeStyle = {
 
 export function FileHtmlPreview({ html, testID }: { html: string; testID?: string }) {
   const { t } = useTranslation();
-  // A document URL lets the browser resolve fragment links within the preview.
-  // srcDoc would inherit the app URL and navigate the frame back into Paseo.
+  // A data URL gives fragment links the preview document as their base.
   const source = useMemo(
     () => `data:text/html;charset=utf-8,${encodeURIComponent(withPreviewCsp(html))}`,
     [html],
