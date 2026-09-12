@@ -66,8 +66,9 @@ function artifactRecord(input: {
  */
 export async function stubArtifactRpcs(
   page: Page,
-  options: { withOpenPullRequest?: boolean } = {},
+  options: { withOpenPullRequest?: boolean; html?: string } = {},
 ): Promise<void> {
+  const storedHtml = new TextEncoder().encode(options.html ?? ARTIFACT_HTML);
   const deletedArtifactIds = new Set<string>();
   let listedProjectId = "prj_stub";
 
@@ -115,7 +116,7 @@ export async function stubArtifactRpcs(
                   artifactRecord({
                     artifactId: OWNED_ID,
                     title: "Q3 revenue dashboard",
-                    size: ARTIFACT_HTML.length,
+                    size: storedHtml.byteLength,
                     externalUrl: null,
                   }),
                   artifactRecord({
@@ -162,7 +163,6 @@ export async function stubArtifactRpcs(
 
       if (inbound?.type === "artifact.entry.download.request") {
         const requestId = inbound.requestId ?? "";
-        const bytes = new TextEncoder().encode(ARTIFACT_HTML);
         browserSocket.send(
           JSON.stringify({
             type: "session",
@@ -172,7 +172,7 @@ export async function stubArtifactRpcs(
                 artifactId: inbound.artifactId,
                 title: "Q3 revenue dashboard",
                 mimeType: "text/html",
-                size: bytes.byteLength,
+                size: storedHtml.byteLength,
                 success: true,
                 error: null,
                 requestId,
@@ -186,13 +186,15 @@ export async function stubArtifactRpcs(
             requestId,
             metadata: {
               mime: "text/html",
-              size: bytes.byteLength,
+              size: storedHtml.byteLength,
               encoding: "utf-8",
               modifiedAt: "2026-09-01T00:00:00.000Z",
             },
           }),
         );
-        browserSocket.send(encodeFrame({ opcode: OPCODE.fileChunk, requestId, payload: bytes }));
+        browserSocket.send(
+          encodeFrame({ opcode: OPCODE.fileChunk, requestId, payload: storedHtml }),
+        );
         browserSocket.send(encodeFrame({ opcode: OPCODE.fileEnd, requestId }));
         return;
       }
