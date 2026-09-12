@@ -28,6 +28,12 @@ const POLICY = [
 
 const META = `<meta http-equiv="Content-Security-Policy" content="${POLICY}">`;
 
+// The URL the preview document loads under, which is the only thing its base may
+// be set to. Native pins `about:blank` through the WebView's base URL; web gets
+// `about:srcdoc` from the iframe. A union rather than a string keeps the value
+// under this module's control — it is interpolated into markup unescaped.
+export type PreviewDocumentUrl = "about:blank" | "about:srcdoc";
+
 // The policy must reach the parser before any markup the document declares, and it
 // only counts if it lands in `<head>` — once the parser has moved on to `<body>`, a
 // meta http-equiv CSP is ignored outright.
@@ -40,16 +46,24 @@ const META = `<meta http-equiv="Content-Security-Policy" content="${POLICY}">`;
 // rule that a doctype closes at the first `>` in every state. Each of those rules
 // cost a bug before it was right.
 //
-// So the prologue isn't found, it's supplied: our doctype, then the policy, then
-// the file verbatim. The file's own doctype becomes a stray DOCTYPE token, which
-// the parser ignores wherever it appears. Standards mode is guaranteed, the policy
-// is always the first element and therefore always in the head, and no part of the
-// document has to be parsed to place it.
-const PROLOGUE = `<!doctype html>${META}`;
+// So the prologue isn't found, it's supplied: our doctype, an optional base, then
+// the policy, then the file verbatim. The file's own doctype becomes a stray DOCTYPE
+// token, which the parser ignores wherever it appears. Standards mode is
+// guaranteed, the policy is always in the head, and no part of the document has to
+// be parsed to place it.
+//
+// When supplied, the base element goes before the policy: `base-uri 'none'` blocks
+// every base element parsed once the policy is live. The native WebView pins the
+// document to about:blank; the web preview uses a data URL, which already gives
+// fragment links the preview document as their base.
+function prologue(documentUrl?: PreviewDocumentUrl): string {
+  const base = documentUrl ? `<base href="${documentUrl}">` : "";
+  return `<!doctype html>${base}${META}`;
+}
 
 // Left where it is, a BOM would sit mid-document and render as a zero-width space.
 const BOM = "\uFEFF";
 
-export function withPreviewCsp(html: string): string {
-  return PROLOGUE + (html.startsWith(BOM) ? html.slice(BOM.length) : html);
+export function withPreviewCsp(html: string, documentUrl?: PreviewDocumentUrl): string {
+  return prologue(documentUrl) + (html.startsWith(BOM) ? html.slice(BOM.length) : html);
 }
