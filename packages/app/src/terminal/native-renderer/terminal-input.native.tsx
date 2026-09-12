@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import {
+  Platform,
   StyleSheet,
   type NativeSyntheticEvent,
   type StyleProp,
@@ -27,6 +28,10 @@ export interface TerminalTextInputState {
   reset: () => void;
 }
 
+interface TerminalTextInputStateOptions {
+  forwardPrintableKeyPress?: boolean;
+}
+
 export type TerminalInputFocusRequest = "focus" | "refocus" | "none";
 
 export interface TerminalInputHandle {
@@ -49,8 +54,8 @@ interface TerminalInputProps {
 const CJK_COMPOSITION_PATTERN =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}]/u;
 
-// Only ASCII travels the keypress path. An IME script reports the jamo it is
-// composing, which the text-change diff below immediately contradicts, so
+// Only ASCII travels the optional keypress path. An IME script reports the jamo
+// it is composing, which the text-change diff below immediately contradicts, so
 // forwarding both would put two conflicting characters on the wire.
 function isPrintableKey(key: string): boolean {
   return key.length === 1 && key >= " " && key <= "~";
@@ -102,9 +107,13 @@ export function resolveTerminalInputFocusRequest(input: {
   return input.isKeyboardVisible ? "none" : "refocus";
 }
 
-export function createTerminalTextInputState(): TerminalTextInputState {
+export function createTerminalTextInputState(
+  options: TerminalTextInputStateOptions = {},
+): TerminalTextInputState {
+  const forwardPrintableKeyPress = options.forwardPrintableKeyPress ?? true;
   let previousText = "";
   let submittedText: string | null = null;
+  let pendingBackspaceKeyPresses = 0;
   // A swallowed replacement leaves the terminal holding text the buffer no
   // longer describes. A composition rubout deletes from the terminal, so it
   // would delete whatever is actually sitting there rather than the character
@@ -118,6 +127,10 @@ export function createTerminalTextInputState(): TerminalTextInputState {
         return { data: "", key: terminalKey, shouldClear: false };
       }
       if (key === "Backspace") {
+        if (pendingBackspaceKeyPresses > 0) {
+          pendingBackspaceKeyPresses -= 1;
+          return { data: "", shouldClear: false };
+        }
         previousText = Array.from(previousText).slice(0, -1).join("");
         if (replacementDesynced) {
           return { data: "", shouldClear: false };
@@ -129,6 +142,9 @@ export function createTerminalTextInputState(): TerminalTextInputState {
         return { data: "\r", shouldClear: true };
       }
       if (isPrintableKey(key)) {
+        if (!forwardPrintableKeyPress) {
+          return { data: "", shouldClear: false };
+        }
         previousText += key;
         return { data: key, shouldClear: false };
       }
@@ -146,17 +162,29 @@ export function createTerminalTextInputState(): TerminalTextInputState {
       }
 
       if (text.length === 0) {
+        pendingBackspaceKeyPresses = 0;
         previousText = "";
         return { data: "", shouldClear: false };
       }
 
       if (text.includes("\n") || text.includes("\r")) {
+        pendingBackspaceKeyPresses = 0;
         previousText = "";
         replacementDesynced = false;
         return { data: "", shouldClear: true };
       }
 
       if (!text.startsWith(previousText)) {
+        if (previousText.startsWith(text)) {
+          const removedLength = Array.from(previousText).length - Array.from(text).length;
+          previousText = text;
+          replacementDesynced = false;
+          pendingBackspaceKeyPresses = removedLength;
+          return {
+            data: "\x7f".repeat(removedLength),
+            shouldClear: false,
+          };
+        }
         let compositionEdit = "";
         if (!replacementDesynced) {
           compositionEdit = resolveCompositionEdit(previousText, text);
@@ -164,11 +192,13 @@ export function createTerminalTextInputState(): TerminalTextInputState {
         if (compositionEdit === "") {
           replacementDesynced = true;
         }
+        pendingBackspaceKeyPresses = 0;
         previousText = text;
         return { data: compositionEdit, shouldClear: false };
       }
 
       const appendedText = text.slice(previousText.length);
+      pendingBackspaceKeyPresses = 0;
       previousText = text;
       return {
         data: appendedText,
@@ -177,6 +207,7 @@ export function createTerminalTextInputState(): TerminalTextInputState {
     },
     reset(): void {
       previousText = "";
+      pendingBackspaceKeyPresses = 0;
       replacementDesynced = false;
     },
   };
@@ -187,7 +218,10 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     const inputRef = useRef<EditingTextInputHandle>(null);
     const isFocusedRef = useRef(false);
     const pendingFocusFrameRef = useRef<number | null>(null);
-    const inputState = useMemo(() => createTerminalTextInputState(), []);
+    const inputState = useMemo(
+      () => createTerminalTextInputState({ forwardPrintableKeyPress: Platform.OS !== "android" }),
+      [],
+    );
     const inputStyle = useMemo(() => [styles.input, style], [style]);
 
     const clearPendingFocus = useCallback(() => {
