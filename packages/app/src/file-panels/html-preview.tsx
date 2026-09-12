@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { StyleSheet } from "react-native-unistyles";
 import { WebView } from "react-native-webview";
-import { withPreviewCsp } from "./html-preview-csp";
+import { type PreviewDocumentUrl, withPreviewCsp } from "./html-preview-csp";
 import { useHtmlPreviewNavigationGuard } from "./html-preview-navigation";
 
 // A preview is a viewer, not a browser. Only the document Paseo hands the WebView
@@ -30,10 +30,10 @@ const ORIGIN_WHITELIST = ["*"];
 // URLs that can pass as "initial" are inert ones. `data:text/html` must NOT be
 // allowed here: a page could navigate itself to a data document of its own, which
 // would arrive with no injected policy and a clean slate to egress from.
-const BASE_URL = "about:blank";
+const BASE_URL: PreviewDocumentUrl = "about:blank";
 
 export function FileHtmlPreview({ html, testID }: { html: string; testID?: string }) {
-  const document = useMemo(() => withPreviewCsp(html), [html]);
+  const document = useMemo(() => withPreviewCsp(html, BASE_URL), [html]);
   const source = useMemo(() => ({ html: document, baseUrl: BASE_URL }), [document]);
   const allowOnlyInitialDocument = useHtmlPreviewNavigationGuard(document);
 
