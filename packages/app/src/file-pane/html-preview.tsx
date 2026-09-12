@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from "react";
 import { StyleSheet } from "react-native-unistyles";
 import { WebView } from "react-native-webview";
-import { withPreviewCsp } from "./html-preview-csp";
+import { type PreviewDocumentUrl, withPreviewCsp } from "./html-preview-csp";
 import { htmlPreviewNavigationKind } from "./html-preview-navigation";
 
 // A preview is a viewer, not a browser. Only the document Paseo hands the WebView
@@ -30,10 +30,10 @@ const ORIGIN_WHITELIST = ["*"];
 // URLs that can pass as "initial" are inert ones. `data:text/html` must NOT be
 // allowed here: a page could navigate itself to a data document of its own, which
 // would arrive with no injected policy and a clean slate to egress from.
-const BASE_URL = "about:blank";
+const BASE_URL: PreviewDocumentUrl = "about:blank";
 
 export function FileHtmlPreview({ html, testID }: { html: string; testID?: string }) {
-  const document = useMemo(() => withPreviewCsp(html), [html]);
+  const document = useMemo(() => withPreviewCsp(html, BASE_URL), [html]);
   const source = useMemo(() => ({ html: document, baseUrl: BASE_URL }), [document]);
   // Latched per document rather than once for the lifetime of the WebView: the
   // file pane re-renders with new content on every live-file refresh, and each of
