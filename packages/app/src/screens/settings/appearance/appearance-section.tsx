@@ -42,6 +42,7 @@ import {
   THEME_SWATCHES,
   type Theme,
 } from "@/styles/theme";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
 import type { PluginThemeOption } from "@/plugins/themes";
 import { settingsStyles } from "@/styles/settings";
@@ -254,6 +255,23 @@ function ChatOutlineRow({ value, onChange }: ChatOutlineRowProps) {
     <SettingsSwitch
       label={t("settings.appearance.chatOutline.title")}
       hint={t("settings.appearance.chatOutline.description")}
+      value={value}
+      onValueChange={onChange}
+    />
+  );
+}
+
+interface TabCloseButtonRowProps {
+  value: boolean;
+  onChange: (value: boolean) => void;
+}
+
+function TabCloseButtonRow({ value, onChange }: TabCloseButtonRowProps) {
+  const { t } = useTranslation();
+  return (
+    <SettingsSwitch
+      label={t("settings.appearance.tabs.closeButton.label")}
+      hint={t("settings.appearance.tabs.closeButton.description")}
       value={value}
       onValueChange={onChange}
     />
@@ -580,6 +598,7 @@ function SyntaxRow({ value, onChange }: SyntaxRowProps) {
 
 export function AppearanceSection() {
   const { t } = useTranslation();
+  const isCompact = useIsCompactFormFactor();
   const { settings, updateSettings } = useAppSettings();
   const {
     options: pluginThemes,
@@ -652,6 +671,13 @@ export function AppearanceSection() {
   const handleChatOutlineChange = useCallback(
     (chatOutlineEnabled: boolean) => {
       void updateSettings({ chatOutlineEnabled });
+    },
+    [updateSettings],
+  );
+
+  const handleShowTabCloseButtonChange = useCallback(
+    (showTabCloseButton: boolean) => {
+      void updateSettings({ showTabCloseButton });
     },
     [updateSettings],
   );
@@ -781,6 +807,16 @@ export function AppearanceSection() {
           ) : null}
         </SettingsCard>
       </SettingsSection>
+      {isCompact ? null : (
+        <SettingsSection title={t("settings.appearance.tabs.title")}>
+          <SettingsCard>
+            <TabCloseButtonRow
+              value={settings.showTabCloseButton}
+              onChange={handleShowTabCloseButtonChange}
+            />
+          </SettingsCard>
+        </SettingsSection>
+      )}
       <SidebarNavSection />
       <SettingsSection title={t("settings.appearance.fonts.title")}>
         <View style={settingsStyles.card}>
