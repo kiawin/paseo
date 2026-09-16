@@ -3550,6 +3550,7 @@ describe("workspace-layout-store actions", () => {
       { kind: "new_tab" },
       { kind: "files" },
       { kind: "changes_tree" },
+      { kind: "artifacts" },
     ]);
     expect(layout.focusedPaneId).toBe("main");
 
