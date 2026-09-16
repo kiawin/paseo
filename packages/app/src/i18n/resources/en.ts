@@ -2822,6 +2822,13 @@ export const en = {
         title: "Chat outline",
         description: "Show an outline for jumping between prompts",
       },
+      tabs: {
+        title: "Tabs",
+        closeButton: {
+          label: "Show close button",
+          description: "Hide it to close tabs from the tab menu instead",
+        },
+      },
       sidebar: {
         view: {
           title: "Sidebar view",
