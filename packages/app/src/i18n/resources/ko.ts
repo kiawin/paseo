@@ -2262,6 +2262,13 @@ export const ko: TranslationResources = {
         title: "채팅 개요",
         description: "프롬프트 사이를 이동하기 위한 개요 표시",
       },
+      tabs: {
+        title: "탭",
+        closeButton: {
+          label: "닫기 버튼 표시",
+          description: "숨기면 탭 메뉴에서 탭을 닫습니다",
+        },
+      },
       sidebar: {
         title: "사이드바",
         description: "사이드바 상단에 표시할 항목과 순서를 선택하세요",
