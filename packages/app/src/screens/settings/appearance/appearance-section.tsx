@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
+import { SettingsCard, SettingsSwitch } from "@/components/settings";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { useContributedThemes } from "@/appearance/provider";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ import {
   THEME_SWATCHES,
   type Theme,
 } from "@/styles/theme";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
 import type { PluginThemeOption } from "@/plugins/themes";
 import { settingsStyles } from "@/styles/settings";
@@ -225,6 +227,23 @@ function ThemeRow({
         </DropdownMenuContent>
       </DropdownMenu>
     </View>
+  );
+}
+
+interface TabCloseButtonRowProps {
+  value: boolean;
+  onChange: (value: boolean) => void;
+}
+
+function TabCloseButtonRow({ value, onChange }: TabCloseButtonRowProps) {
+  const { t } = useTranslation();
+  return (
+    <SettingsSwitch
+      label={t("settings.appearance.tabs.closeButton.label")}
+      hint={t("settings.appearance.tabs.closeButton.description")}
+      value={value}
+      onValueChange={onChange}
+    />
   );
 }
 
@@ -473,6 +492,7 @@ function SyntaxRow({ value, onChange }: SyntaxRowProps) {
 
 export function AppearanceSection() {
   const { t } = useTranslation();
+  const isCompact = useIsCompactFormFactor();
   const { settings, updateSettings } = useAppSettings();
   const {
     options: pluginThemes,
@@ -524,6 +544,13 @@ export function AppearanceSection() {
   const handleSyntaxThemeChange = useCallback(
     (syntaxTheme: SyntaxThemeId) => {
       void updateSettings({ syntaxTheme });
+    },
+    [updateSettings],
+  );
+
+  const handleShowTabCloseButtonChange = useCallback(
+    (showTabCloseButton: boolean) => {
+      void updateSettings({ showTabCloseButton });
     },
     [updateSettings],
   );
@@ -631,6 +658,16 @@ export function AppearanceSection() {
           />
         </View>
       </SettingsSection>
+      {isCompact ? null : (
+        <SettingsSection title={t("settings.appearance.tabs.title")}>
+          <SettingsCard>
+            <TabCloseButtonRow
+              value={settings.showTabCloseButton}
+              onChange={handleShowTabCloseButtonChange}
+            />
+          </SettingsCard>
+        </SettingsSection>
+      )}
       <SettingsSection title={t("settings.appearance.fonts.title")}>
         <View style={settingsStyles.card}>
           {showInterfaceFontFamilyRow ? (
