@@ -112,6 +112,8 @@ export interface AppSettings {
   chatTranscriptStyle: ChatTranscriptStyle;
   chatOutlineEnabled: boolean;
   vimKeybindings: boolean;
+  /** Whether workspace tabs show the inline close button. The tab menu can still close a tab. */
+  showTabCloseButton: boolean;
   /** Desktop-only preferences for implicit opens into the ordinary side pane. */
   openInSidePane: OpenInSidePanePreferences;
   pullRequestOpenLocation: PullRequestOpenLocation;
@@ -169,6 +171,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   chatTranscriptStyle: "cards",
   chatOutlineEnabled: true,
   vimKeybindings: false,
+  showTabCloseButton: true,
   openInSidePane: DEFAULT_OPEN_IN_SIDE_PANE_PREFERENCES,
   pullRequestOpenLocation: "explorer",
 };
@@ -271,6 +274,7 @@ const StoredAppSettingsSchema = z
     compactToolCalls: z.boolean().optional().catch(undefined),
     chatOutlineEnabled: z.boolean().catch(true),
     vimKeybindings: z.boolean().catch(false),
+    showTabCloseButton: z.boolean().catch(true),
     openInSidePane: z
       .object({
         explorerFiles: z.boolean().catch(false),
