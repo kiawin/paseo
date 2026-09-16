@@ -138,6 +138,8 @@ export interface AppSettings {
   vimKeybindings: boolean;
   sendShortcut: SendShortcut;
   filePanelAssociations: Record<string, string>;
+  /** Whether workspace tabs show the inline close button. The tab menu can still close a tab. */
+  showTabCloseButton: boolean;
   /** Desktop-only preferences for implicit opens into the ordinary side pane. */
   openInSidePane: OpenInSidePanePreferences;
   pullRequestOpenLocation: PullRequestOpenLocation;
@@ -200,6 +202,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   vimKeybindings: false,
   sendShortcut: "enter",
   filePanelAssociations: {},
+  showTabCloseButton: true,
   openInSidePane: DEFAULT_OPEN_IN_SIDE_PANE_PREFERENCES,
   pullRequestOpenLocation: "explorer",
 };
@@ -312,6 +315,7 @@ const StoredAppSettingsSchema = z
     vimKeybindings: z.boolean().catch(false),
     sendShortcut: z.enum(["enter", "shift-enter", "mod-enter"]).catch("enter"),
     filePanelAssociations: z.record(z.string(), z.string()).catch({}),
+    showTabCloseButton: z.boolean().catch(true),
     openInSidePane: z
       .object({
         explorerFiles: z.boolean().catch(false),
