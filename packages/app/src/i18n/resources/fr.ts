@@ -2334,6 +2334,13 @@ export const fr: TranslationResources = {
         title: "Plan de la discussion",
         description: "Afficher un plan pour passer d’une requête à l’autre",
       },
+      tabs: {
+        title: "Onglets",
+        closeButton: {
+          label: "Afficher le bouton de fermeture",
+          description: "Masquez-le pour fermer les onglets depuis le menu de l’onglet",
+        },
+      },
       sidebar: {
         header: {
           title: "En-tête",
