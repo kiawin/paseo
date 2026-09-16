@@ -2256,6 +2256,13 @@ export const zhCN: TranslationResources = {
         title: "聊天大纲",
         description: "显示用于在提示词之间跳转的大纲",
       },
+      tabs: {
+        title: "标签页",
+        closeButton: {
+          label: "显示关闭按钮",
+          description: "隐藏后可从标签页菜单关闭标签页",
+        },
+      },
       sidebar: {
         header: {
           title: "顶部",
