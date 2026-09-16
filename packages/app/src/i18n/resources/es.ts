@@ -2394,6 +2394,13 @@ export const es: TranslationResources = {
         title: "Esquema del chat",
         description: "Muestra un esquema para saltar entre instrucciones",
       },
+      tabs: {
+        title: "Pestañas",
+        closeButton: {
+          label: "Mostrar el botón de cerrar",
+          description: "Ocúltalo para cerrar las pestañas desde el menú de la pestaña",
+        },
+      },
       sidebar: {
         header: {
           title: "Encabezado",
