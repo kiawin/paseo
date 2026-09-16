@@ -2735,6 +2735,13 @@ export const ru: TranslationResources = {
         title: "Оглавление чата",
         description: "Показывать оглавление для перехода между запросами",
       },
+      tabs: {
+        title: "Вкладки",
+        closeButton: {
+          label: "Показывать кнопку закрытия",
+          description: "Скройте её, чтобы закрывать вкладки через меню вкладки",
+        },
+      },
       sidebar: {
         view: {
           title: "Вид боковой панели",

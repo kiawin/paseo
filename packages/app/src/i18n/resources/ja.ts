@@ -2715,6 +2715,13 @@ export const ja: TranslationResources = {
         title: "チャットのアウトライン",
         description: "プロンプト間を移動するためのアウトラインを表示します",
       },
+      tabs: {
+        title: "タブ",
+        closeButton: {
+          label: "閉じるボタンを表示",
+          description: "非表示にすると、タブメニューからタブを閉じます",
+        },
+      },
       sidebar: {
         view: {
           title: "サイドバーのビュー",

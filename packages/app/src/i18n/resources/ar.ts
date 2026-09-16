@@ -2726,6 +2726,13 @@ export const ar: TranslationResources = {
         title: "مخطط المحادثة",
         description: "عرض مخطط للتنقل بين المطالبات",
       },
+      tabs: {
+        title: "علامات التبويب",
+        closeButton: {
+          label: "إظهار زر الإغلاق",
+          description: "أخفِه لإغلاق علامات التبويب من قائمة التبويب بدلاً من ذلك",
+        },
+      },
       sidebar: {
         view: {
           title: "عرض الشريط الجانبي",
