@@ -2311,6 +2311,13 @@ export const ptBR: TranslationResources = {
         title: "Estrutura do chat",
         description: "Mostrar uma estrutura para navegar entre prompts",
       },
+      tabs: {
+        title: "Abas",
+        closeButton: {
+          label: "Mostrar o botão de fechar",
+          description: "Oculte-o para fechar as abas pelo menu da aba",
+        },
+      },
       sidebar: {
         header: {
           title: "Cabeçalho",
