@@ -16,6 +16,12 @@ export const builtinFilePanels = [
     maxBytes: Infinity,
   },
   {
+    id: "builtin:csv",
+    files: { extensions: ["csv", "tsv", "tab"] },
+    document: "text",
+    maxBytes: Infinity,
+  },
+  {
     id: "builtin:image",
     files: { extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] },
     document: "bytes",
