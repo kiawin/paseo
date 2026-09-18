@@ -54,6 +54,8 @@ const MAX_EDITABLE_BYTES = 1024 * 1024;
 /** A rendered view of the file's text: the panel's Preview, shown instead of its source. */
 export interface TextFilePreviewProps {
   text: string;
+  /** The file's size in bytes, for a Preview that enforces its own display budget. */
+  size: number;
   params: PluginFilePanelProps["params"];
   workspaceId: string;
   host: PluginFilePanelProps["host"];
@@ -140,7 +142,13 @@ function ReadonlyTextFile({
         onViewChange={Preview ? setView : undefined}
       />
       {showPreview ? (
-        <Preview text={text.text} params={params} workspaceId={workspaceId} host={host} />
+        <Preview
+          text={text.text}
+          size={file.size}
+          params={params}
+          workspaceId={workspaceId}
+          host={host}
+        />
       ) : (
         <ThemedFileSourceView
           content={text.text}
@@ -238,7 +246,13 @@ function EditableTextFile({
         conflict={conflict}
       />
       {showPreview ? (
-        <Preview text={snapshot.content} params={params} workspaceId={workspaceId} host={host} />
+        <Preview
+          text={snapshot.content}
+          size={file.size}
+          params={params}
+          workspaceId={workspaceId}
+          host={host}
+        />
       ) : (
         <SourceEditor
           model={model}
