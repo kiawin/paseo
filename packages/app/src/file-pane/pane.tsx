@@ -30,6 +30,7 @@ import { resolveFilePreviewLifecycle } from "./preview-lifecycle/model";
 import { FilePanelBar } from "./bar";
 import { FileHtmlPreview } from "./html-preview";
 import { FileMarkdownPreview } from "./markdown-preview";
+import { FileCsvPreview } from "./csv-preview";
 import { FileEditorModel, getFileConflictCallout, type FileConflictCallout } from "./editor/model";
 import { createFileObservationSource } from "./editor/observation-source";
 import { FileEditorView } from "./editor/view";
@@ -57,6 +58,7 @@ interface FilePreviewBodyProps {
   workspaceRoot: string;
   client: DaemonClient | null;
   serverId: string;
+  onSwitchToSource?: () => void;
 }
 
 type TextExplorerFile = ExplorerFile & { kind: "text" };
@@ -141,6 +143,7 @@ function FilePreviewBody({
   workspaceRoot,
   client,
   serverId,
+  onSwitchToSource,
 }: FilePreviewBodyProps) {
   const { t } = useTranslation();
   const filePath = location.path;
@@ -196,6 +199,20 @@ function FilePreviewBody({
               serverId={serverId}
             />
           </RNScrollView>
+        </View>
+      );
+    }
+
+    if (renderKind === "csv") {
+      return (
+        <View style={styles.previewScrollContainer}>
+          <FileCsvPreview
+            key={filePath}
+            filePath={filePath}
+            content={preview.content ?? ""}
+            size={preview.size}
+            onSwitchToSource={onSwitchToSource}
+          />
         </View>
       );
     }
@@ -394,6 +411,8 @@ function FilePanePresentation({
   navigationRevision: number;
   imagePreviewUri: string | null;
 }) {
+  const switchToSource = useCallback(() => onPreviewModeChange?.("source"), [onPreviewModeChange]);
+
   if (!client && readTarget) {
     return (
       <View style={styles.container} testID="workspace-file-pane">
@@ -469,6 +488,7 @@ function FilePanePresentation({
         workspaceRoot={workspaceRoot}
         client={client}
         serverId={serverId}
+        onSwitchToSource={onPreviewModeChange ? switchToSource : undefined}
       />
     </View>
   );
@@ -611,6 +631,7 @@ function EditableFilePane({
     [preview, snapshot.content, snapshot.version],
   );
   const showSource = mode !== "preview";
+  const switchToSource = useCallback(() => onModeChange?.("source"), [onModeChange]);
 
   return (
     <View style={styles.container} testID="workspace-file-pane">
@@ -649,6 +670,7 @@ function EditableFilePane({
           workspaceRoot={workspaceRoot}
           client={client}
           serverId={serverId}
+          onSwitchToSource={onModeChange ? switchToSource : undefined}
         />
       )}
     </View>
