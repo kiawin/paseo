@@ -1,7 +1,7 @@
 import { _electron as electron, expect } from "playwright/test";
 import { spawn } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
-import { readFile, rm, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, mkdtemp, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -20,10 +20,7 @@ const { seedWorkspace } = seedClientModule.default ?? seedClientModule;
 
 const repo = fileURLToPath(new URL("../../..", import.meta.url));
 const demoVideo = process.env.E2E_DEMO_VIDEO === "1";
-const evidenceDir = demoVideo
-  ? path.join(repo, "qa-evidence", "video", "desktop-screenshots")
-  : path.join(repo, "qa-evidence", "desktop");
-const fixturePath = path.join(repo, "qa-evidence", "fixtures", "csv-preview.csv");
+const fixturePath = path.join(repo, "packages", "app", "e2e", "fixtures", "csv-preview.csv");
 
 async function pauseForDemo(page, milliseconds = 1_800) {
   if (demoVideo) await page.waitForTimeout(milliseconds);
@@ -40,6 +37,10 @@ async function availablePort() {
 }
 
 const root = await mkdtemp(path.join(os.tmpdir(), "paseo-csv-electron-"));
+const evidenceDir = demoVideo
+  ? path.join(repo, "qa-evidence", "video", "desktop-screenshots")
+  : path.join(root, "test-results", "desktop");
+await mkdir(evidenceDir, { recursive: true });
 const metroPort = await availablePort();
 process.env.E2E_METRO_PORT = String(metroPort);
 

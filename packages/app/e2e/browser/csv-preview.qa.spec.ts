@@ -5,12 +5,15 @@ import { openFileExplorer, openFileFromExplorer } from "../support/helpers/file-
 import { gotoWorkspace } from "../support/helpers/launcher";
 import { seedWorkspace, type SeededWorkspace } from "../support/helpers/seed-client";
 
-const fixturePath = path.resolve(__dirname, "../../../../qa-evidence/fixtures/csv-preview.csv");
+const fixturePath = path.resolve(__dirname, "../fixtures/csv-preview.csv");
 const fixtureContent = readFileSync(fixturePath, "utf8");
 const demoVideo = process.env.E2E_DEMO_VIDEO === "1";
-const evidenceDir = demoVideo
-  ? path.resolve(__dirname, "../../../../qa-evidence/video/web-screenshots")
-  : path.resolve(__dirname, "../../../../qa-evidence/web");
+
+function screenshotPath(testInfo: import("@playwright/test").TestInfo, filename: string): string {
+  return demoVideo
+    ? path.resolve(__dirname, "../../../../qa-evidence/video/web-screenshots", filename)
+    : testInfo.outputPath(filename);
+}
 
 let workspace: SeededWorkspace;
 
@@ -36,7 +39,9 @@ test.afterAll(async () => {
   await workspace?.cleanup();
 });
 
-test("opens the real CSV file and exercises the preview interactions", async ({ page }) => {
+test("opens the real CSV file and exercises the preview interactions", async ({
+  page,
+}, testInfo) => {
   test.setTimeout(120_000);
 
   await openCsvPreview(page);
@@ -47,7 +52,7 @@ test("opens the real CSV file and exercises the preview interactions", async ({ 
   await expect(page.getByTestId("csv-cell-6-5")).toHaveCount(0);
   await pauseForDemo(page, 2_000);
   await page.screenshot({
-    path: path.join(evidenceDir, "01-grid-ragged-quoted.png"),
+    path: screenshotPath(testInfo, "01-grid-ragged-quoted.png"),
     fullPage: true,
   });
 
@@ -105,7 +110,7 @@ test("opens the real CSV file and exercises the preview interactions", async ({ 
   expect(highlighted).toBe(true);
   await pauseForDemo(page);
   await page.screenshot({
-    path: path.join(evidenceDir, "02-search-paris-highlighted.png"),
+    path: screenshotPath(testInfo, "02-search-paris-highlighted.png"),
     fullPage: true,
   });
 
@@ -135,7 +140,7 @@ test("opens the real CSV file and exercises the preview interactions", async ({ 
   await expect.soft(page.getByTestId("csv-row-3")).toHaveCount(0);
   await expect.soft(page.getByTestId("csv-row-4")).toHaveCount(0);
   await page.screenshot({
-    path: path.join(evidenceDir, "03-status-active-filter.png"),
+    path: screenshotPath(testInfo, "03-status-active-filter.png"),
     fullPage: true,
   });
 
@@ -166,7 +171,7 @@ test("opens the real CSV file and exercises the preview interactions", async ({ 
       "csv-row-2",
     ]);
   await page.screenshot({
-    path: path.join(evidenceDir, "04-numeric-sort-ascending.png"),
+    path: screenshotPath(testInfo, "04-numeric-sort-ascending.png"),
     fullPage: true,
   });
 
@@ -186,7 +191,7 @@ test("opens the real CSV file and exercises the preview interactions", async ({ 
   expect.soft(scrollTransform).toMatch(/translateX\(-/);
   expect.soft(after?.x).toBe(before.x);
   await page.screenshot({
-    path: path.join(evidenceDir, "05-horizontal-pan-column-zero-pinned.png"),
+    path: screenshotPath(testInfo, "05-horizontal-pan-column-zero-pinned.png"),
     fullPage: true,
   });
 
@@ -199,7 +204,10 @@ test("opens the real CSV file and exercises the preview interactions", async ({ 
     .catch(() => false);
   console.log("[csv-qa] after Source toggle", sourceVisible);
   expect.soft(sourceVisible).toBe(true);
-  await page.screenshot({ path: path.join(evidenceDir, "06-source-mode.png"), fullPage: true });
+  await page.screenshot({
+    path: screenshotPath(testInfo, "06-source-mode.png"),
+    fullPage: true,
+  });
   await page.getByTestId("file-mode-preview").click();
   await page.waitForTimeout(250);
   await pauseForDemo(page, 2_000);
@@ -207,7 +215,7 @@ test("opens the real CSV file and exercises the preview interactions", async ({ 
   console.log("[csv-qa] after Preview toggle", previewVisible);
   expect.soft(previewVisible).toBe(true);
   await page.screenshot({
-    path: path.join(evidenceDir, "07-preview-round-trip.png"),
+    path: screenshotPath(testInfo, "07-preview-round-trip.png"),
     fullPage: true,
   });
 });
