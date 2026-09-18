@@ -1,6 +1,9 @@
 import type { ParsedDiffFile } from "@getpaseo/protocol/messages";
+import type { TextMeasurer } from "@/text-measurement";
 import type { InlineReviewActions } from "@/review";
 import type { ReviewableDiffTarget } from "@/utils/diff-layout";
+
+export type { TextMeasurer } from "@/text-measurement";
 
 interface DiffDocumentBaseProps {
   files: ParsedDiffFile[];
@@ -164,13 +167,6 @@ export interface DiffDocumentModel {
   wrapLines: boolean;
   viewportWidth: number;
   reviewGeometryKey: string;
-}
-
-export interface TextMeasurer {
-  measure(text: string, weight?: "regular" | "semibold"): number;
-  measureAdvances?(graphemes: readonly string[]): number[];
-  /** Same width as the last cumulative advance, without computing every position. */
-  measureWidth?(graphemes: readonly string[]): number;
 }
 
 export interface BuildDiffDocumentModelInput {
