@@ -8,6 +8,7 @@ import {
 } from "@/utils/diff-layout";
 import { compactHighlightTokens } from "@/utils/diff-rendering";
 import { getInlineReviewThreadState, getSplitInlineReviewThreadState } from "@/review/geometry";
+export { graphemeBoundaries } from "@/text-measurement";
 import { advancesFor, requiresShaping } from "./text-measurement";
 import type {
   BuildDiffDocumentModelInput,
@@ -696,15 +697,6 @@ export function fragmentWidthForRange(fragment: DiffFragment, start: number, end
   return fragment.graphemes
     .filter((grapheme) => grapheme.start >= start && grapheme.end <= end)
     .reduce((width, grapheme) => width + grapheme.width, 0);
-}
-
-export function graphemeBoundaries(text: string): number[] {
-  const boundaries = [0];
-  for (let index = 0; index < text.length; ) {
-    index = findClusterBreak(text, index);
-    boundaries.push(index);
-  }
-  return boundaries;
 }
 
 function measureCellWidth(cell: DiffCell): number {
