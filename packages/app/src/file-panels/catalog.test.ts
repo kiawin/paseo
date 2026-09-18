@@ -31,6 +31,9 @@ describe("built-in file panels", () => {
     expect(panelId(textFile("plan.html"))).toBe("builtin:html");
     expect(panelId(textFile("docs/PLAN.HTML"))).toBe("builtin:html");
     expect(panelId(textFile("plan.htm"))).toBe("builtin:html");
+    expect(panelId(textFile("table.csv"))).toBe("builtin:csv");
+    expect(panelId(textFile("table.TSV"))).toBe("builtin:csv");
+    expect(panelId(textFile("data.tab"))).toBe("builtin:csv");
   });
 
   it("opens every other text file with Source, whatever its name", () => {
