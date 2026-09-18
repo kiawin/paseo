@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { ZoomableImage } from "@/components/zoomable-viewport/image";
+import { FileCsvPreview } from "@/file-pane/csv-preview";
 import { useSessionStore } from "@/stores/session-store";
 import { FileHtmlPreview } from "./html-preview";
 import { FilePanelLoading } from "./loading";
@@ -58,6 +59,17 @@ function HtmlPreview({ text }: TextFilePreviewProps) {
   );
 }
 
+function CsvPanel({ file, target }: BuiltinFilePanelProps) {
+  const text = useFileText(file);
+  if (text.status === "loading") return <FilePanelLoading />;
+  if (text.status === "error") return <FilePanelError message={text.error.message} />;
+  return (
+    <View style={styles.container}>
+      <FileCsvPreview filePath={target.path} content={text.text} size={file.size} />
+    </View>
+  );
+}
+
 function ImagePanel({ file }: BuiltinFilePanelProps) {
   const url = useFileUrl(file);
   if (url.status === "loading") return <FilePanelLoading />;
@@ -76,6 +88,7 @@ function FilePanelError({ message }: { message: string }) {
 const components = {
   "builtin:markdown": MarkdownPanel,
   "builtin:html": HtmlPanel,
+  "builtin:csv": CsvPanel,
   "builtin:image": ImagePanel,
   "builtin:source": SourcePanel,
 };
