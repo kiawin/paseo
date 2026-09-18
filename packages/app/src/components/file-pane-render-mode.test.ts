@@ -30,11 +30,15 @@ describe("filePreviewRenderKind", () => {
     expect(filePreviewRenderKind("plan.html")).toBe("html");
     expect(filePreviewRenderKind("docs/PLAN.HTML")).toBe("html");
     expect(filePreviewRenderKind("plan.htm")).toBe("html");
+    expect(filePreviewRenderKind("table.csv")).toBe("csv");
+    expect(filePreviewRenderKind("table.TSV")).toBe("csv");
+    expect(filePreviewRenderKind("data.tab")).toBe("csv");
   });
 
   it("returns null for files without a rendered preview", () => {
     expect(filePreviewRenderKind("src/index.ts")).toBe(null);
     expect(filePreviewRenderKind("page.mdx")).toBe(null);
     expect(filePreviewRenderKind("index.html.erb")).toBe(null);
+    expect(filePreviewRenderKind("table.csv.bak")).toBe(null);
   });
 });
