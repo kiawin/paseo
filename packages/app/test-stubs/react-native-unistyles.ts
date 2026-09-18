@@ -1,3 +1,5 @@
+import React from "react";
+
 const testTheme = {
   colorScheme: "light",
   colors: {
@@ -26,6 +28,7 @@ const testTheme = {
       blue: { 300: "#93c5fd" },
       green: { 500: "#22c55e" },
       red: { 300: "#fca5a5" },
+      zinc: { 600: "#52525b" },
       white: "#ffffff",
     },
   },
@@ -86,7 +89,14 @@ export const StyleSheet = {
     isStyleFactory(styles) ? styles(testTheme) : styles,
 };
 
-export const withUnistyles = <T>(Component: T): T => Component;
+export function withUnistyles<T extends React.ComponentType<Record<string, unknown>>>(
+  Component: T,
+  mapProps?: (theme: typeof testTheme) => Record<string, unknown>,
+): T {
+  if (!mapProps) return Component;
+  return ((props: Record<string, unknown>) =>
+    React.createElement(Component, { ...props, ...mapProps(testTheme) })) as T;
+}
 
 export const useUnistyles = () => ({
   theme: testTheme,
