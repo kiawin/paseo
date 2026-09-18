@@ -15,6 +15,20 @@ const resolvePackageEntry = (packageName: string) => {
     : path.resolve(rootNodeModules, packageName);
 };
 
+const paseoReanimatedWebUtilsPlugin = {
+  name: "paseo-reanimated-web-utils",
+  enforce: "pre" as const,
+  resolveId(source: string, importer?: string) {
+    if (
+      importer?.includes("react-native-reanimated/lib/module/ReanimatedModule/js-reanimated/") &&
+      (source === "./webUtils" || source.startsWith("./webUtils."))
+    ) {
+      return path.resolve(__dirname, "test-stubs/react-native-reanimated-web-utils.ts");
+    }
+    return undefined;
+  },
+};
+
 export default defineConfig({
   test: {
     environment: "node",
@@ -37,6 +51,7 @@ export default defineConfig({
       },
       {
         extends: true,
+        plugins: [paseoReanimatedWebUtilsPlugin],
         test: {
           name: "browser",
           fileParallelism: false,
