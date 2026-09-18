@@ -67,6 +67,7 @@ interface FilePreviewBodyProps {
   workspaceRoot: string;
   client: DaemonClient | null;
   serverId: string;
+  onSwitchToSource?: () => void;
 }
 
 type TextExplorerFile = ExplorerFile & { kind: "text" };
@@ -135,6 +136,7 @@ function FilePreviewBody({
   workspaceRoot,
   client,
   serverId,
+  onSwitchToSource,
 }: FilePreviewBodyProps) {
   const { t } = useTranslation();
   const filePath = location.path;
@@ -167,6 +169,8 @@ function FilePreviewBody({
         client={client}
         serverId={serverId}
         imagePreviewUri={imagePreviewUri}
+        size={preview.size}
+        onSwitchToSource={onSwitchToSource}
       />
     );
   }
@@ -357,6 +361,8 @@ function FilePanePresentation({
   navigationRevision: number;
   imagePreviewUri: string | null;
 }) {
+  const switchToSource = useCallback(() => onPreviewModeChange?.("source"), [onPreviewModeChange]);
+
   if (!client && readTarget) {
     return (
       <View style={styles.container} testID="workspace-file-pane">
@@ -434,6 +440,7 @@ function FilePanePresentation({
         workspaceRoot={workspaceRoot}
         client={client}
         serverId={serverId}
+        onSwitchToSource={onPreviewModeChange ? switchToSource : undefined}
       />
     </View>
   );
@@ -550,6 +557,7 @@ function EditableFilePane({
     [preview, snapshot.content, snapshot.version],
   );
   const showSource = mode !== "preview";
+  const switchToSource = useCallback(() => onModeChange?.("source"), [onModeChange]);
 
   return (
     <View style={styles.container} testID="workspace-file-pane">
@@ -588,6 +596,7 @@ function EditableFilePane({
           workspaceRoot={workspaceRoot}
           client={client}
           serverId={serverId}
+          onSwitchToSource={onModeChange ? switchToSource : undefined}
         />
       )}
     </View>
