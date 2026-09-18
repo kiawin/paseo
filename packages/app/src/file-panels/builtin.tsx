@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { ZoomableImage } from "@/components/zoomable-viewport/image";
+import { FileCsvPreview } from "@/file-pane/csv-preview";
 import { useSessionStore } from "@/stores/session-store";
 import { FileHtmlPreview } from "./html-preview";
 import { FilePanelLoading } from "./loading";
@@ -58,6 +59,19 @@ function HtmlPreview({ text }: TextFilePreviewProps) {
   );
 }
 
+/** CSV and TSV: the text file panel with the grid as its Preview. */
+function CsvPanel(props: PluginFilePanelProps) {
+  return <TextFilePanel {...props} preview={CsvPreview} />;
+}
+
+function CsvPreview({ text, size, params }: TextFilePreviewProps) {
+  return (
+    <View style={styles.container}>
+      <FileCsvPreview filePath={params.path} content={text} size={size} />
+    </View>
+  );
+}
+
 function ImagePanel({ file }: PluginFilePanelProps) {
   const url = useFileUrl(file);
   if (url.status === "loading") return <FilePanelLoading />;
@@ -76,6 +90,7 @@ function FilePanelError({ message }: { message: string }) {
 const components = {
   "builtin:markdown": MarkdownPanel,
   "builtin:html": HtmlPanel,
+  "builtin:csv": CsvPanel,
   "builtin:image": ImagePanel,
   "builtin:source": SourcePanel,
 };

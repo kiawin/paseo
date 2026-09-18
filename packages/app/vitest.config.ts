@@ -17,6 +17,20 @@ const resolvePackageEntry = (packageName: string) => {
     : path.resolve(rootNodeModules, packageName);
 };
 
+const paseoReanimatedWebUtilsPlugin = {
+  name: "paseo-reanimated-web-utils",
+  enforce: "pre" as const,
+  resolveId(source: string, importer?: string) {
+    if (
+      importer?.includes("react-native-reanimated/lib/module/ReanimatedModule/js-reanimated/") &&
+      (source === "./webUtils" || source.startsWith("./webUtils."))
+    ) {
+      return path.resolve(__dirname, "test-stubs/react-native-reanimated-web-utils.ts");
+    }
+    return undefined;
+  },
+};
+
 export default defineConfig({
   plugins: [
     {
@@ -92,6 +106,7 @@ export default defineConfig({
       },
       {
         extends: true,
+        plugins: [paseoReanimatedWebUtilsPlugin],
         test: {
           name: "browser",
           fileParallelism: false,
@@ -169,6 +184,10 @@ export default defineConfig({
       "react/jsx-dev-runtime",
       "react-native-gesture-handler > hoist-non-react-statics",
       "react-native-gesture-handler > invariant",
+      // Imported only by the Reanimated web-utils stub, so discovery comes mid-run and the
+      // optimizer reload fails whichever browser test file is importing at that moment.
+      "react-native-web/dist/exports/StyleSheet/compiler/createReactDOMStyle",
+      "react-native-web/dist/exports/StyleSheet/preprocess",
     ],
     exclude: [
       "react-native-enriched-markdown",
