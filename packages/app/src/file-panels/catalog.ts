@@ -14,6 +14,12 @@ const renderingPanels = [
     fileKind: "text",
   },
   {
+    id: "builtin:csv",
+    builtin: true,
+    files: { extensions: ["csv", "tsv", "tab"] },
+    fileKind: "text",
+  },
+  {
     id: "builtin:image",
     builtin: true,
     files: { extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] },
