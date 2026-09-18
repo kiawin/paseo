@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { ZoomableImage } from "@/components/zoomable-viewport/image";
+import { CsvEditSessionProvider, FileCsvPreview } from "@/file-pane/csv-preview";
 import { useSessionStore } from "@/stores/session-store";
 import { FileHtmlPreview } from "./html-preview";
 import { FilePanelLoading } from "./loading";
@@ -58,6 +59,33 @@ function HtmlPreview({ text }: TextFilePreviewProps) {
   );
 }
 
+/** CSV and TSV: the text file panel with the grid as its Preview. */
+function CsvPanel(props: PluginFilePanelProps) {
+  return (
+    <CsvEditSessionProvider>
+      <TextFilePanel {...props} preview={CsvPreview} />
+    </CsvEditSessionProvider>
+  );
+}
+
+/** The grid, with the panel's editor only when the host can save what it edits. */
+export function CsvPreview({ text, size, params, host, editor }: TextFilePreviewProps) {
+  // COMPAT(workspaceFileEditing): added in v0.2.0, remove after 2027-01-18 once daemon floor >= v0.2.0.
+  const hostEditsFiles = useSessionStore(
+    (state) => state.sessions[host.id]?.serverInfo?.features?.workspaceFileEditing === true,
+  );
+  return (
+    <View style={styles.container}>
+      <FileCsvPreview
+        filePath={params.path}
+        content={text}
+        size={size}
+        editor={hostEditsFiles ? editor : undefined}
+      />
+    </View>
+  );
+}
+
 function ImagePanel({ file }: PluginFilePanelProps) {
   const url = useFileUrl(file);
   if (url.status === "loading") return <FilePanelLoading />;
@@ -76,6 +104,7 @@ function FilePanelError({ message }: { message: string }) {
 const components = {
   "builtin:markdown": MarkdownPanel,
   "builtin:html": HtmlPanel,
+  "builtin:csv": CsvPanel,
   "builtin:image": ImagePanel,
   "builtin:source": SourcePanel,
 };

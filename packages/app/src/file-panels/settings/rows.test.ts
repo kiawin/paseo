@@ -5,8 +5,9 @@ import { buildFilePanelSettingsRows } from "./rows";
 
 type HostedCandidate = FilePanelCandidate & { serverId?: string };
 
-const builtinMarkdown: HostedCandidate = filePanelCatalog([])[0];
-const builtinImage: HostedCandidate = filePanelCatalog([])[2];
+const builtins = filePanelCatalog([]);
+const builtinMarkdown: HostedCandidate = builtins.find((panel) => panel.id === "builtin:markdown")!;
+const builtinImage: HostedCandidate = builtins.find((panel) => panel.id === "builtin:image")!;
 const source: HostedCandidate = sourceFilePanel;
 
 /** What Settings reads: the built-ins and every host's plugin panels, in catalog order. */
