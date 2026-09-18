@@ -5,6 +5,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   type AnimatedStyle,
+  type SharedValue,
 } from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -38,8 +39,9 @@ const ThemedScrollBoundaryShadeSvg = withUnistyles(ScrollBoundaryShadeSvg);
 const surfaceColorMapping = (theme: Theme) => ({ color: theme.colors.surface0 });
 const sidebarColorMapping = (theme: Theme) => ({ color: theme.colors.surfaceSidebar });
 
-export function useHorizontalScrollBoundary() {
-  const offset = useSharedValue(0);
+export function useHorizontalScrollBoundary(sourceOffset?: SharedValue<number>) {
+  const internalOffset = useSharedValue(0);
+  const offset = sourceOffset ?? internalOffset;
   const viewportWidth = useSharedValue(0);
   const contentWidth = useSharedValue(0);
   const onLayout = useCallback(
@@ -59,12 +61,18 @@ export function useHorizontalScrollBoundary() {
     viewportWidth.value = event.layoutMeasurement.width;
     contentWidth.value = event.contentSize.width;
   });
-  const leftShadeStyle = useAnimatedStyle(() => ({
-    opacity: Number(offset.value > EDGE_EPSILON),
-  }));
-  const rightShadeStyle = useAnimatedStyle(() => ({
-    opacity: Number(offset.value + viewportWidth.value < contentWidth.value - EDGE_EPSILON),
-  }));
+  const leftShadeStyle = useAnimatedStyle(
+    () => ({
+      opacity: Number(offset.value > EDGE_EPSILON),
+    }),
+    [offset],
+  );
+  const rightShadeStyle = useAnimatedStyle(
+    () => ({
+      opacity: Number(offset.value + viewportWidth.value < contentWidth.value - EDGE_EPSILON),
+    }),
+    [offset, viewportWidth, contentWidth],
+  );
   return { onLayout, onContentSizeChange, onScroll, leftShadeStyle, rightShadeStyle };
 }
 
