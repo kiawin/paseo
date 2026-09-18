@@ -6,6 +6,7 @@ import { parseFilePanelSelectorKey } from "../resolve";
 const BUILTIN_PRESENTATION = {
   "builtin:markdown": { title: "markdown", icon: "FileText" },
   "builtin:html": { title: "html", icon: "FileCode" },
+  "builtin:csv": { title: "csv", icon: "FileText" },
   "builtin:image": { title: "image", icon: "Image" },
   "builtin:source": { title: "source", icon: "Code" },
 } as const;
@@ -16,6 +17,7 @@ export function filePanelIcon(panel: FilePanel): PluginIcon {
 
 /** "Markdown", "Rich Markdown": the panel's title. */
 export function filePanelTitle(t: TFunction, panel: FilePanel): string {
+  if (panel.id === "builtin:csv") return "CSV";
   return panel.builtin
     ? t(`panels.file.filePanels.builtin.${BUILTIN_PRESENTATION[panel.id].title}`)
     : panel.plugin.i18n.resolve(panel.contribution.title, panel.plugin.locale);
