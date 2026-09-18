@@ -25,7 +25,7 @@ import { formatFileSize } from "@/utils/format-file-size";
 import type { Theme } from "@/styles/theme";
 import { FilePanelLoading } from "../loading";
 import type { FileConflictAlertState } from "./conflict-alert";
-import { FileEditorModel, getFileConflictCallout } from "./editor/model";
+import { FileEditorModel, getFileConflictCallout, type FileEditorStatus } from "./editor/model";
 import { FileEditorView } from "./editor/view";
 import { selectSourcePresentation } from "./readonly/presentation";
 import { FileSourceView } from "./readonly/view";
@@ -56,9 +56,27 @@ const MAX_EDITABLE_BYTES = 1024 * 1024;
 /** A rendered view of the file's text: the panel's Preview, shown instead of its source. */
 export interface TextFilePreviewProps {
   text: string;
+  /** The file's size in bytes, for a Preview that enforces its own display budget. */
+  size: number;
   params: PluginFilePanelProps["params"];
   workspaceId: string;
   host: PluginFilePanelProps["host"];
+  /** Present only while the panel is editing the file. */
+  editor?: TextFilePreviewEditor;
+}
+
+/**
+ * The panel's editor buffer, for a Preview that edits. A Preview writes through it and never
+ * through the file: a second writer would race the autosave and leave Source showing other text.
+ */
+export interface TextFilePreviewEditor {
+  /** Replaces the buffer; the autosave follows. */
+  edit(text: string): void;
+  /** Writes the buffer now. The retry after a failed save. */
+  save(): void;
+  status: FileEditorStatus;
+  /** The failed save's message. */
+  error: string | null;
 }
 
 type TextFilePanelProps = PluginFilePanelProps & {
@@ -148,6 +166,7 @@ function ReadonlyTextFile({
           active={showPreview}
           preview={Preview}
           text={text.text}
+          size={file.size}
           params={params}
           workspaceId={workspaceId}
           host={host}
@@ -208,6 +227,15 @@ function EditableTextFile({
   }, [model, snapshot.modified, t]);
   const handleOverwrite = useCallback(() => void model.overwrite(), [model]);
   const handleRetry = useCallback(() => void model.reload(), [model]);
+  const previewEditor = useMemo<TextFilePreviewEditor>(
+    () => ({
+      edit: (text) => model.edit(text),
+      save: () => void model.save(),
+      status: snapshot.status,
+      error: snapshot.error,
+    }),
+    [model, snapshot.error, snapshot.status],
+  );
   const editorLocation = useMemo(
     () => ({ path: params.path, lineStart: params.lineStart, lineEnd: params.lineEnd }),
     [params.lineEnd, params.lineStart, params.path],
@@ -254,9 +282,11 @@ function EditableTextFile({
           active={showPreview}
           preview={Preview}
           text={snapshot.content}
+          size={file.size}
           params={params}
           workspaceId={workspaceId}
           host={host}
+          editor={previewEditor}
         />
       ) : null}
       <RetainedView active={!showPreview}>
@@ -300,13 +330,24 @@ function RetainedPreview({
   params,
   workspaceId,
   host,
+  size,
+  editor,
 }: TextFilePreviewProps & { active: boolean; preview: ComponentType<TextFilePreviewProps> }) {
   const [shownText, setShownText] = useState(text);
   if (active && shownText !== text) setShownText(text);
   const previewText = active ? text : shownText;
   const preview = useMemo(
-    () => <Preview text={previewText} params={params} workspaceId={workspaceId} host={host} />,
-    [Preview, previewText, params, workspaceId, host],
+    () => (
+      <Preview
+        text={previewText}
+        size={size}
+        params={params}
+        workspaceId={workspaceId}
+        host={host}
+        editor={editor}
+      />
+    ),
+    [Preview, previewText, size, params, workspaceId, host, editor],
   );
   return <RetainedView active={active}>{preview}</RetainedView>;
 }
