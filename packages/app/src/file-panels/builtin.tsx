@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { ZoomableImage } from "@/components/zoomable-viewport/image";
 import type { Theme } from "@/styles/theme";
+import { FileCsvPreview } from "@/file-pane/csv-preview";
 import { FileHtmlPreview } from "./html-preview";
 import { FileMarkdownPreview } from "./markdown-preview";
 import type { builtinFilePanels } from "./catalog";
@@ -16,6 +17,8 @@ interface FilePanelPreviewProps {
   client: DaemonClient | null;
   serverId: string;
   imagePreviewUri: string | null;
+  size: number;
+  onSwitchToSource?: () => void;
 }
 
 function MarkdownPanel(props: FilePanelPreviewProps) {
@@ -42,6 +45,19 @@ function HtmlPanel({ content }: FilePanelPreviewProps) {
   );
 }
 
+function CsvPanel({ content, filePath, size, onSwitchToSource }: FilePanelPreviewProps) {
+  return (
+    <View style={styles.previewScrollContainer}>
+      <FileCsvPreview
+        filePath={filePath}
+        content={content}
+        size={size}
+        onSwitchToSource={onSwitchToSource}
+      />
+    </View>
+  );
+}
+
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
@@ -61,6 +77,7 @@ function ImagePanel({ imagePreviewUri }: FilePanelPreviewProps) {
 const components = {
   "builtin:markdown": MarkdownPanel,
   "builtin:html": HtmlPanel,
+  "builtin:csv": CsvPanel,
   "builtin:image": ImagePanel,
 };
 
