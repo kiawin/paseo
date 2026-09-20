@@ -209,6 +209,16 @@ Create a built-in source under `plugins/<name>-usage-source/` with the same mani
 
 A source reads provider credentials without writing them. On 401 or 403 it returns `unavailable` and leaves refresh to the provider CLI. Redeeming a refresh token here would invalidate the CLI's copy; rewriting a parsed credential file could drop fields the source does not model.
 
+### Prompt cache warmth
+
+`AgentUsage.promptCacheExpiresAtMs` is an absolute epoch stamped on the daemon clock, not a warm flag. The context-meter tooltip renders a countdown from it and never learns which provider filled it, so a provider that grows the capability lights the line up with no app change.
+
+Only fill it if the provider says which cache bucket a turn wrote. Claude does, through `cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`, and Paseo stamps the expiry from the most recent request because the vendor refreshes a segment's lifetime on every hit. A request that only reads reports no bucket, so the provider reuses the last one it saw that session.
+
+Cache read and write counts alone are not enough. Every other provider reports those and no lifetime, which would only support "warm" with no time attached — that describes a turn which may have been hours ago and is stale the moment it renders. Leave the field unset and the line disappears. Never infer a TTL from the model id: custom base URLs, Z.AI, Qwen, and proxies all break the mapping silently.
+
+Clear it — by stamping the current time, which survives the manager's usage merge where an absent key would not — whenever the cached prefix stops matching. Compaction is the case that exists today.
+
 ---
 
 ## ACP Provider Checklist
