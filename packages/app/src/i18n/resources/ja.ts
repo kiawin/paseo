@@ -2027,6 +2027,8 @@ export const ja: TranslationResources = {
     used: "{{percentage}}%使用",
     tokens: "{{used}} / {{max}}トークン",
     sessionCost: "セッションコスト: {{cost}}",
+    promptCacheWarmMinutes: "プロンプトキャッシュ有効 · 残り{{minutes}}分",
+    promptCacheWarmUnderMinute: "プロンプトキャッシュ有効 · 残り1分未満",
     accessibility: "コンテキストウィンドウ{{percentage}}%使用",
   },
   review: {

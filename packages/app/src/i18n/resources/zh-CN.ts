@@ -1982,6 +1982,8 @@ export const zhCN: TranslationResources = {
     used: "已使用 {{percentage}}%",
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "会话费用 {{cost}}",
+    promptCacheWarmMinutes: "提示缓存有效 · 剩余 {{minutes}} 分钟",
+    promptCacheWarmUnderMinute: "提示缓存有效 · 剩余不到 1 分钟",
     accessibility: "上下文窗口已使用 {{percentage}}%",
   },
   review: {

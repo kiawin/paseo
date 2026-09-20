@@ -2039,6 +2039,8 @@ export const ptBR: TranslationResources = {
     used: "{{percentage}}% usado",
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "Custo da sessão {{cost}}",
+    promptCacheWarmMinutes: "Cache de prompts ativo · restam {{minutes}} min",
+    promptCacheWarmUnderMinute: "Cache de prompts ativo · resta <1 min",
     accessibility: "Janela de contexto {{percentage}}% usada",
   },
   review: {
