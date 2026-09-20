@@ -44,6 +44,13 @@ mac:
   notarize: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
+  extendInfo:
+    # The daemon runs as a child of this app, so macOS holds Paseo.app responsible
+    # for any Apple event a plugin sends (fork-plugins/spotify drives Spotify
+    # this way). Without this string the consent dialog is suppressed, the event
+    # fails with -1743, and no entry ever appears under Privacy & Security →
+    # Automation for the user to grant by hand.
+    NSAppleEventsUsageDescription: "Paseo lets plugins control other apps on your Mac, such as media playback."
   extraResources:
     - from: bin/paseo
       to: bin/paseo
