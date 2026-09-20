@@ -193,6 +193,17 @@ export interface AgentUsage {
   totalCostUsd?: number;
   contextWindowMaxTokens?: number;
   contextWindowUsedTokens?: number;
+  /**
+   * Epoch milliseconds when the provider's prompt cache is predicted to go cold,
+   * measured on the daemon clock. Absolute rather than a warm flag so consumers
+   * never need to know which provider produced it — a provider that learns its
+   * cache TTL fills this field and every surface picks it up unchanged.
+   *
+   * Only providers that report which cache bucket a turn wrote can set this.
+   * Today that is Claude alone; everyone else reports cache token counts with
+   * no lifetime, which is not enough for an honest expiry.
+   */
+  promptCacheExpiresAtMs?: number;
 }
 
 export const TOOL_CALL_ICON_NAMES = [

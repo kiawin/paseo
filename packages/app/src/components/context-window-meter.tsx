@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import type { TFunction } from "i18next";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -16,6 +17,12 @@ interface ContextWindowMeterProps {
   serverId?: string;
   /** The Paseo provider key, e.g. "claude", "gemini", "codex" */
   provider?: string | null;
+  /**
+   * Epoch ms when the provider's prompt cache goes cold, or null when the provider
+   * cannot say. Absolute and provider-agnostic, so nothing here branches on which
+   * agent produced it — see `AgentUsage.promptCacheExpiresAtMs`.
+   */
+  promptCacheExpiresAtMs?: number | null;
   /** Reserve the meter footprint and show a loading ring while usage is pending. */
   pending?: boolean;
   /** Optional glyph envelope for icon-toolbar alignment. */
@@ -47,6 +54,38 @@ function getUsagePercentage(maxTokens: number, usedTokens: number): number | nul
 
 function clampPercentage(value: number): number {
   return Math.max(0, Math.min(100, value));
+}
+
+/**
+ * The countdown only ever spans one cache lifetime, so minutes are the whole scale:
+ * the longest bucket Anthropic offers is an hour and the shortest is five minutes.
+ */
+const PROMPT_CACHE_TICK_MS = 30_000;
+
+/**
+ * Null whenever there is nothing honest to say: no expiry reported, or the cache has
+ * already gone cold. The line is then omitted rather than reading "cold", the same way
+ * the session-cost line disappears when the provider reports no cost.
+ */
+export function buildPromptCacheLabel(
+  expiresAtMs: number | null,
+  nowMs: number,
+  t: TFunction,
+): string | null {
+  if (expiresAtMs === null || !Number.isFinite(expiresAtMs)) {
+    return null;
+  }
+  const remainingMs = expiresAtMs - nowMs;
+  if (remainingMs <= 0) {
+    return null;
+  }
+  // Floored, so "48m left" promises at least 48 minutes rather than rounding up past
+  // the real expiry. Under a minute reads as its own copy, not a rounded-down "0m".
+  const minutesLeft = Math.floor(remainingMs / 60_000);
+  if (minutesLeft < 1) {
+    return t("contextWindow.promptCacheWarmUnderMinute");
+  }
+  return t("contextWindow.promptCacheWarmMinutes", { minutes: minutesLeft });
 }
 
 function formatSessionCost(value: number): string | null {
@@ -103,12 +142,14 @@ export function ContextWindowMeter({
   showPercentage = false,
   serverId,
   provider,
+  promptCacheExpiresAtMs = null,
   pending = false,
   glyphSize,
 }: ContextWindowMeterProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
+  const [cacheNowMs, setCacheNowMs] = useState(() => Date.now());
   const { view: providerUsageView, refresh: refreshProviderUsage } = useProviderUsage(
     serverId ?? null,
     { enabled: isTooltipOpen },
@@ -119,11 +160,24 @@ export function ContextWindowMeter({
     (nextOpen: boolean) => {
       setIsTooltipOpen(nextOpen);
       if (nextOpen) {
+        setCacheNowMs(Date.now());
         void refreshProviderUsage().catch(() => {});
       }
     },
     [refreshProviderUsage],
   );
+
+  // The countdown only has to stay honest while someone is reading it, so the tick
+  // lives and dies with the tooltip rather than running for every mounted composer.
+  useEffect(() => {
+    if (!isTooltipOpen || promptCacheExpiresAtMs === null) {
+      return;
+    }
+    const interval = setInterval(() => setCacheNowMs(Date.now()), PROMPT_CACHE_TICK_MS);
+    return () => clearInterval(interval);
+  }, [isTooltipOpen, promptCacheExpiresAtMs]);
+
+  const promptCacheLabel = buildPromptCacheLabel(promptCacheExpiresAtMs, cacheNowMs, t);
 
   const geometry = getMeterGeometry(showPercentage, glyphSize);
 
@@ -233,6 +287,7 @@ export function ContextWindowMeter({
               {t("contextWindow.sessionCost", { cost: formattedSessionCost })}
             </Text>
           ) : null}
+          {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
           <ProviderUsageTooltipSection view={providerUsageView} activeProviderId={provider} />
         </View>
       </TooltipContent>

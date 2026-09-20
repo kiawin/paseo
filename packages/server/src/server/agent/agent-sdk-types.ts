@@ -234,6 +234,8 @@ export interface AgentUsage {
   totalCostUsd?: number;
   contextWindowMaxTokens?: number;
   contextWindowUsedTokens?: number;
+  /** Epoch ms when the provider's prompt cache is predicted to go cold. See the protocol type. */
+  promptCacheExpiresAtMs?: number;
 }
 
 export const TOOL_CALL_ICON_NAMES = [
