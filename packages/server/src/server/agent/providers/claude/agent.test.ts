@@ -22,6 +22,7 @@ import type {
   AgentSession,
   AgentTimelineItem,
   AgentStreamEvent,
+  AgentUsage,
 } from "../../agent-sdk-types.js";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import { buildAgentPrompt, renderPromptAttachmentAsText } from "../../prompt-attachments.js";
@@ -29,6 +30,15 @@ import { buildAgentPrompt, renderPromptAttachmentAsText } from "../../prompt-att
 interface TestClaudeSession {
   translateMessageToEvents(message: SDKMessage): AgentStreamEvent[];
   close(): Promise<void>;
+}
+
+function readUsageUpdatedCacheExpiry(events: AgentStreamEvent[]): number | undefined {
+  for (const event of events) {
+    if (event.type === "usage_updated") {
+      return event.usage.promptCacheExpiresAtMs;
+    }
+  }
+  return undefined;
 }
 
 function isLoadingCompactionEvent(event: AgentStreamEvent): boolean {
@@ -2443,6 +2453,7 @@ describe("ClaudeAgentSession context window usage", () => {
         totalCostUsd: 0.25,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
+        promptCacheExpiresAtMs: expect.any(Number),
       });
     } finally {
       await session.close();
@@ -2484,6 +2495,7 @@ describe("ClaudeAgentSession context window usage", () => {
         totalCostUsd: 0.25,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
+        promptCacheExpiresAtMs: expect.any(Number),
       });
     } finally {
       await session.close();
@@ -2599,6 +2611,7 @@ describe("ClaudeAgentSession context window usage", () => {
         totalCostUsd: 0.25,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 17_261,
+        promptCacheExpiresAtMs: expect.any(Number),
       });
     } finally {
       await session.close();
@@ -2644,6 +2657,7 @@ describe("ClaudeAgentSession context window usage", () => {
         totalCostUsd: 0.25,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 117,
+        promptCacheExpiresAtMs: expect.any(Number),
       });
     } finally {
       await session.close();
@@ -2682,6 +2696,7 @@ describe("ClaudeAgentSession context window usage", () => {
         totalCostUsd: 0.25,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
+        promptCacheExpiresAtMs: expect.any(Number),
       });
       expect(secondTurn.usage).toEqual({
         inputTokens: 1_000,
@@ -2689,6 +2704,7 @@ describe("ClaudeAgentSession context window usage", () => {
         outputTokens: 300,
         totalCostUsd: 0.1,
         contextWindowMaxTokens: 200_000,
+        promptCacheExpiresAtMs: expect.any(Number),
       });
     } finally {
       await session.close();
@@ -2709,6 +2725,7 @@ describe("ClaudeAgentSession context window usage", () => {
           provider: "claude",
           usage: {
             contextWindowUsedTokens: 150,
+            promptCacheExpiresAtMs: expect.any(Number),
           },
         }),
       );
@@ -2733,6 +2750,7 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 150,
+            promptCacheExpiresAtMs: expect.any(Number),
           },
         }),
       );
@@ -2757,6 +2775,7 @@ describe("ClaudeAgentSession context window usage", () => {
           usage: {
             contextWindowMaxTokens: 1_000_000,
             contextWindowUsedTokens: 150,
+            promptCacheExpiresAtMs: expect.any(Number),
           },
         }),
       );
@@ -2784,6 +2803,7 @@ describe("ClaudeAgentSession context window usage", () => {
           provider: "claude",
           usage: {
             contextWindowUsedTokens: 175,
+            promptCacheExpiresAtMs: expect.any(Number),
           },
         }),
       );
@@ -2817,6 +2837,7 @@ describe("ClaudeAgentSession context window usage", () => {
           provider: "claude",
           usage: {
             contextWindowUsedTokens: 55,
+            promptCacheExpiresAtMs: expect.any(Number),
           },
         }),
       );
@@ -2826,6 +2847,7 @@ describe("ClaudeAgentSession context window usage", () => {
           provider: "claude",
           usage: {
             contextWindowUsedTokens: 62,
+            promptCacheExpiresAtMs: expect.any(Number),
           },
         }),
       );
@@ -2863,6 +2885,7 @@ describe("ClaudeAgentSession context window usage", () => {
           provider: "claude",
           usage: {
             contextWindowUsedTokens: 704,
+            promptCacheExpiresAtMs: expect.any(Number),
           },
         }),
       );
@@ -2877,6 +2900,7 @@ describe("ClaudeAgentSession context window usage", () => {
             totalCostUsd: 0.04,
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 704,
+            promptCacheExpiresAtMs: expect.any(Number),
           },
         }),
       );
@@ -2930,6 +2954,7 @@ describe("ClaudeAgentSession context window usage", () => {
             totalCostUsd: 0.04,
             contextWindowMaxTokens: 200_000,
             contextWindowUsedTokens: 704,
+            promptCacheExpiresAtMs: expect.any(Number),
           },
         }),
       );
@@ -3224,6 +3249,161 @@ describe("ClaudeAgentSession context window usage", () => {
         messageId: "assistant-third-party-1",
       },
     ]);
+  });
+
+  describe("prompt cache warmth", () => {
+    const FIVE_MINUTES_MS = 5 * 60_000;
+    const ONE_HOUR_MS = 60 * 60_000;
+
+    /**
+     * The expiry is stamped from the daemon clock at some instant inside the run, so
+     * the assertable fact is the bucket it was stamped with: it cannot land before the
+     * run started plus the TTL, nor after the run ended plus the TTL.
+     */
+    function expectExpiryWithinTtl(
+      expiresAtMs: number | undefined,
+      ttlMs: number,
+      startedAtMs: number,
+      endedAtMs: number,
+    ): void {
+      expect(expiresAtMs).toBeTypeOf("number");
+      expect(expiresAtMs as number).toBeGreaterThanOrEqual(startedAtMs + ttlMs);
+      expect(expiresAtMs as number).toBeLessThanOrEqual(endedAtMs + ttlMs);
+    }
+
+    async function runTurnWithUsage(
+      streamUsage: Record<string, unknown>,
+      resultUsage: Record<string, unknown>,
+    ): Promise<{ usage: AgentUsage | undefined; startedAtMs: number; endedAtMs: number }> {
+      const session = await createSessionForTurns([
+        [
+          createInitMessage(),
+          createMessageStartEvent(streamUsage),
+          createMessageDeltaEvent(7),
+          createSuccessResult({ usage: resultUsage }),
+        ],
+      ]);
+      const startedAtMs = Date.now();
+      try {
+        const result = await session.run("turn");
+        return { usage: result.usage, startedAtMs, endedAtMs: Date.now() };
+      } finally {
+        await session.close();
+      }
+    }
+
+    test("a one-hour cache write expires an hour out", async () => {
+      const { usage, startedAtMs, endedAtMs } = await runTurnWithUsage(
+        {
+          input_tokens: 100,
+          cache_creation: { ephemeral_1h_input_tokens: 4_000, ephemeral_5m_input_tokens: 0 },
+          cache_read_input_tokens: 0,
+        },
+        { input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 7 },
+      );
+
+      expectExpiryWithinTtl(usage?.promptCacheExpiresAtMs, ONE_HOUR_MS, startedAtMs, endedAtMs);
+    });
+
+    test("a five-minute cache write expires five minutes out", async () => {
+      const { usage, startedAtMs, endedAtMs } = await runTurnWithUsage(
+        {
+          input_tokens: 100,
+          cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 4_000 },
+          cache_read_input_tokens: 0,
+        },
+        { input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 7 },
+      );
+
+      expectExpiryWithinTtl(usage?.promptCacheExpiresAtMs, FIVE_MINUTES_MS, startedAtMs, endedAtMs);
+    });
+
+    test("a cache read with no declared bucket reuses the last bucket the session saw", async () => {
+      const session = await createSessionForTurns([
+        [
+          createInitMessage(),
+          createMessageStartEvent({
+            input_tokens: 100,
+            cache_creation: { ephemeral_1h_input_tokens: 4_000, ephemeral_5m_input_tokens: 0 },
+            cache_read_input_tokens: 0,
+          }),
+          createMessageDeltaEvent(7),
+          createSuccessResult({
+            usage: { input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 7 },
+          }),
+        ],
+        [
+          // Reads only. Nothing in the payload says which lifetime the hit segment
+          // carries, so the hour observed on the first turn has to survive.
+          createMessageStartEvent({ input_tokens: 5, cache_read_input_tokens: 4_000 }),
+          createMessageDeltaEvent(7),
+          createSuccessResult({
+            usage: { input_tokens: 5, cache_read_input_tokens: 4_000, output_tokens: 7 },
+          }),
+        ],
+      ]);
+
+      try {
+        await session.run("first");
+        const startedAtMs = Date.now();
+        const second = await session.run("second");
+
+        expectExpiryWithinTtl(
+          second.usage?.promptCacheExpiresAtMs,
+          ONE_HOUR_MS,
+          startedAtMs,
+          Date.now(),
+        );
+      } finally {
+        await session.close();
+      }
+    });
+
+    test("a turn that never touches the cache reports no expiry", async () => {
+      const { usage } = await runTurnWithUsage(
+        { input_tokens: 100, cache_read_input_tokens: 0 },
+        {
+          input_tokens: 100,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          output_tokens: 7,
+        },
+      );
+
+      expect(usage?.promptCacheExpiresAtMs).toBeUndefined();
+    });
+
+    test("compaction marks the cache cold because the next turn cannot hit it", async () => {
+      const session = await createSessionForTurns([
+        [
+          createInitMessage(),
+          createMessageStartEvent({
+            input_tokens: 100,
+            cache_creation: { ephemeral_1h_input_tokens: 4_000, ephemeral_5m_input_tokens: 0 },
+            cache_read_input_tokens: 0,
+          }),
+          createMessageDeltaEvent(7),
+          createSuccessResult({
+            usage: { input_tokens: 100, cache_read_input_tokens: 0, output_tokens: 7 },
+          }),
+        ],
+      ]);
+
+      try {
+        const warm = await session.run("turn");
+        expect(warm.usage?.promptCacheExpiresAtMs).toBeTypeOf("number");
+
+        const compactEvents = (session as unknown as TestClaudeSession).translateMessageToEvents(
+          createCompactBoundary(),
+        );
+        const expiresAtMs = readUsageUpdatedCacheExpiry(compactEvents);
+
+        expect(expiresAtMs).toBeTypeOf("number");
+        expect(expiresAtMs as number).toBeLessThanOrEqual(Date.now());
+      } finally {
+        await session.close();
+      }
+    });
   });
 });
 
