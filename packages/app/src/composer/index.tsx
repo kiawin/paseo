@@ -8,7 +8,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { Alert } from "@/components/ui/alert";
+import { CHAT_COLUMN_RAIL_DATASET } from "@/chat-rail";
 import {
   View,
   Pressable,
@@ -28,10 +28,10 @@ import {
   useImperativeHandle,
   memo,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { CHAT_COLUMN_RAIL_DATASET } from "@/chat-rail";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import {
   controlSizingForLayout,
@@ -42,6 +42,7 @@ import {
   toolbarGlyphsFor,
   toolbarGlyphTone,
   type ToolbarGlyph,
+  type ToolbarRing,
   toolbarSlot,
 } from "@/components/ui/control-geometry";
 import { usePanelStore, type MobilePanelView } from "@/stores/panel-store";
@@ -147,7 +148,6 @@ import { RenderProfile } from "@/utils/render-profiler";
 import { AfterPaintPublication } from "@/composer/after-paint-publication";
 import { isWeb, isNative } from "@/constants/platform";
 import type { ForgeSearchItem } from "@getpaseo/protocol/messages";
-import type { AgentMetric } from "@getpaseo/protocol/agent-types";
 import type {
   AttachmentMetadata,
   ComposerAttachment,
@@ -296,20 +296,51 @@ function buildRealtimeVoiceButtonStyle(pressed: boolean, voiceButtonDisabled: bo
   );
 }
 
-const EMPTY_METRICS: AgentMetric[] = [];
-
 function buildAgentStateSelector(serverId: string, agentId: string) {
   return (state: ReturnType<typeof useSessionStore.getState>) => {
     const agent = state.sessions[serverId]?.agents?.get(agentId) ?? null;
+    const usage = agent?.lastUsage;
     return {
       status: agent?.status ?? null,
-      contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
-      contextWindowUsedTokens: agent?.lastUsage?.contextWindowUsedTokens ?? null,
-      totalCostUsd: agent?.lastUsage?.totalCostUsd ?? null,
-      sessionMetrics: agent?.sessionMetrics ?? EMPTY_METRICS,
+      contextWindowMaxTokens: usage?.contextWindowMaxTokens ?? null,
+      contextWindowUsedTokens: usage?.contextWindowUsedTokens ?? null,
+      totalCostUsd: usage?.totalCostUsd ?? null,
+      promptCacheExpiresAtMs: usage?.promptCacheExpiresAtMs ?? null,
       model: agent?.model ?? null,
     };
   };
+}
+
+function renderContextWindowMeter(
+  serverId: string,
+  agentId: string,
+  contextWindowMaxTokens: number | null,
+  contextWindowUsedTokens: number | null,
+  totalCostUsd: number | null,
+  promptCacheExpiresAtMs: number | null,
+  showPercentage: boolean,
+  pending: boolean,
+  toolbarRing: ToolbarRing,
+): ReactElement {
+  // No early return for "no data yet": the meter draws its own empty state, and an agent that
+  // has not taken its first turn has no tokens to report. Suppressing it here hid that state.
+  return (
+    <ContextWindowMeter
+      serverId={serverId}
+      agentId={agentId}
+      maxTokens={contextWindowMaxTokens}
+      usedTokens={contextWindowUsedTokens}
+      totalCostUsd={totalCostUsd}
+      promptCacheExpiresAtMs={promptCacheExpiresAtMs}
+      showPercentage={showPercentage}
+      pending={pending}
+      toolbarRing={toolbarRing}
+    />
+  );
+}
+
+function resolveContextWindowPlacement(meter: ReactElement, reserveSlot: boolean): ReactNode {
+  return reserveSlot ? <View style={styles.contextWindowMeterSlot}>{meter}</View> : null;
 }
 
 interface RenderLeftContentArgs {
@@ -2219,31 +2250,35 @@ function ComposerContentImpl({
     ],
   );
 
-  const beforeVoiceContent = useMemo(
+  const contextWindowPending = agentState.status === "initializing" || isAgentRunning;
+  const contextWindowMeterRing = TOOLBAR_RINGS[controlSizing];
+  const contextWindowMeter = useMemo(
     () =>
-      hasAgent ? (
-        <View style={styles.contextWindowMeterSlot}>
-          <ContextWindowMeter
-            serverId={serverId}
-            agentId={agentId}
-            maxTokens={agentState.contextWindowMaxTokens}
-            usedTokens={agentState.contextWindowUsedTokens}
-            totalCostUsd={agentState.totalCostUsd}
-            sessionMetrics={agentState.sessionMetrics}
-            toolbarRing={TOOLBAR_RINGS[controlSizing]}
-          />
-        </View>
-      ) : null,
+      renderContextWindowMeter(
+        serverId,
+        agentId,
+        agentState.contextWindowMaxTokens,
+        agentState.contextWindowUsedTokens,
+        agentState.totalCostUsd,
+        agentState.promptCacheExpiresAtMs,
+        false,
+        contextWindowPending,
+        contextWindowMeterRing,
+      ),
     [
-      hasAgent,
       serverId,
       agentId,
       agentState.contextWindowMaxTokens,
       agentState.contextWindowUsedTokens,
       agentState.totalCostUsd,
-      agentState.sessionMetrics,
-      controlSizing,
+      agentState.promptCacheExpiresAtMs,
+      contextWindowPending,
+      contextWindowMeterRing,
     ],
+  );
+  const beforeVoiceContent = useMemo(
+    () => <>{resolveContextWindowPlacement(contextWindowMeter, hasAgent)}</>,
+    [contextWindowMeter, hasAgent],
   );
 
   const hasGithubAttachment = useMemo(
@@ -2558,7 +2593,9 @@ function ComposerContentImpl({
   const sendErrorNode = useMemo(
     () =>
       displayError ? (
-        <Alert variant="error" size="sm" description={displayError} testID="composer-error" />
+        <Text accessibilityRole="alert" testID="composer-error" style={styles.sendErrorText}>
+          {displayError}
+        </Text>
       ) : null,
     [displayError],
   );
@@ -2845,6 +2882,10 @@ const styles = StyleSheet.create((theme: Theme) => ({
   },
   queueSendButton: {
     backgroundColor: theme.colors.accent,
+  },
+  sendErrorText: {
+    color: theme.colors.palette.red[500],
+    fontSize: theme.fontSize.base,
   },
 })) as unknown as Record<string, object>;
 
