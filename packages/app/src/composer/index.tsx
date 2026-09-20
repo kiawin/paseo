@@ -22,6 +22,7 @@ import {
   useImperativeHandle,
   memo,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -268,14 +269,48 @@ function buildRealtimeVoiceButtonStyle(
 function buildAgentStateSelector(serverId: string, agentId: string) {
   return (state: ReturnType<typeof useSessionStore.getState>) => {
     const agent = state.sessions[serverId]?.agents?.get(agentId) ?? null;
+    const usage = agent?.lastUsage;
     return {
       status: agent?.status ?? null,
-      contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
-      contextWindowUsedTokens: agent?.lastUsage?.contextWindowUsedTokens ?? null,
-      totalCostUsd: agent?.lastUsage?.totalCostUsd ?? null,
+      contextWindowMaxTokens: usage?.contextWindowMaxTokens ?? null,
+      contextWindowUsedTokens: usage?.contextWindowUsedTokens ?? null,
+      totalCostUsd: usage?.totalCostUsd ?? null,
+      promptCacheExpiresAtMs: usage?.promptCacheExpiresAtMs ?? null,
       model: agent?.model ?? null,
     };
   };
+}
+
+function renderContextWindowMeter(
+  serverId: string,
+  agentId: string,
+  contextWindowMaxTokens: number | null,
+  contextWindowUsedTokens: number | null,
+  totalCostUsd: number | null,
+  promptCacheExpiresAtMs: number | null,
+  showPercentage: boolean,
+  pending: boolean,
+  glyphSize: number,
+): ReactElement {
+  // No early return for "no data yet": the meter draws its own empty state, and an agent that
+  // has not taken its first turn has no tokens to report. Suppressing it here hid that state.
+  return (
+    <ContextWindowMeter
+      serverId={serverId}
+      agentId={agentId}
+      maxTokens={contextWindowMaxTokens}
+      usedTokens={contextWindowUsedTokens}
+      totalCostUsd={totalCostUsd}
+      promptCacheExpiresAtMs={promptCacheExpiresAtMs}
+      showPercentage={showPercentage}
+      pending={pending}
+      glyphSize={glyphSize}
+    />
+  );
+}
+
+function resolveContextWindowPlacement(meter: ReactElement, reserveSlot: boolean): ReactNode {
+  return reserveSlot ? <View style={styles.contextWindowMeterSlot}>{meter}</View> : null;
 }
 
 interface RenderLeftContentArgs {
@@ -2025,30 +2060,35 @@ function ComposerContentImpl({
     ],
   );
 
+  const contextWindowPending = agentState.status === "initializing" || isAgentRunning;
   const contextWindowMeterGlyphSize = isCompactLayout ? ICON_SIZE.md : buttonIconSize;
-  const beforeVoiceContent = useMemo(
+  const contextWindowMeter = useMemo(
     () =>
-      hasAgent ? (
-        <View style={styles.contextWindowMeterSlot}>
-          <ContextWindowMeter
-            serverId={serverId}
-            agentId={agentId}
-            maxTokens={agentState.contextWindowMaxTokens}
-            usedTokens={agentState.contextWindowUsedTokens}
-            totalCostUsd={agentState.totalCostUsd}
-            glyphSize={contextWindowMeterGlyphSize}
-          />
-        </View>
-      ) : null,
+      renderContextWindowMeter(
+        serverId,
+        agentId,
+        agentState.contextWindowMaxTokens,
+        agentState.contextWindowUsedTokens,
+        agentState.totalCostUsd,
+        agentState.promptCacheExpiresAtMs,
+        false,
+        contextWindowPending,
+        contextWindowMeterGlyphSize,
+      ),
     [
-      hasAgent,
       serverId,
       agentId,
       agentState.contextWindowMaxTokens,
       agentState.contextWindowUsedTokens,
       agentState.totalCostUsd,
+      agentState.promptCacheExpiresAtMs,
+      contextWindowPending,
       contextWindowMeterGlyphSize,
     ],
+  );
+  const beforeVoiceContent = useMemo(
+    () => <>{resolveContextWindowPlacement(contextWindowMeter, hasAgent)}</>,
+    [contextWindowMeter, hasAgent],
   );
 
   const hasGithubAttachment = useMemo(
