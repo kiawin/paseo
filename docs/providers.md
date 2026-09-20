@@ -206,6 +206,16 @@ Kimi Code usage follows the CLI-managed credential file at `KIMI_CODE_HOME` or `
 
 Cursor usage reads the desktop `state.vscdb` token first, then `cursor-agent`'s `~/.config/cursor/auth.json`. Headless hosts only have the CLI file.
 
+### Prompt cache warmth
+
+`AgentUsage.promptCacheExpiresAtMs` is an absolute epoch stamped on the daemon clock, not a warm flag. The context-meter tooltip renders a countdown from it and never learns which provider filled it, so a provider that grows the capability lights the line up with no app change.
+
+Only fill it if the provider says which cache bucket a turn wrote. Claude does, through `cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`, and Paseo stamps the expiry from the most recent request because the vendor refreshes a segment's lifetime on every hit. A request that only reads reports no bucket, so the provider reuses the last one it saw that session.
+
+Cache read and write counts alone are not enough. Every other provider reports those and no lifetime, which would only support "warm" with no time attached — that describes a turn which may have been hours ago and is stale the moment it renders. Leave the field unset and the line disappears. Never infer a TTL from the model id: custom base URLs, Z.AI, Qwen, and proxies all break the mapping silently.
+
+Clear it — by stamping the current time, which survives the manager's usage merge where an absent key would not — whenever the cached prefix stops matching. Compaction is the case that exists today.
+
 ### Usage fetchers are read-only on credentials
 
 A fetcher reads the provider's credential file and never writes it. On a 401 or 403 it returns `unavailable` and leaves refresh to the provider's own CLI: redeeming a refresh token in the fetcher invalidates the CLI's copy (refresh tokens are single-use), and rewriting the file through the fetcher's Zod schema drops any field the schema does not model, corrupting the file for the CLI.
