@@ -173,6 +173,7 @@ describe("daemon E2E (claude live usage)", () => {
       expect(activeSnapshot.lastUsage).toEqual({
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 175,
+        promptCacheExpiresAtMs: expect.any(Number),
       });
 
       resultGate.resolve();
