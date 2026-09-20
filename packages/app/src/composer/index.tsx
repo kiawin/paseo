@@ -268,11 +268,13 @@ function buildRealtimeVoiceButtonStyle(
 function buildAgentStateSelector(serverId: string, agentId: string) {
   return (state: ReturnType<typeof useSessionStore.getState>) => {
     const agent = state.sessions[serverId]?.agents?.get(agentId) ?? null;
+    const usage = agent?.lastUsage;
     return {
       status: agent?.status ?? null,
-      contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
-      contextWindowUsedTokens: agent?.lastUsage?.contextWindowUsedTokens ?? null,
-      totalCostUsd: agent?.lastUsage?.totalCostUsd ?? null,
+      contextWindowMaxTokens: usage?.contextWindowMaxTokens ?? null,
+      contextWindowUsedTokens: usage?.contextWindowUsedTokens ?? null,
+      totalCostUsd: usage?.totalCostUsd ?? null,
+      promptCacheExpiresAtMs: usage?.promptCacheExpiresAtMs ?? null,
       model: agent?.model ?? null,
       provider: agent?.provider ?? null,
     };
@@ -283,6 +285,7 @@ function renderContextWindowMeter(
   contextWindowMaxTokens: number | null,
   contextWindowUsedTokens: number | null,
   totalCostUsd: number | null,
+  promptCacheExpiresAtMs: number | null,
   showPercentage: boolean,
   serverId: string,
   provider: string | null,
@@ -298,6 +301,7 @@ function renderContextWindowMeter(
       maxTokens={contextWindowMaxTokens}
       usedTokens={contextWindowUsedTokens}
       totalCostUsd={totalCostUsd}
+      promptCacheExpiresAtMs={promptCacheExpiresAtMs}
       showPercentage={showPercentage}
       serverId={serverId}
       provider={provider}
@@ -2084,6 +2088,7 @@ function ComposerContentImpl({
         contextWindowMaxTokens,
         contextWindowUsedTokens,
         agentState.totalCostUsd,
+        agentState.promptCacheExpiresAtMs,
         false,
         serverId,
         agentState.provider,
@@ -2094,6 +2099,7 @@ function ComposerContentImpl({
       contextWindowMaxTokens,
       contextWindowUsedTokens,
       agentState.totalCostUsd,
+      agentState.promptCacheExpiresAtMs,
       serverId,
       agentState.provider,
       contextWindowPending,

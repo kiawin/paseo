@@ -2033,6 +2033,8 @@ export const en = {
     used: "{{percentage}}% used",
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "Session cost {{cost}}",
+    promptCacheWarmMinutes: "Prompt cache warm · {{minutes}}m left",
+    promptCacheWarmUnderMinute: "Prompt cache warm · <1m left",
     accessibility: "Context window {{percentage}}% used",
   },
   review: {
