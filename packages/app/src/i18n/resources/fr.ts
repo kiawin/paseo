@@ -2141,6 +2141,8 @@ export const fr: TranslationResources = {
     used: "{{percentage}} % utilisés",
     tokens: "{{used}} / {{max}} tokens",
     sessionCost: "Coût de la session : {{cost}}",
+    promptCacheWarmMinutes: "Cache de prompts actif · {{minutes}} min restantes",
+    promptCacheWarmUnderMinute: "Cache de prompts actif · <1 min restante",
     accessibility: "Fenêtre de contexte : {{percentage}} % utilisés",
   },
   review: {
