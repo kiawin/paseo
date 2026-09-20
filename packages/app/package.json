@@ -18,6 +18,7 @@
     "web": "npm --prefix ../.. run build:client && concurrently --kill-others --names protocol,client,expo --prefix-colors yellow,blue,magenta \"npm --prefix ../.. run watch:protocol\" \"npm --prefix ../.. run watch:client\" \"npm run web:expo\"",
     "web:expo": "expo start --web",
     "lint": "expo lint",
+    "pretypecheck": "npm run generate:router-types",
     "typecheck": "tsgo --noEmit",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
@@ -36,7 +37,8 @@
     "profile:workspace-tabs": "node ./scripts/profile-workspace-tabs.mjs",
     "deploy:web": "npm run build:web && wrangler pages deploy dist --project-name paseo-app --branch main",
     "build:terminal-webview": "node ./scripts/build-terminal-webview-html.mjs",
-    "build:mermaid-runtime": "node ./src/components/markdown/fence/mermaid/build-runtime.mjs"
+    "build:mermaid-runtime": "node ./src/components/markdown/fence/mermaid/build-runtime.mjs",
+    "generate:router-types": "node ./scripts/generate-router-types.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "6.10.4",
