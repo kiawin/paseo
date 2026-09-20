@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import type { TFunction } from "i18next";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -19,6 +20,10 @@ interface ContextWindowMeterProps {
   usedTokens: number | null;
   totalCostUsd?: number | null;
   showPercentage?: boolean;
+  /** Epoch ms when the provider's prompt cache goes cold, or null when unavailable. */
+  promptCacheExpiresAtMs?: number | null;
+  /** Reserve the meter footprint and show a loading ring while usage is pending. */
+  pending?: boolean;
   /** Optional glyph envelope for icon-toolbar alignment. */
   glyphSize?: number;
 }
@@ -47,6 +52,27 @@ function getUsagePercentage(maxTokens: number, usedTokens: number): number | nul
 
 function clampPercentage(value: number): number {
   return Math.max(0, Math.min(100, value));
+}
+
+const PROMPT_CACHE_TICK_MS = 30_000;
+
+export function buildPromptCacheLabel(
+  expiresAtMs: number | null,
+  nowMs: number,
+  t: TFunction,
+): string | null {
+  if (expiresAtMs === null || !Number.isFinite(expiresAtMs)) {
+    return null;
+  }
+  const remainingMs = expiresAtMs - nowMs;
+  if (remainingMs <= 0) {
+    return null;
+  }
+  const minutesLeft = Math.floor(remainingMs / 60_000);
+  if (minutesLeft < 1) {
+    return t("contextWindow.promptCacheWarmUnderMinute");
+  }
+  return t("contextWindow.promptCacheWarmMinutes", { minutes: minutesLeft });
 }
 
 function formatSessionCost(value: number): string | null {
@@ -141,6 +167,29 @@ const ContextWindowRing = withUnistyles(function ContextWindowRing({
   );
 });
 
+function renderPendingContextWindowMeter(
+  pending: boolean,
+  geometry: ReturnType<typeof getMeterGeometry>,
+  showPercentage: boolean,
+  meterColors: (theme: Theme) => { progressColor: string; trackColor: string },
+): ReactElement | null {
+  if (!pending) {
+    return null;
+  }
+  return (
+    <View style={geometry.containerStyle}>
+      <ContextWindowRing
+        size={geometry.svgSize}
+        radius={geometry.radius}
+        strokeWidth={geometry.strokeWidth}
+        percentage={null}
+        uniProps={meterColors}
+      />
+      {showPercentage ? <View style={styles.skeletonLabel} /> : null}
+    </View>
+  );
+}
+
 export function ContextWindowMeter({
   serverId,
   agentId,
@@ -148,6 +197,8 @@ export function ContextWindowMeter({
   usedTokens,
   totalCostUsd,
   showPercentage = false,
+  promptCacheExpiresAtMs = null,
+  pending = false,
   glyphSize,
 }: ContextWindowMeterProps) {
   const { t } = useTranslation();
@@ -160,6 +211,15 @@ export function ContextWindowMeter({
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const openSheet = useCallback(() => setIsSheetOpen(true), []);
   const closeSheet = useCallback(() => setIsSheetOpen(false), []);
+  const [cacheNowMs, setCacheNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (promptCacheExpiresAtMs === null) {
+      return;
+    }
+    const interval = setInterval(() => setCacheNowMs(Date.now()), PROMPT_CACHE_TICK_MS);
+    return () => clearInterval(interval);
+  }, [promptCacheExpiresAtMs]);
+  const promptCacheLabel = buildPromptCacheLabel(promptCacheExpiresAtMs, cacheNowMs, t);
   const percentage =
     maxTokens !== null && usedTokens !== null ? getUsagePercentage(maxTokens, usedTokens) : null;
   const geometry = getMeterGeometry(showPercentage, glyphSize);
@@ -178,6 +238,9 @@ export function ContextWindowMeter({
     }),
     [percentage],
   );
+  if (percentage === null || maxTokens === null || usedTokens === null) {
+    return renderPendingContextWindowMeter(pending, geometry, showPercentage, meterColors);
+  }
   const formattedSessionCost =
     typeof totalCostUsd === "number" ? formatSessionCost(totalCostUsd) : null;
   const containerStyle = geometry.containerStyle;
@@ -261,6 +324,7 @@ export function ContextWindowMeter({
             showTitle
             refreshable={false}
           />
+          {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
         </TooltipContent>
       </Tooltip>
     );
@@ -295,6 +359,7 @@ export function ContextWindowMeter({
           showTitle
           refreshable
         />
+        {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
       </HoverCardContent>
     </HoverCard>
   );
@@ -324,4 +389,16 @@ const styles = StyleSheet.create((theme) => ({
   // Plain details use a small inset; account usage cards have their own content density.
   plainPopover: { paddingVertical: theme.spacing[1], paddingHorizontal: theme.spacing[2] },
   usagePopover: { padding: theme.spacing[3], gap: theme.spacing[3] },
+  skeletonLabel: {
+    width: 22,
+    height: theme.fontSize.base,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.surface3,
+  },
+  popover: { padding: theme.spacing[4], gap: theme.spacing[4] },
+  tooltipDetail: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    lineHeight: theme.fontSize.sm * 1.4,
+  },
 }));
