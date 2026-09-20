@@ -1821,6 +1821,48 @@ function readStreamRequestInputTokens(event: Record<string, unknown>): number | 
   return inputTokens + cacheCreationInputTokens + cacheReadInputTokens;
 }
 
+/**
+ * Anthropic's two ephemeral cache lifetimes. A request declares which one it wrote
+ * through the bucket it reports; there is no field carrying the remaining time, so
+ * the expiry is always last-request-time plus the bucket's TTL.
+ */
+const PROMPT_CACHE_TTL_MS = { "5m": 5 * 60_000, "1h": 60 * 60_000 } as const;
+
+interface PromptCacheObservation {
+  warm: boolean;
+  /** Undefined when the request read a cached prefix without declaring a bucket. */
+  ttlMs: number | undefined;
+}
+
+function readPositiveCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
+ * Reads prompt cache warmth off one request's usage. Warm means this request either
+ * read a cached prefix or wrote one; both leave a live cache behind.
+ *
+ * A request that only reads does not say which TTL the segment it hit was written
+ * with, so the bucket comes back undefined and the caller reuses the last one it saw.
+ */
+function readPromptCacheObservation(usage: Record<string, unknown>): PromptCacheObservation {
+  const cacheCreation = toObjectRecord(usage.cache_creation);
+  const ephemeral1h = readPositiveCount(cacheCreation?.ephemeral_1h_input_tokens);
+  const ephemeral5m = readPositiveCount(cacheCreation?.ephemeral_5m_input_tokens);
+  // Older payloads carry only the flat total, which implies the default bucket.
+  const flatCreation = readPositiveCount(usage.cache_creation_input_tokens);
+  const cacheRead = readPositiveCount(usage.cache_read_input_tokens);
+
+  const warm = ephemeral1h > 0 || ephemeral5m > 0 || flatCreation > 0 || cacheRead > 0;
+  if (ephemeral1h > 0) {
+    return { warm, ttlMs: PROMPT_CACHE_TTL_MS["1h"] };
+  }
+  if (ephemeral5m > 0 || flatCreation > 0) {
+    return { warm, ttlMs: PROMPT_CACHE_TTL_MS["5m"] };
+  }
+  return { warm, ttlMs: undefined };
+}
+
 function readStreamRequestOutputTokens(event: Record<string, unknown>): number | undefined {
   const outputTokens = toObjectRecord(event.usage)?.output_tokens;
   if (typeof outputTokens !== "number" || !Number.isFinite(outputTokens) || outputTokens < 0) {
@@ -1897,6 +1939,9 @@ class ClaudeContextUsageState {
   private streamRequestOutputTokens: number | undefined;
   private compactedContextWindowUsedTokens: number | undefined;
   private completedResultTurns = 0;
+  private promptCacheExpiresAtMs: number | undefined;
+  /** Last bucket this session declared, reused when a request only reads the cache. */
+  private promptCacheTtlMs: number | undefined;
 
   constructor(initialContextWindowMaxTokens?: number) {
     this.contextWindowMaxTokens = initialContextWindowMaxTokens;
@@ -1927,6 +1972,10 @@ class ClaudeContextUsageState {
     }
     const eventType = readTrimmedString(streamEvent.type);
     if (eventType === "message_start") {
+      // Stamp before the token guard: a request can report cache warmth even when
+      // its input count is missing, and dropping the stamp would leave the surface
+      // stale until the turn's result lands.
+      this.recordPromptCache(toObjectRecord(toObjectRecord(streamEvent.message)?.usage));
       const inputTokens = readStreamRequestInputTokens(streamEvent);
       if (typeof inputTokens !== "number") {
         return null;
@@ -1962,6 +2011,13 @@ class ClaudeContextUsageState {
         totalCostUsd: message.total_cost_usd,
       };
 
+      // The result aggregates the turn, so it restates warmth the stream already
+      // reported. It is also the only signal when partial stream events are absent.
+      this.recordPromptCache(message.usage as unknown as Record<string, unknown>);
+      if (this.promptCacheExpiresAtMs !== undefined) {
+        usage.promptCacheExpiresAtMs = this.promptCacheExpiresAtMs;
+      }
+
       const modelContextWindowMaxTokens = this.recordModelUsage(modelUsage ?? message.modelUsage);
       if (this.contextWindowMaxTokens !== undefined) {
         usage.contextWindowMaxTokens = this.contextWindowMaxTokens;
@@ -1984,6 +2040,26 @@ class ClaudeContextUsageState {
     }
   }
 
+  /**
+   * Anthropic refreshes a cached segment's lifetime on every hit, so the expiry is
+   * always measured from the most recent request rather than from when the cache
+   * was first written.
+   */
+  private recordPromptCache(usage: Record<string, unknown> | undefined): void {
+    if (!usage) {
+      return;
+    }
+    const { warm, ttlMs } = readPromptCacheObservation(usage);
+    if (ttlMs !== undefined) {
+      this.promptCacheTtlMs = ttlMs;
+    }
+    if (!warm) {
+      return;
+    }
+    const effectiveTtlMs = ttlMs ?? this.promptCacheTtlMs ?? PROMPT_CACHE_TTL_MS["5m"];
+    this.promptCacheExpiresAtMs = Date.now() + effectiveTtlMs;
+  }
+
   private streamUsedTokens(): number | undefined {
     if (
       typeof this.streamRequestInputTokens !== "number" ||
@@ -2002,6 +2078,9 @@ class ClaudeContextUsageState {
     if (this.contextWindowMaxTokens !== undefined) {
       usage.contextWindowMaxTokens = this.contextWindowMaxTokens;
     }
+    if (this.promptCacheExpiresAtMs !== undefined) {
+      usage.promptCacheExpiresAtMs = this.promptCacheExpiresAtMs;
+    }
     return {
       type: "usage_updated",
       provider: "claude",
@@ -2016,6 +2095,13 @@ class ClaudeContextUsageState {
     const usage: AgentUsage = {};
     if (this.contextWindowMaxTokens !== undefined) {
       usage.contextWindowMaxTokens = this.contextWindowMaxTokens;
+    }
+    // Compaction rewrites the prefix, so the next turn cannot hit what was cached
+    // for the old one. Stamping now rather than clearing the field is what carries
+    // through the manager's usage merge, which only overwrites keys that are present.
+    if (this.promptCacheExpiresAtMs !== undefined) {
+      this.promptCacheExpiresAtMs = Date.now();
+      usage.promptCacheExpiresAtMs = this.promptCacheExpiresAtMs;
     }
     if (postTokens !== undefined) {
       usage.contextWindowUsedTokens = postTokens;

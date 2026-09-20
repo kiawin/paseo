@@ -2003,6 +2003,8 @@ export const ar: TranslationResources = {
     used: "تم استخدام{{percentage}}%",
     tokens: "رموز{{used}}/{{max}}",
     sessionCost: "تكلفة الجلسة{{cost}}",
+    promptCacheWarmMinutes: "ذاكرة المطالبات نشطة · متبقٍ {{minutes}} دقيقة",
+    promptCacheWarmUnderMinute: "ذاكرة المطالبات نشطة · متبقٍ أقل من دقيقة",
     accessibility: "تم استخدام نافذة السياق{{percentage}}%",
   },
   review: {

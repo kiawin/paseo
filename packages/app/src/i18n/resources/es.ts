@@ -2052,6 +2052,8 @@ export const es: TranslationResources = {
     used: "{{percentage}}% utilizado",
     tokens: "Fichas {{used}}/{{max}}",
     sessionCost: "Costo de la sesión {{cost}}",
+    promptCacheWarmMinutes: "Caché de prompts activa · quedan {{minutes}} min",
+    promptCacheWarmUnderMinute: "Caché de prompts activa · queda <1 min",
     accessibility: "Ventana de contexto {{percentage}}% utilizada",
   },
   review: {

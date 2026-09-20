@@ -2037,6 +2037,8 @@ export const ru: TranslationResources = {
     used: "Использовано: {{percentage}}%",
     tokens: "Токены: {{used}} / {{max}}",
     sessionCost: "Стоимость сессии: {{cost}}",
+    promptCacheWarmMinutes: "Кэш промпта активен · осталось {{minutes}} мин",
+    promptCacheWarmUnderMinute: "Кэш промпта активен · осталось <1 мин",
     accessibility: "Использовано {{percentage}}% контекстного окна",
   },
   review: {

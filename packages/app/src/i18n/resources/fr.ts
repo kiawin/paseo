@@ -2057,6 +2057,8 @@ export const fr: TranslationResources = {
     used: "{{percentage}}% utilisé",
     tokens: "Jetons {{used}}/{{max}}",
     sessionCost: "Coût de la séance {{cost}}",
+    promptCacheWarmMinutes: "Cache de prompts actif · {{minutes}} min restantes",
+    promptCacheWarmUnderMinute: "Cache de prompts actif · <1 min restante",
     accessibility: "Fenêtre contextuelle {{percentage}}% utilisé",
   },
   review: {
