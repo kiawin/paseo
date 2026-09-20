@@ -542,6 +542,7 @@ function sanitizeUsage(value: unknown): AgentUsage | undefined {
     "totalCostUsd",
     "contextWindowMaxTokens",
     "contextWindowUsedTokens",
+    "promptCacheExpiresAtMs",
   ];
   for (const field of fields) {
     if (!assignFiniteNumber(sanitized, result, field)) {
