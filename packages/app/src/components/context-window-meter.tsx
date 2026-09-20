@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import type { TFunction } from "i18next";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -16,6 +17,8 @@ interface ContextWindowMeterProps {
   usedTokens: number | null;
   totalCostUsd?: number | null;
   showPercentage?: boolean;
+  /** Epoch ms when the provider's prompt cache goes cold, or null when unavailable. */
+  promptCacheExpiresAtMs?: number | null;
   /** Reserve the meter footprint and show a loading ring while usage is pending. */
   pending?: boolean;
   /** Optional glyph envelope for icon-toolbar alignment. */
@@ -47,6 +50,27 @@ function getUsagePercentage(maxTokens: number, usedTokens: number): number | nul
 
 function clampPercentage(value: number): number {
   return Math.max(0, Math.min(100, value));
+}
+
+const PROMPT_CACHE_TICK_MS = 30_000;
+
+export function buildPromptCacheLabel(
+  expiresAtMs: number | null,
+  nowMs: number,
+  t: TFunction,
+): string | null {
+  if (expiresAtMs === null || !Number.isFinite(expiresAtMs)) {
+    return null;
+  }
+  const remainingMs = expiresAtMs - nowMs;
+  if (remainingMs <= 0) {
+    return null;
+  }
+  const minutesLeft = Math.floor(remainingMs / 60_000);
+  if (minutesLeft < 1) {
+    return t("contextWindow.promptCacheWarmUnderMinute");
+  }
+  return t("contextWindow.promptCacheWarmMinutes", { minutes: minutesLeft });
 }
 
 function formatSessionCost(value: number): string | null {
@@ -103,6 +127,7 @@ export function ContextWindowMeter({
   usedTokens,
   totalCostUsd,
   showPercentage = false,
+  promptCacheExpiresAtMs = null,
   pending = false,
   glyphSize,
 }: ContextWindowMeterProps) {
@@ -117,6 +142,22 @@ export function ContextWindowMeter({
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const openSheet = useCallback(() => setIsSheetOpen(true), []);
   const closeSheet = useCallback(() => setIsSheetOpen(false), []);
+  const [isTooltipOpen, setIsTooltipOpen] = useState(false);
+  const [cacheNowMs, setCacheNowMs] = useState(() => Date.now());
+  const handleTooltipOpenChange = (nextOpen: boolean) => {
+    setIsTooltipOpen(nextOpen);
+    if (nextOpen) {
+      setCacheNowMs(Date.now());
+    }
+  };
+  useEffect(() => {
+    if (!isTooltipOpen || promptCacheExpiresAtMs === null) {
+      return;
+    }
+    const interval = setInterval(() => setCacheNowMs(Date.now()), PROMPT_CACHE_TICK_MS);
+    return () => clearInterval(interval);
+  }, [isTooltipOpen, promptCacheExpiresAtMs]);
+  const promptCacheLabel = buildPromptCacheLabel(promptCacheExpiresAtMs, cacheNowMs, t);
   const percentage =
     maxTokens !== null && usedTokens !== null ? getUsagePercentage(maxTokens, usedTokens) : null;
   const geometry = getMeterGeometry(showPercentage, glyphSize);
@@ -225,7 +266,13 @@ export function ContextWindowMeter({
   }
 
   return (
-    <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile>
+    <Tooltip
+      open={isTooltipOpen}
+      onOpenChange={handleTooltipOpenChange}
+      delayDuration={0}
+      enabledOnDesktop
+      enabledOnMobile
+    >
       <TooltipTrigger asChild triggerRefProp="ref">
         <Pressable
           style={containerStyle}
@@ -255,6 +302,7 @@ export function ContextWindowMeter({
           showTitle
           refreshable={false}
         />
+        {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
       </TooltipContent>
     </Tooltip>
   );
@@ -288,4 +336,9 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface3,
   },
   popover: { padding: theme.spacing[4], gap: theme.spacing[4] },
+  tooltipDetail: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    lineHeight: theme.fontSize.sm * 1.4,
+  },
 }));
