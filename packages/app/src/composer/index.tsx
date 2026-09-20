@@ -27,6 +27,7 @@ import {
   useImperativeHandle,
   memo,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -40,6 +41,7 @@ import {
   toolbarGlyphsFor,
   toolbarGlyphTone,
   type ToolbarGlyph,
+  type ToolbarRing,
   toolbarSlot,
 } from "@/components/ui/control-geometry";
 import { usePanelStore, type MobilePanelView } from "@/stores/panel-store";
@@ -296,14 +298,48 @@ function buildRealtimeVoiceButtonStyle(pressed: boolean, voiceButtonDisabled: bo
 function buildAgentStateSelector(serverId: string, agentId: string) {
   return (state: ReturnType<typeof useSessionStore.getState>) => {
     const agent = state.sessions[serverId]?.agents?.get(agentId) ?? null;
+    const usage = agent?.lastUsage;
     return {
       status: agent?.status ?? null,
-      contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
-      contextWindowUsedTokens: agent?.lastUsage?.contextWindowUsedTokens ?? null,
-      totalCostUsd: agent?.lastUsage?.totalCostUsd ?? null,
+      contextWindowMaxTokens: usage?.contextWindowMaxTokens ?? null,
+      contextWindowUsedTokens: usage?.contextWindowUsedTokens ?? null,
+      totalCostUsd: usage?.totalCostUsd ?? null,
+      promptCacheExpiresAtMs: usage?.promptCacheExpiresAtMs ?? null,
       model: agent?.model ?? null,
     };
   };
+}
+
+function renderContextWindowMeter(
+  serverId: string,
+  agentId: string,
+  contextWindowMaxTokens: number | null,
+  contextWindowUsedTokens: number | null,
+  totalCostUsd: number | null,
+  promptCacheExpiresAtMs: number | null,
+  showPercentage: boolean,
+  pending: boolean,
+  toolbarRing: ToolbarRing,
+): ReactElement {
+  // No early return for "no data yet": the meter draws its own empty state, and an agent that
+  // has not taken its first turn has no tokens to report. Suppressing it here hid that state.
+  return (
+    <ContextWindowMeter
+      serverId={serverId}
+      agentId={agentId}
+      maxTokens={contextWindowMaxTokens}
+      usedTokens={contextWindowUsedTokens}
+      totalCostUsd={totalCostUsd}
+      promptCacheExpiresAtMs={promptCacheExpiresAtMs}
+      showPercentage={showPercentage}
+      pending={pending}
+      toolbarRing={toolbarRing}
+    />
+  );
+}
+
+function resolveContextWindowPlacement(meter: ReactElement, reserveSlot: boolean): ReactNode {
+  return reserveSlot ? <View style={styles.contextWindowMeterSlot}>{meter}</View> : null;
 }
 
 interface RenderLeftContentArgs {
@@ -2196,29 +2232,35 @@ function ComposerContentImpl({
     ],
   );
 
-  const beforeVoiceContent = useMemo(
+  const contextWindowPending = agentState.status === "initializing" || isAgentRunning;
+  const contextWindowMeterRing = TOOLBAR_RINGS[controlSizing];
+  const contextWindowMeter = useMemo(
     () =>
-      hasAgent ? (
-        <View style={styles.contextWindowMeterSlot}>
-          <ContextWindowMeter
-            serverId={serverId}
-            agentId={agentId}
-            maxTokens={agentState.contextWindowMaxTokens}
-            usedTokens={agentState.contextWindowUsedTokens}
-            totalCostUsd={agentState.totalCostUsd}
-            toolbarRing={TOOLBAR_RINGS[controlSizing]}
-          />
-        </View>
-      ) : null,
+      renderContextWindowMeter(
+        serverId,
+        agentId,
+        agentState.contextWindowMaxTokens,
+        agentState.contextWindowUsedTokens,
+        agentState.totalCostUsd,
+        agentState.promptCacheExpiresAtMs,
+        false,
+        contextWindowPending,
+        contextWindowMeterRing,
+      ),
     [
-      hasAgent,
       serverId,
       agentId,
       agentState.contextWindowMaxTokens,
       agentState.contextWindowUsedTokens,
       agentState.totalCostUsd,
-      controlSizing,
+      agentState.promptCacheExpiresAtMs,
+      contextWindowPending,
+      contextWindowMeterRing,
     ],
+  );
+  const beforeVoiceContent = useMemo(
+    () => <>{resolveContextWindowPlacement(contextWindowMeter, hasAgent)}</>,
+    [contextWindowMeter, hasAgent],
   );
 
   const hasGithubAttachment = useMemo(
