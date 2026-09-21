@@ -96,7 +96,7 @@ import type {
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { isPaseoToolEnabled } from "../paseo-tool-policy.js";
 import { isOpenAgentTabLabel, PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
-import { getAgentReachabilityRule } from "../peer-reachability.js";
+import { getAgentLineageReachabilityRule, getAgentReachabilityRule } from "../peer-reachability.js";
 import { requestDaemonApproval } from "../daemon-approvals.js";
 
 export interface PaseoToolHostDependencies {
@@ -429,6 +429,22 @@ function assertAgentScopedCannotSetReservedLabels(
   );
   if (reservedLabel) {
     throw new Error(`Agent callers cannot set daemon-owned label: ${reservedLabel}`);
+  }
+}
+
+function assertProviderPermissionResponseReachability(params: {
+  agentManager: AgentManager;
+  callerAgentId: string | undefined;
+  targetAgentId: string;
+}): void {
+  if (!params.callerAgentId) return;
+
+  const caller = params.agentManager.getAgent(params.callerAgentId);
+  const target = params.agentManager.getAgent(params.targetAgentId);
+  if (!caller || !target || getAgentLineageReachabilityRule(caller, target) === null) {
+    throw new Error(
+      "You must be in the target agent's lineage to answer its provider permission; let the user answer it instead.",
+    );
   }
 }
 
@@ -3429,6 +3445,11 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async ({ agentId, requestId, response }) => {
+      assertProviderPermissionResponseReachability({
+        agentManager,
+        callerAgentId,
+        targetAgentId: agentId,
+      });
       await respondToAgentPermission({
         agentManager,
         agentId,

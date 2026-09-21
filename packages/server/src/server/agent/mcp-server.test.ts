@@ -59,7 +59,7 @@ import type { BrowserToolsBroker, BrowserToolsExecuteInput } from "../browser-to
 import type { BrowserToolsResponsePayload } from "../browser-tools/errors.js";
 import { readPaseoWorktreeMetadata } from "../../utils/worktree-metadata.js";
 import { createWorkspaceProvisioningService } from "../session/workspace-provisioning/workspace-provisioning-service.js";
-import { resolveDaemonApproval } from "./daemon-approvals.js";
+import { DAEMON_APPROVAL_REQUEST_PREFIX, resolveDaemonApproval } from "./daemon-approvals.js";
 
 const REPO_CWD = resolvePath("/tmp/repo");
 const TARGET_CWD = resolvePath("/tmp/target");
@@ -5843,6 +5843,152 @@ describe("send_agent_prompt reachability", () => {
     });
 
     expect(spies.agentManager.streamAgent).toHaveBeenCalled();
+  });
+});
+
+describe("respond_to_permission lineage reachability", () => {
+  const target = createManagedAgent({ id: "target-agent", cwd: "/repo/target" });
+
+  async function createPermissionTool(options: { callerAgentId?: string; agents: ManagedAgent[] }) {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const agents = new Map(options.agents.map((agent) => [agent.id, agent]));
+    spies.agentManager.getAgent.mockImplementation(
+      (agentId: string) => agents.get(agentId) ?? null,
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createClaudeOnlyManager(),
+      callerAgentId: options.callerAgentId,
+      logger: createTestLogger(),
+    });
+    return { tool: registeredTool(server, "respond_to_permission"), spies };
+  }
+
+  const responseInput = {
+    agentId: target.id,
+    requestId: "provider-permission",
+    response: { behavior: "allow" as const },
+  };
+
+  it("allows a parent to answer its child's provider permission", async () => {
+    const parent = createManagedAgent({ id: "parent-agent", cwd: "/repo/parent" });
+    const child = createManagedAgent({
+      id: target.id,
+      cwd: target.cwd,
+      labels: { [PARENT_AGENT_ID_LABEL]: parent.id },
+    });
+    const { tool, spies } = await createPermissionTool({
+      callerAgentId: parent.id,
+      agents: [parent, child],
+    });
+
+    await tool.handler(responseInput);
+
+    expect(spies.agentManager.respondToPermission).toHaveBeenCalledOnce();
+  });
+
+  it("allows a child to answer its parent's provider permission", async () => {
+    const child = createManagedAgent({
+      id: "child-agent",
+      cwd: "/repo/child",
+      labels: { [PARENT_AGENT_ID_LABEL]: target.id },
+    });
+    const { tool, spies } = await createPermissionTool({
+      callerAgentId: child.id,
+      agents: [target, child],
+    });
+
+    await tool.handler(responseInput);
+
+    expect(spies.agentManager.respondToPermission).toHaveBeenCalledOnce();
+  });
+
+  it("allows a sibling to answer a sibling's provider permission", async () => {
+    const sibling = createManagedAgent({
+      id: "sibling-agent",
+      cwd: "/repo/sibling",
+      labels: { [PARENT_AGENT_ID_LABEL]: "shared-parent" },
+    });
+    const siblingTarget = createManagedAgent({
+      ...target,
+      labels: { [PARENT_AGENT_ID_LABEL]: "shared-parent" },
+    });
+    const { tool, spies } = await createPermissionTool({
+      callerAgentId: sibling.id,
+      agents: [sibling, siblingTarget],
+    });
+
+    await tool.handler(responseInput);
+
+    expect(spies.agentManager.respondToPermission).toHaveBeenCalledOnce();
+  });
+
+  it("refuses an unrelated agent before calling the provider", async () => {
+    const caller = createManagedAgent({ id: "unrelated-agent", cwd: "/elsewhere" });
+    const { tool, spies } = await createPermissionTool({
+      callerAgentId: caller.id,
+      agents: [caller, target],
+    });
+
+    await expect(tool.handler(responseInput)).rejects.toThrow(
+      "You must be in the target agent's lineage to answer its provider permission",
+    );
+    expect(spies.agentManager.respondToPermission).not.toHaveBeenCalled();
+  });
+
+  it("refuses an agent that only shares a cwd subtree before calling the provider", async () => {
+    const caller = createManagedAgent({ id: "cwd-peer", cwd: "/repo" });
+    const cwdTarget = createManagedAgent({
+      ...target,
+      cwd: "/repo/nested",
+    });
+    const { tool, spies } = await createPermissionTool({
+      callerAgentId: caller.id,
+      agents: [caller, cwdTarget],
+    });
+
+    await expect(tool.handler({ ...responseInput, agentId: cwdTarget.id })).rejects.toThrow(
+      "You must be in the target agent's lineage to answer its provider permission",
+    );
+    expect(spies.agentManager.respondToPermission).not.toHaveBeenCalled();
+  });
+
+  it("allows a top-level caller to answer any provider permission", async () => {
+    const { tool, spies } = await createPermissionTool({ agents: [target] });
+
+    await tool.handler(responseInput);
+
+    expect(spies.agentManager.respondToPermission).toHaveBeenCalledOnce();
+  });
+
+  it("still refuses daemon approvals for agent callers before reaching the provider", async () => {
+    const parent = createManagedAgent({ id: "parent-agent", cwd: "/repo/parent" });
+    const child = createManagedAgent({
+      ...target,
+      labels: { [PARENT_AGENT_ID_LABEL]: parent.id },
+    });
+    const { tool, spies } = await createPermissionTool({
+      callerAgentId: parent.id,
+      agents: [parent, child],
+    });
+    const providerRespondToPermission = vi.fn();
+    spies.agentManager.respondToPermission.mockImplementation(
+      async (agentId, requestId, response, callerAgentId) => {
+        if (requestId.startsWith(DAEMON_APPROVAL_REQUEST_PREFIX) && callerAgentId) {
+          throw new Error("Only the user can respond to a daemon approval request");
+        }
+        providerRespondToPermission(agentId, requestId, response, callerAgentId);
+      },
+    );
+
+    await expect(
+      tool.handler({
+        ...responseInput,
+        requestId: `${DAEMON_APPROVAL_REQUEST_PREFIX}request`,
+      }),
+    ).rejects.toThrow("Only the user can respond to a daemon approval request");
+    expect(providerRespondToPermission).not.toHaveBeenCalled();
   });
 });
 

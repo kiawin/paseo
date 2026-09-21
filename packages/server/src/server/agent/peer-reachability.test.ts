@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 
-import { getAgentReachabilityRule, type AgentReachabilityFacts } from "./peer-reachability.js";
+import {
+  getAgentLineageReachabilityRule,
+  getAgentReachabilityRule,
+  type AgentReachabilityFacts,
+} from "./peer-reachability.js";
 
 const caller: AgentReachabilityFacts = { id: "caller", cwd: "/repo", labels: {} };
 
@@ -73,4 +77,10 @@ describe("getAgentReachabilityRule", () => {
       ).toBe("child");
     },
   );
+});
+
+describe("getAgentLineageReachabilityRule", () => {
+  it("excludes cwd-only reachability", () => {
+    expect(getAgentLineageReachabilityRule(caller, target({ cwd: "/repo/nested" }))).toBeNull();
+  });
 });
