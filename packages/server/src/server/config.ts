@@ -649,6 +649,7 @@ export function resolveConfigFromPersisted(
     agentProviderSettings: extractAgentProviderSettings(providerOverrides),
     providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
     metadataGeneration: persisted.agents?.metadataGeneration,
+    peerMessagingEnforceReachability: persisted.agents?.peerMessaging?.enforceReachability ?? false,
     providerOverrides,
     log: resolveLogConfigFromEnv(env, persisted),
     configReload: {

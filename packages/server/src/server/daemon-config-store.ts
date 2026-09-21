@@ -23,6 +23,7 @@ interface SupportedMutableConfigPatch {
   providers?: MutableDaemonConfig["providers"];
   removeProviders?: string[];
   metadataGeneration?: MutableDaemonConfig["metadataGeneration"];
+  agents?: MutableDaemonConfig["agents"];
   autoArchiveAfterMerge?: boolean;
   enableTerminalAgentHooks?: boolean;
   appendSystemPrompt?: string;
@@ -187,6 +188,7 @@ const RELOADABLE_PATHS = [
   "agents.providers",
   "agents.catalogRefreshTimeoutMs",
   "agents.metadataGeneration",
+  "agents.peerMessaging.enforceReachability",
   "agents.skills.selection",
   "pluginsEnabled",
 ] as const;
@@ -210,6 +212,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["agents.providers", "providers"],
   ["agents.catalogRefreshTimeoutMs", "catalogRefreshTimeoutMs"],
   ["agents.metadataGeneration", "metadataGeneration"],
+  ["agents.peerMessaging.enforceReachability", "agents.peerMessaging.enforceReachability"],
   ["agents.skills.selection", "skills.selection"],
   ["pluginsEnabled", "pluginsEnabled"],
 ]);
@@ -263,6 +266,7 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...(patch.metadataGeneration?.providers !== undefined
       ? { metadataGeneration: { providers: patch.metadataGeneration.providers } }
       : {}),
+    ...pickPeerMessagingPatch(patch),
     ...(patch.autoArchiveAfterMerge !== undefined
       ? { autoArchiveAfterMerge: patch.autoArchiveAfterMerge }
       : {}),
@@ -277,6 +281,15 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...(patch.pluginsEnabled !== undefined ? { pluginsEnabled: patch.pluginsEnabled } : {}),
     ...(patch.plugins !== undefined ? { plugins: patch.plugins } : {}),
   };
+}
+
+function pickPeerMessagingPatch(
+  patch: MutableDaemonConfigPatch,
+): Pick<SupportedMutableConfigPatch, "agents"> | undefined {
+  const enforceReachability = patch.agents?.peerMessaging?.enforceReachability;
+  return enforceReachability === undefined
+    ? undefined
+    : { agents: { peerMessaging: { enforceReachability } } };
 }
 
 export function applyMutableProviderConfigToOverrides(

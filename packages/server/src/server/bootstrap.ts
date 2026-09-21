@@ -448,6 +448,7 @@ export interface PaseoDaemonConfig {
       thinkingOptionId?: string;
     }>;
   };
+  peerMessagingEnforceReachability?: boolean;
   providerOverrides?: Record<string, ProviderOverride>;
   log?: PersistedConfig["log"];
   onLifecycleIntent?: (intent: DaemonLifecycleIntent) => void;
@@ -549,6 +550,7 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
     metadataGeneration: {
       providers: config.metadataGeneration?.providers ?? [],
     },
+    agents: createMutableAgentConfig(config),
     autoArchiveAfterMerge: config.autoArchiveAfterMerge ?? false,
     enableTerminalAgentHooks: config.enableTerminalAgentHooks ?? false,
     appendSystemPrompt: config.appendSystemPrompt ?? "",
@@ -566,6 +568,12 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
   }
 
   return initialConfig;
+}
+
+function createMutableAgentConfig(config: PaseoDaemonConfig): MutableDaemonConfig["agents"] {
+  return {
+    peerMessaging: { enforceReachability: config.peerMessagingEnforceReachability ?? false },
+  };
 }
 
 /**

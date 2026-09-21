@@ -195,6 +195,15 @@ export const MutableDaemonConfigSchema = z
       .optional(),
     app: z.object({ baseUrl: z.string() }).optional(),
     catalogRefreshTimeoutMs: z.number().int().positive().optional(),
+    agents: z
+      .object({
+        peerMessaging: z
+          .object({ enforceReachability: z.boolean().default(false) })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
     browserTools: MutableBrowserToolsConfigSchema.default({ enabled: false }),
     providers: z.record(z.string(), MutableDaemonProviderConfigSchema).default({}),
     metadataGeneration: MutableMetadataGenerationConfigSchema.default({ providers: [] }),
@@ -219,6 +228,15 @@ export const MutableDaemonConfigPatchSchema = z
       .optional(),
     removeProviders: z.array(z.string().min(1)).optional(),
     metadataGeneration: MutableMetadataGenerationConfigSchema.partial().optional(),
+    agents: z
+      .object({
+        peerMessaging: z
+          .object({ enforceReachability: z.boolean().optional() })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
     autoArchiveAfterMerge: z.boolean().optional(),
     enableTerminalAgentHooks: z.boolean().optional(),
     appendSystemPrompt: z.string().optional(),
