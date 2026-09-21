@@ -170,6 +170,7 @@ describe("agent MCP end-to-end (offline)", () => {
     const staticDir = await mkdtemp(path.join(os.tmpdir(), "paseo-static-"));
     const agentCwd = await mkdtemp(path.join(os.tmpdir(), "paseo-agent-cwd-"));
     const port = await getAvailablePort();
+    const recorder: LaunchRecorder = { recordedLaunches: [] };
 
     const daemonConfig: PaseoDaemonConfig = {
       listen: `127.0.0.1:${port}`,
@@ -179,7 +180,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: createTestAgentClients(),
+      agentClients: createMcpRecordingAgentClients(recorder),
       agentStoragePath: path.join(paseoHome, "agents"),
     };
 
@@ -240,6 +241,7 @@ describe("agent MCP end-to-end (offline)", () => {
     const staticDir = await mkdtemp(path.join(os.tmpdir(), "paseo-static-"));
     const agentCwd = await mkdtemp(path.join(os.tmpdir(), "paseo-agent-cwd-"));
     const port = await getAvailablePort();
+    const recorder: LaunchRecorder = { recordedLaunches: [] };
 
     const daemonConfig: PaseoDaemonConfig = {
       listen: `127.0.0.1:${port}`,
@@ -249,7 +251,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: createTestAgentClients(),
+      agentClients: createMcpRecordingAgentClients(recorder),
       agentStoragePath: path.join(paseoHome, "agents"),
       auth: { password: hashDaemonPassword("daemon-secret") },
     };
@@ -258,8 +260,7 @@ describe("agent MCP end-to-end (offline)", () => {
     await daemon.start();
 
     const mcpUrl = `http://127.0.0.1:${port}/mcp/agents`;
-    const capabilityToken = daemon.agentManager.getMcpAuthToken();
-    expect(typeof capabilityToken).toBe("string");
+    const daemonPassword = "daemon-secret";
 
     let agentId: string | null = null;
     let client: McpClient | null = null;
@@ -273,12 +274,8 @@ describe("agent MCP end-to-end (offline)", () => {
       });
       expect(unauthorized.status).toBe(401);
 
-      // The injected capability token authenticates the full MCP handshake:
-      // creating (and connecting) the client and driving a tool call both go
-      // through the password-gated /mcp/agents route. (The exact bearer header
-      // injected into a child agent's config is covered by the
-      // runtime-mcp-config unit test.)
-      client = await createMcpClient(mcpUrl, capabilityToken!);
+      // Use the daemon password for the human/top-level create operation.
+      client = await createMcpClient(mcpUrl, daemonPassword);
       const result = await client.callTool({
         name: "create_agent",
         args: {
@@ -293,6 +290,64 @@ describe("agent MCP end-to-end (offline)", () => {
       const payload = getStructuredContent(result);
       agentId = typeof payload?.agentId === "string" ? payload.agentId : null;
       expect(agentId).toBeTruthy();
+
+      const injectedConfig = recorder.recordedLaunches.at(-1)?.mcpServers?.paseo;
+      const agentToken = injectedConfig?.headers?.Authorization?.replace("Bearer ", "");
+      expect(agentToken).toMatch(/^[0-9a-f]{64}$/);
+
+      await client.close();
+      client = await createMcpClient(`${mcpUrl}?callerAgentId=other-agent`, agentToken);
+      const scopedStatus = await client.callTool({
+        name: "get_agent_status",
+        args: { agentId: agentId! },
+      });
+      expect(scopedStatus.isError).not.toBe(true);
+      expect(getStructuredContent(scopedStatus)).toEqual(
+        expect.objectContaining({ status: expect.any(String) }),
+      );
+
+      const deniedModeChange = await client.callTool({
+        name: "set_agent_mode",
+        args: { agentId: agentId!, modeId: "plan" },
+      });
+      expect(deniedModeChange.isError).toBe(true);
+      expect(deniedModeChange.content).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            text: expect.stringContaining(
+              "The session mode is set by the user; ask the user to change it.",
+            ),
+          }),
+        ]),
+      );
+
+      await client.close();
+      client = await createMcpClient(mcpUrl, daemonPassword);
+      const topLevelModeChange = await client.callTool({
+        name: "set_agent_mode",
+        args: { agentId: agentId!, modeId: "plan" },
+      });
+      expect(topLevelModeChange.isError).not.toBe(true);
+      expect(getStructuredContent(topLevelModeChange)).toEqual(
+        expect.objectContaining({ success: true, newMode: "plan" }),
+      );
+
+      // Archiving closes the runtime and revokes the injected token. The old
+      // token must not authenticate again.
+      await client.close();
+      client = await createMcpClient(mcpUrl, daemonPassword);
+      await client.callTool({ name: "archive_agent", args: { agentId: agentId! } });
+      await client.close();
+      client = null;
+      const revoked = await fetch(mcpUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${agentToken}`,
+        },
+        body: "{}",
+      });
+      expect(revoked.status).toBe(401);
     } finally {
       if (agentId) {
         await client?.callTool({ name: "kill_agent", args: { agentId } });
@@ -372,7 +427,7 @@ describe("agent MCP end-to-end (offline)", () => {
       expect(recorder.recordedLaunches.at(-1)?.mcpServers).toMatchObject({
         paseo: {
           type: "http",
-          url: `http://127.0.0.1:${port}/mcp/agents?callerAgentId=${agentId!}`,
+          url: `http://127.0.0.1:${port}/mcp/agents`,
         },
       });
       const injectedAgent = daemon.agentManager.getAgent(agentId!);
@@ -461,7 +516,7 @@ describe("agent MCP end-to-end (offline)", () => {
       expect(recorder.recordedLaunches.at(-1)?.mcpServers).toMatchObject({
         paseo: {
           type: "http",
-          url: `http://127.0.0.1:${port}/mcp/agents?callerAgentId=${agentId!}`,
+          url: `http://127.0.0.1:${port}/mcp/agents`,
         },
       });
       const injectedAgent = daemon.agentManager.getAgent(agentId!);

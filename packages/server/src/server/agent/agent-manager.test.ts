@@ -269,8 +269,10 @@ class HeldAgentCreationClient extends TestAgentClient {
   private readonly creationStarted = deferred<void>();
   private readonly creationAllowed = deferred<void>();
   createdSessionClosed = false;
+  launchConfig: AgentSessionConfig | null = null;
 
   override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    this.launchConfig = config;
     const recordSessionClosed = () => {
       this.createdSessionClosed = true;
     };
@@ -1226,6 +1228,32 @@ class McpCapableTestAgentClient extends TestAgentClient {
   }
 }
 
+class FailingMcpLaunchClient extends McpCapableTestAgentClient {
+  launchConfigs: AgentSessionConfig[] = [];
+
+  override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    this.launchConfigs.push(config);
+    throw new Error("create failed");
+  }
+
+  override async resumeSession(
+    _handle: AgentPersistenceHandle,
+    config?: Partial<AgentSessionConfig>,
+  ): Promise<AgentSession> {
+    this.resumeOverrides.push(config);
+    this.launchConfigs.push(config as AgentSessionConfig);
+    throw new Error("resume failed");
+  }
+
+  async importSession(
+    _input: ImportProviderSessionInput,
+    context: ImportProviderSessionContext,
+  ): Promise<never> {
+    this.launchConfigs.push(context.config);
+    throw new Error("import failed");
+  }
+}
+
 class ControlledInterruptSession extends TestAgentSession {
   interruptCalled = false;
 
@@ -1516,6 +1544,7 @@ test("does not register a session that finishes starting after shutdown begins",
   const manager = new AgentManager({
     clients: { codex: client },
     logger,
+    mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
     idFactory: () => "00000000-0000-4000-8000-000000000100",
   });
 
@@ -1537,6 +1566,109 @@ test("does not register a session that finishes starting after shutdown begins",
     agents: [],
     sessionClosed: true,
   });
+  const token = client.launchConfig?.mcpServers?.paseo?.headers?.Authorization?.replace(
+    "Bearer ",
+    "",
+  );
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(manager.getMcpAgentId(token!)).toBeUndefined();
+});
+
+test("revokes the MCP token when registration fails after insertion", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-mcp-registration-test-"));
+
+  class CaptureClient extends TestAgentClient {
+    launchConfig: AgentSessionConfig | null = null;
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.launchConfig = config;
+      return new McpCapableTestAgentSession(config);
+    }
+  }
+
+  try {
+    const client = new CaptureClient();
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const manager = new AgentManager({
+      clients: { codex: client },
+      registry: storage,
+      logger,
+      mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
+      idFactory: () => "00000000-0000-4000-8000-000000000101",
+    });
+    vi.spyOn(storage, "applySnapshot").mockRejectedValueOnce(
+      new Error("post-insertion registration failure"),
+    );
+
+    await expect(
+      manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+        workspaceId: undefined,
+      }),
+    ).rejects.toThrow("post-insertion registration failure");
+
+    const token = client.launchConfig?.mcpServers?.paseo?.headers?.Authorization?.replace(
+      "Bearer ",
+      "",
+    );
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(manager.getMcpAgentId(token!)).toBeUndefined();
+    expect(manager.listAgents()).toEqual([]);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("revokes injected MCP tokens when create, resume, and import fail", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-mcp-failure-test-"));
+  const handle: AgentPersistenceHandle = {
+    provider: "codex",
+    sessionId: "failed-session",
+    metadata: { cwd: workdir },
+  };
+  const makeManager = (client: FailingMcpLaunchClient, id: string) =>
+    new AgentManager({
+      clients: { codex: client },
+      logger,
+      mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
+      idFactory: () => id,
+    });
+  const expectRevoked = (manager: AgentManager, config: AgentSessionConfig | undefined) => {
+    const token = config?.mcpServers?.paseo?.headers?.Authorization?.replace("Bearer ", "");
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(manager.getMcpAgentId(token!)).toBeUndefined();
+  };
+
+  try {
+    const createClient = new FailingMcpLaunchClient();
+    const createManager = makeManager(createClient, "00000000-0000-4000-8000-000000000201");
+    await expect(
+      createManager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+        workspaceId: undefined,
+      }),
+    ).rejects.toThrow("create failed");
+    expectRevoked(createManager, createClient.launchConfigs[0]);
+
+    const resumeClient = new FailingMcpLaunchClient();
+    const resumeManager = makeManager(resumeClient, "00000000-0000-4000-8000-000000000202");
+    await expect(
+      resumeManager.resumeAgentFromPersistence(handle, { cwd: workdir }),
+    ).rejects.toThrow("resume failed");
+    expectRevoked(resumeManager, resumeClient.launchConfigs[0]);
+
+    const importClient = new FailingMcpLaunchClient();
+    const importManager = makeManager(importClient, "00000000-0000-4000-8000-000000000203");
+    await expect(
+      importManager.importProviderSession({
+        provider: "codex",
+        providerHandleId: "failed-import",
+        cwd: workdir,
+        workspaceId: "workspace",
+      }),
+    ).rejects.toThrow("import failed");
+    expectRevoked(importManager, importClient.launchConfigs[0]);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
 });
 
 test("flush waits for rejected session cleanup that starts after shutdown", async () => {
@@ -2853,10 +2985,17 @@ test("createAgent injects paseo MCP server only into provider launch config", as
       command: "custom-mcp",
     },
   });
+  const paseoMcp = client.lastConfig?.mcpServers?.paseo;
+  const token = paseoMcp?.headers?.Authorization?.replace("Bearer ", "");
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(manager.getMcpAgentId(token!)).toBe(snapshot.id);
+  expect(paseoMcp?.url).toBe("http://127.0.0.1:6767/mcp/agents");
+  expect(paseoMcp?.url).not.toContain("callerAgentId");
   expect(client.lastConfig?.mcpServers).toEqual({
     paseo: {
       type: "http",
-      url: `http://127.0.0.1:6767/mcp/agents?callerAgentId=${snapshot.id}`,
+      url: "http://127.0.0.1:6767/mcp/agents",
+      headers: { Authorization: `Bearer ${token}` },
     },
     custom: {
       type: "stdio",
@@ -3141,7 +3280,6 @@ test("createAgent allows best-effort internal MCP when the provider session repo
     registry: storage,
     logger,
     mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
-    mcpAuthToken: "cap-token",
     idFactory: () => "00000000-0000-4000-8000-000000000104",
   });
 
@@ -3154,12 +3292,20 @@ test("createAgent allows best-effort internal MCP when the provider session repo
     { workspaceId: undefined },
   );
 
-  expect(manager.getMcpAuthToken()).toBe("cap-token");
+  const token = client.lastConfig?.mcpServers?.paseo?.headers?.Authorization?.replace(
+    "Bearer ",
+    "",
+  );
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(manager.getMcpAgentId(token!)).toBe(snapshot.id);
   expect(client.lastConfig?.mcpServers?.paseo).toEqual({
     type: "http",
-    url: `http://127.0.0.1:6767/mcp/agents?callerAgentId=${snapshot.id}`,
-    headers: { Authorization: "Bearer cap-token" },
+    url: "http://127.0.0.1:6767/mcp/agents",
+    headers: { Authorization: `Bearer ${token}` },
   });
+
+  await manager.closeAgent(snapshot.id);
+  expect(manager.getMcpAgentId(token!)).toBeUndefined();
 
   rmSync(workdir, { recursive: true, force: true });
 });
@@ -3294,9 +3440,16 @@ test("keeps the global Paseo-tools gate outside provider policy and MCP injectio
     { workspaceId: undefined },
   );
 
-  expect(enabledClient.lastConfig?.mcpServers?.paseo).toEqual({
+  const paseoMcp = enabledClient.lastConfig?.mcpServers?.paseo;
+  const token = paseoMcp?.headers?.Authorization?.replace("Bearer ", "");
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(enabledManager.getMcpAgentId(token!)).toBe(enabledAgent.id);
+  expect(paseoMcp?.url).toBe("http://127.0.0.1:6767/mcp/agents");
+  expect(paseoMcp?.url).not.toContain("callerAgentId");
+  expect(paseoMcp).toEqual({
     type: "http",
-    url: `http://127.0.0.1:6767/mcp/agents?callerAgentId=${enabledAgent.id}`,
+    url: "http://127.0.0.1:6767/mcp/agents",
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   const disabledClient = new McpClient();
@@ -3465,10 +3618,17 @@ test("resumeAgentFromPersistence replaces stored internal paseo MCP with current
     },
   });
 
+  const paseoMcp = client.resumeOverrides[0]?.mcpServers?.paseo;
+  const token = paseoMcp?.headers?.Authorization?.replace("Bearer ", "");
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(manager.getMcpAgentId(token!)).toBe(snapshot.id);
+  expect(paseoMcp?.url).toBe("http://127.0.0.1:6768/mcp/agents");
+  expect(paseoMcp?.url).not.toContain("callerAgentId");
   expect(client.resumeOverrides[0]?.mcpServers).toEqual({
     paseo: {
       type: "http",
-      url: `http://127.0.0.1:6768/mcp/agents?callerAgentId=${snapshot.id}`,
+      url: "http://127.0.0.1:6768/mcp/agents",
+      headers: { Authorization: `Bearer ${token}` },
     },
     custom: {
       type: "stdio",
