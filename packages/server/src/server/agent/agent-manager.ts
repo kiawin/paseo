@@ -82,6 +82,11 @@ import { isSystemInjectedEnvelope } from "./agent-prompt.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import { stripInternalPaseoMcpServer, withRuntimePaseoMcpServer } from "./runtime-mcp-config.js";
 import { tokensMatch } from "../auth.js";
+import {
+  denyDaemonApprovalsForAgent,
+  isPendingDaemonApproval,
+  resolveDaemonApproval,
+} from "./daemon-approvals.js";
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import type { PaseoToolCatalogFactory } from "./tools/types.js";
 import { isPaseoToolPolicyEnabled } from "./paseo-tool-policy.js";
@@ -1780,6 +1785,7 @@ export class AgentManager {
 
   private async closeAgentRuntime(agentId: string): Promise<void> {
     const agent = this.requireAgent(agentId);
+    denyDaemonApprovalsForAgent(this, agentId, "Agent closed");
     this.logger.trace(
       {
         agentId,
@@ -3062,8 +3068,18 @@ export class AgentManager {
     agentId: string,
     requestId: string,
     response: AgentPermissionResponse,
+    callerAgentId?: string,
   ): Promise<AgentPermissionResult | void> {
     const agent = this.requireAgent(agentId);
+    if (isPendingDaemonApproval(this, agentId, requestId)) {
+      if (callerAgentId) {
+        throw new Error("Only the user can respond to a daemon approval request");
+      }
+      if (!resolveDaemonApproval(this, agentId, requestId, response)) {
+        throw new Error(`Daemon approval request ${requestId} is no longer pending`);
+      }
+      return;
+    }
     if (agent.inFlightPermissionResponses.has(requestId)) {
       throw new Error("A response to this permission request is already being submitted");
     }
@@ -3102,6 +3118,7 @@ export class AgentManager {
 
   private async cancelAgentRunNow(agentId: string): Promise<AgentRunCancellationResult> {
     const agent = this.requireSessionAgent(agentId);
+    denyDaemonApprovalsForAgent(this, agentId, "Interrupted");
     const run =
       this.runs.getRun(agentId) ??
       (agent.lifecycle === "running" ? this.runs.trackAutonomousRun(agentId, null) : null);
@@ -3205,6 +3222,34 @@ export class AgentManager {
   getPendingPermissions(agentId: string): AgentPermissionRequest[] {
     const agent = this.requireSessionAgent(agentId);
     return Array.from(agent.pendingPermissions.values());
+  }
+
+  publishDaemonApprovalRequested(agentId: string, request: AgentPermissionRequest): void {
+    const agent = this.requireSessionAgent(agentId);
+    agent.pendingPermissions.set(request.id, request);
+    this.dispatchStream(agentId, {
+      type: "permission_requested",
+      provider: agent.provider,
+      request,
+    });
+    this.emitState(agent);
+  }
+
+  publishDaemonApprovalResolved(
+    agentId: string,
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) return;
+    agent.pendingPermissions.delete(requestId);
+    this.dispatchStream(agentId, {
+      type: "permission_resolved",
+      provider: agent.provider,
+      requestId,
+      resolution: response,
+    });
+    this.emitState(agent);
   }
 
   private peekPendingPermission(agent: ManagedAgent): AgentPermissionRequest | null {

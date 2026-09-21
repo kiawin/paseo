@@ -20,6 +20,7 @@ import { projectTimelineRows } from "./timeline-projection.js";
 import { getOpenAgentTabLabel, PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { formatSystemNotificationPrompt, startAgentRun } from "./agent-prompt.js";
 import { StaleProviderSessionError } from "./stale-provider-session-error.js";
+import { DAEMON_APPROVAL_REQUEST_PREFIX, requestDaemonApproval } from "./daemon-approvals.js";
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent-loading.js";
 import type { StoredAgentRecord } from "./agent-storage.js";
 import type {
@@ -1538,6 +1539,110 @@ function fakeCodexEmitting(args: FakeCodexEmitterArgs): AgentClient {
 }
 
 const logger = createTestLogger();
+
+test("daemon approvals resolve without reaching the provider and deny on timeout or close", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-daemon-approval-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const session = manager.getAgent(snapshot.id)?.session;
+  if (!session) throw new Error("Expected agent session");
+  const respondToPermission = vi.spyOn(session, "respondToPermission");
+
+  const allow = requestDaemonApproval({
+    agentManager: manager,
+    agentId: snapshot.id,
+    kind: "other",
+    title: "Allow the operation?",
+    description: "The daemon needs approval.",
+    timeoutMs: 1000,
+  });
+  const request = manager.getPendingPermissions(snapshot.id)[0];
+  expect(request.id).toMatch(new RegExp(`^${DAEMON_APPROVAL_REQUEST_PREFIX}`));
+  expect(request.actions?.map((action) => action.behavior)).toEqual(["allow", "deny"]);
+
+  await manager.respondToPermission(snapshot.id, request.id, { behavior: "allow" });
+  await expect(allow).resolves.toBe(true);
+  expect(respondToPermission).not.toHaveBeenCalled();
+  expect(manager.getPendingPermissions(snapshot.id)).toEqual([]);
+
+  const timeout = requestDaemonApproval({
+    agentManager: manager,
+    agentId: snapshot.id,
+    kind: "mode",
+    title: "Timed out",
+    description: "This must deny.",
+    timeoutMs: 1,
+  });
+  await expect(timeout).resolves.toBe(false);
+  expect(manager.getPendingPermissions(snapshot.id)).toEqual([]);
+
+  const close = requestDaemonApproval({
+    agentManager: manager,
+    agentId: snapshot.id,
+    kind: "other",
+    title: "Close cleanup",
+    description: "This must deny when the agent closes.",
+    timeoutMs: 1000,
+  });
+  const closeRequest = manager.getPendingPermissions(snapshot.id)[0];
+  await expect(
+    manager.respondToPermission(
+      snapshot.id,
+      closeRequest.id,
+      { behavior: "allow" },
+      "caller-agent",
+    ),
+  ).rejects.toThrow("Only the user");
+  await manager.closeAgent(snapshot.id);
+  await expect(close).resolves.toBe(false);
+  expect(respondToPermission).not.toHaveBeenCalled();
+
+  rmSync(workdir, { recursive: true, force: true });
+});
+
+test("provider permissions with the daemon approval prefix still reach the provider", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-provider-permission-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const session = manager.getAgent(snapshot.id)?.session;
+  if (!session) throw new Error("Expected agent session");
+  const respondToPermission = vi.spyOn(session, "respondToPermission");
+  const request = {
+    id: `${DAEMON_APPROVAL_REQUEST_PREFIX}provider-owned`,
+    provider: "codex" as const,
+    name: "shell",
+    kind: "command" as const,
+    title: "Run the command?",
+    description: "The provider owns this permission.",
+    actions: [{ id: "allow", label: "Allow", behavior: "allow" as const }],
+  };
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  session.pushEvent({ type: "permission_requested", provider: "codex", request });
+  await vi.waitFor(() => expect(manager.getPendingPermissions(snapshot.id)).toEqual([request]));
+
+  await manager.respondToPermission(snapshot.id, request.id, { behavior: "allow" });
+
+  expect(respondToPermission).toHaveBeenCalledWith(request.id, { behavior: "allow" });
+  expect(manager.getPendingPermissions(snapshot.id)).toEqual([]);
+
+  await manager.closeAgent(snapshot.id);
+  rmSync(workdir, { recursive: true, force: true });
+});
 
 test("does not register a session that finishes starting after shutdown begins", async () => {
   const client = new HeldAgentCreationClient();

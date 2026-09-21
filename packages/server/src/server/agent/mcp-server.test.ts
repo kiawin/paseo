@@ -59,6 +59,7 @@ import type { BrowserToolsBroker, BrowserToolsExecuteInput } from "../browser-to
 import type { BrowserToolsResponsePayload } from "../browser-tools/errors.js";
 import { readPaseoWorktreeMetadata } from "../../utils/worktree-metadata.js";
 import { createWorkspaceProvisioningService } from "../session/workspace-provisioning/workspace-provisioning-service.js";
+import { resolveDaemonApproval } from "./daemon-approvals.js";
 
 const REPO_CWD = resolvePath("/tmp/repo");
 const TARGET_CWD = resolvePath("/tmp/target");
@@ -91,7 +92,7 @@ interface RegisteredMcpTool {
   inputSchema: LooseInputSchema;
   callback?: (
     input: unknown,
-    extra?: unknown,
+    extra?: { signal?: AbortSignal },
   ) => Promise<{
     structuredContent: LooseStructuredContent;
     content?: LooseContentBlock[];
@@ -103,7 +104,10 @@ interface RegisteredMcpTool {
 }
 
 interface RegisteredMcpToolWithHandler extends RegisteredMcpTool {
-  handler: (input: unknown) => Promise<{
+  handler: (
+    input: unknown,
+    context?: { signal?: AbortSignal },
+  ) => Promise<{
     structuredContent: LooseStructuredContent;
     content?: LooseContentBlock[];
   }>;
@@ -228,6 +232,8 @@ function buildAgentManagerSpies() {
     respondToPermission: vi.fn(),
     cancelAgentRun: vi.fn(),
     getPendingPermissions: vi.fn(),
+    publishDaemonApprovalRequested: vi.fn(),
+    publishDaemonApprovalResolved: vi.fn(),
     getRegisteredProviderIds: vi.fn().mockReturnValue(["claude"]),
     listDraftFeatures: vi.fn(),
     unarchiveSnapshot: vi.fn().mockResolvedValue(true),
@@ -3844,9 +3850,11 @@ describe("send_agent_prompt MCP tool", () => {
     expect(spies.agentManager.streamAgent).not.toHaveBeenCalled();
   });
 
-  it("refuses agent-scoped mode changes without dispatching", async () => {
+  it("asks before agent-scoped mode changes and applies an allowed request", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue(createManagedAgent({ id: "child-agent" }));
+    spies.agentManager.getAgent.mockImplementation((agentId: string) =>
+      createManagedAgent({ id: agentId }),
+    );
     spies.agentStorage.get.mockResolvedValue(
       createStoredRecord({ id: "child-agent", archivedAt: null }),
     );
@@ -3859,15 +3867,20 @@ describe("send_agent_prompt MCP tool", () => {
     });
 
     const tool = registeredTool(server, "send_agent_prompt");
-    await expect(
-      tool.handler({ agentId: "child-agent", prompt: "Follow up", sessionMode: "full-access" }),
-    ).rejects.toThrow("The session mode is set by the user; ask the user to change it.");
-    await expect(
-      tool.handler({ agentId: "parent-agent", prompt: "Follow up", sessionMode: "full-access" }),
-    ).rejects.toThrow("The session mode is set by the user; ask the user to change it.");
-    expect(spies.agentManager.setAgentMode).not.toHaveBeenCalled();
-    expect(spies.agentManager.streamAgent).not.toHaveBeenCalled();
-    expect(spies.agentManager.steerOrReplaceActiveTurn).not.toHaveBeenCalled();
+    const childCall = tool.handler({
+      agentId: "child-agent",
+      prompt: "Follow up",
+      sessionMode: "full-access",
+    });
+    await vi.waitFor(() =>
+      expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled(),
+    );
+    const childRequest = spies.agentManager.publishDaemonApprovalRequested.mock.calls[0][1];
+    resolveDaemonApproval(agentManager, "parent-agent", childRequest.id, { behavior: "allow" });
+    await childCall;
+
+    expect(spies.agentManager.setAgentMode).toHaveBeenCalledWith("child-agent", "full-access");
+    expect(spies.agentManager.streamAgent).toHaveBeenCalled();
   });
 
   it("keeps top-level mode changes working", async () => {
@@ -4130,8 +4143,11 @@ describe("update_agent MCP tool", () => {
     expect(spies.agentManager.setAgentMode).not.toHaveBeenCalled();
   });
 
-  it("rejects agent-scoped mode changes for themselves or another agent", async () => {
+  it("asks before changing another agent's or its own mode", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockImplementation((agentId: string) =>
+      createManagedAgent({ id: agentId }),
+    );
     const server = await createAgentMcpServer({
       agentManager,
       agentStorage,
@@ -4140,21 +4156,70 @@ describe("update_agent MCP tool", () => {
       logger,
     });
     const updateTool = registeredTool(server, "update_agent");
-    const setModeTool = registeredTool(server, "set_agent_mode");
+    const request = updateTool.handler({
+      agentId: "other-agent",
+      settings: { modeId: "full-access" },
+    });
+    await vi.waitFor(() =>
+      expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled(),
+    );
+    const approval = spies.agentManager.publishDaemonApprovalRequested.mock.calls[0]?.[1];
+    if (!approval) throw new Error("Expected daemon approval request");
+    resolveDaemonApproval(agentManager, "caller-agent", approval.id, { behavior: "allow" });
+    await request;
+    expect(spies.agentManager.setAgentMode).toHaveBeenCalledWith("other-agent", "full-access");
+  });
 
-    await expect(
-      updateTool.handler({ agentId: "other-agent", settings: { modeId: "full-access" } }),
-    ).rejects.toThrow("The session mode is set by the user; ask the user to change it.");
-    await expect(
-      setModeTool.handler({ agentId: "other-agent", modeId: "full-access" }),
-    ).rejects.toThrow("The session mode is set by the user; ask the user to change it.");
-    await expect(
-      updateTool.handler({ agentId: "caller-agent", settings: { modeId: "plan" } }),
-    ).rejects.toThrow("The session mode is set by the user; ask the user to change it.");
-    await expect(
-      setModeTool.handler({ agentId: "caller-agent", modeId: "full-access" }),
-    ).rejects.toThrow("The session mode is set by the user; ask the user to change it.");
+  it("asks before set_agent_mode changes its own mode", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockImplementation((agentId: string) =>
+      createManagedAgent({ id: agentId }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: "caller-agent",
+      logger,
+    });
+    const request = registeredTool(server, "set_agent_mode").handler({
+      agentId: "caller-agent",
+      modeId: "full-access",
+    });
+    await vi.waitFor(() =>
+      expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled(),
+    );
+    const approval = spies.agentManager.publishDaemonApprovalRequested.mock.calls[0]?.[1];
+    if (!approval) throw new Error("Expected daemon approval request");
+    expect(approval.title).toContain("your session mode");
+    resolveDaemonApproval(agentManager, "caller-agent", approval.id, { behavior: "allow" });
+    await request;
+    expect(spies.agentManager.setAgentMode).toHaveBeenCalledWith("caller-agent", "full-access");
+  });
 
+  it("reports a user-declined mode change to the agent", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockImplementation((agentId: string) =>
+      createManagedAgent({ id: agentId }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: "caller-agent",
+      logger,
+    });
+    const request = registeredTool(server, "set_agent_mode").handler({
+      agentId: "other-agent",
+      modeId: "plan",
+    });
+    await vi.waitFor(() =>
+      expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled(),
+    );
+    const approval = spies.agentManager.publishDaemonApprovalRequested.mock.calls[0]?.[1];
+    if (!approval) throw new Error("Expected daemon approval request");
+    resolveDaemonApproval(agentManager, "caller-agent", approval.id, { behavior: "deny" });
+    await expect(request).rejects.toThrow("The user declined your request");
     expect(spies.agentManager.setAgentMode).not.toHaveBeenCalled();
   });
 
@@ -5475,9 +5540,10 @@ describe("send_agent_prompt reachability", () => {
       { callerAgentId: "parent-agent", targetAgentId: "unreachable-agent", wouldHaveDenied: true },
       "Agent prompt target is unreachable; would have denied",
     );
+    expect(spies.agentManager.publishDaemonApprovalRequested).not.toHaveBeenCalled();
   });
 
-  it("denies an unreachable agent-scoped target when enforcement is enabled", async () => {
+  it("asks before an unreachable agent-scoped send when enforcement is enabled", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     spies.agentManager.getAgent.mockReturnValue(
       createManagedAgent({ id: "parent-agent", cwd: "/tmp/caller", labels: {} }),
@@ -5499,14 +5565,92 @@ describe("send_agent_prompt reachability", () => {
       logger: createTestLogger(),
     });
 
-    await expect(
-      registeredTool(server, "send_agent_prompt").handler({
-        agentId: "unreachable-agent",
-        prompt: "Follow up",
+    const request = registeredTool(server, "send_agent_prompt").handler({
+      agentId: "unreachable-agent",
+      prompt: "Follow up",
+    });
+    await vi.waitFor(() =>
+      expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled(),
+    );
+    const approval = spies.agentManager.publishDaemonApprovalRequested.mock.calls[0]?.[1];
+    if (!approval) throw new Error("Expected daemon approval request");
+    resolveDaemonApproval(agentManager, "parent-agent", approval.id, { behavior: "allow" });
+    await request;
+    expect(spies.agentManager.streamAgent).toHaveBeenCalled();
+  });
+
+  it("refuses an unreachable send when the user denies the approval", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({ id: "parent-agent", cwd: "/tmp/caller", labels: {} }),
+    );
+    spies.agentStorage.get.mockResolvedValue(
+      createStoredRecord({
+        id: "unreachable-agent",
+        cwd: "/tmp/other",
+        labels: {},
+        archivedAt: null,
       }),
-    ).rejects.toThrow("ask the user to send it instead");
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      daemonConfigStore: daemonConfigStoreStub(undefined, true),
+      callerAgentId: "parent-agent",
+      logger: createTestLogger(),
+    });
+    const request = registeredTool(server, "send_agent_prompt").handler({
+      agentId: "unreachable-agent",
+      prompt: "Follow up",
+    });
+    await vi.waitFor(() =>
+      expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled(),
+    );
+    const approval = spies.agentManager.publishDaemonApprovalRequested.mock.calls[0]?.[1];
+    if (!approval) throw new Error("Expected daemon approval request");
+    resolveDaemonApproval(agentManager, "parent-agent", approval.id, { behavior: "deny" });
+    await expect(request).rejects.toThrow("The user declined the send");
     expect(spies.agentManager.streamAgent).not.toHaveBeenCalled();
-    expect(spies.agentManager.steerOrReplaceActiveTurn).not.toHaveBeenCalled();
+  });
+
+  it("does not send after the tool call is abandoned while approval is pending", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({ id: "parent-agent", cwd: "/tmp/caller", labels: {} }),
+    );
+    spies.agentStorage.get.mockResolvedValue(
+      createStoredRecord({
+        id: "unreachable-agent",
+        cwd: "/tmp/other",
+        labels: {},
+        archivedAt: null,
+      }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      daemonConfigStore: daemonConfigStoreStub(undefined, true),
+      callerAgentId: "parent-agent",
+      logger: createTestLogger(),
+    });
+    const controller = new AbortController();
+    const request = registeredTool(server, "send_agent_prompt").handler(
+      { agentId: "unreachable-agent", prompt: "Follow up" },
+      { signal: controller.signal },
+    );
+    await vi.waitFor(() =>
+      expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled(),
+    );
+    const approval = spies.agentManager.publishDaemonApprovalRequested.mock.calls[0]?.[1];
+    if (!approval) throw new Error("Expected daemon approval request");
+    controller.abort();
+    await expect(request).rejects.toThrow("The user declined the send");
+    expect(
+      resolveDaemonApproval(agentManager, "parent-agent", approval.id, { behavior: "allow" }),
+    ).toBe(false);
+    expect(spies.agentManager.streamAgent).not.toHaveBeenCalled();
   });
 
   it("closes the label-rewrite reachability bypass", async () => {
@@ -5545,12 +5689,17 @@ describe("send_agent_prompt reachability", () => {
     ).rejects.toThrow("Agent callers cannot set daemon-owned label");
     expect(targetRecord.labels[PARENT_AGENT_ID_LABEL]).toBeUndefined();
 
-    await expect(
-      registeredTool(server, "send_agent_prompt").handler({
-        agentId: "unreachable-agent",
-        prompt: "Follow up",
-      }),
-    ).rejects.toThrow("ask the user to send it instead");
+    const request = registeredTool(server, "send_agent_prompt").handler({
+      agentId: "unreachable-agent",
+      prompt: "Follow up",
+    });
+    await vi.waitFor(() =>
+      expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled(),
+    );
+    const approval = spies.agentManager.publishDaemonApprovalRequested.mock.calls[0]?.[1];
+    if (!approval) throw new Error("Expected daemon approval request");
+    resolveDaemonApproval(agentManager, "caller-agent", approval.id, { behavior: "deny" });
+    await expect(request).rejects.toThrow("The user declined the send");
     expect(spies.agentManager.streamAgent).not.toHaveBeenCalled();
   });
 
@@ -5586,6 +5735,7 @@ describe("send_agent_prompt reachability", () => {
     });
 
     expect(spies.agentManager.streamAgent).toHaveBeenCalled();
+    expect(spies.agentManager.publishDaemonApprovalRequested).not.toHaveBeenCalled();
   });
 
   it("never applies reachability to top-level callers", async () => {

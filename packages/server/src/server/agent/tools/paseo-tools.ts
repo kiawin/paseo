@@ -97,6 +97,7 @@ import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-confi
 import { isPaseoToolEnabled } from "../paseo-tool-policy.js";
 import { isOpenAgentTabLabel, PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { getAgentReachabilityRule } from "../peer-reachability.js";
+import { requestDaemonApproval } from "../daemon-approvals.js";
 
 export interface PaseoToolHostDependencies {
   agentManager: AgentManager;
@@ -385,12 +386,35 @@ function resolveScheduleUpdateProviderAndModel(params: {
   };
 }
 
-function assertAgentScopedCannotChangeMode(
+async function assertAgentScopedCannotChangeMode(
+  agentManager: AgentManager,
   callerAgentId: string | undefined,
+  targetAgentId: string,
   modeId: string | undefined,
-): void {
-  if (callerAgentId && modeId !== undefined) {
-    throw new Error("The session mode is set by the user; ask the user to change it.");
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!callerAgentId || modeId === undefined) return;
+
+  const selfChange = callerAgentId === targetAgentId;
+  const allowed = await requestDaemonApproval({
+    agentManager,
+    agentId: callerAgentId,
+    kind: "mode",
+    title: selfChange
+      ? `Allow your session mode to change to ${modeId}?`
+      : `Allow agent ${targetAgentId}'s session mode to change to ${modeId}?`,
+    description: selfChange
+      ? "The user-set session mode is already in effect. Your agent requested this change."
+      : `Your agent requested a session mode change for agent ${targetAgentId}.`,
+    metadata: { targetAgentId, modeId },
+    signal,
+  });
+  if (!allowed) {
+    throw new Error(
+      selfChange
+        ? `The user declined your request to change your session mode to ${modeId}.`
+        : `The user declined your request to change agent ${targetAgentId}'s session mode to ${modeId}.`,
+    );
   }
 }
 
@@ -408,13 +432,15 @@ function assertAgentScopedCannotSetReservedLabels(
   }
 }
 
-function enforceAgentPromptReachability(params: {
+async function enforceAgentPromptReachability(params: {
+  agentManager: AgentManager;
   callerAgentId: string;
   callerAgent: ManagedAgent;
   targetRecord: StoredAgentRecord;
   enforce: boolean;
   logger: Logger;
-}): void {
+  signal?: AbortSignal;
+}): Promise<void> {
   const reachabilityRule = getAgentReachabilityRule(params.callerAgent, params.targetRecord);
   if (reachabilityRule !== null) return;
 
@@ -424,9 +450,21 @@ function enforceAgentPromptReachability(params: {
     wouldHaveDenied: true,
   };
   if (params.enforce) {
-    throw new Error(
-      `Agent ${params.targetRecord.id} is not reachable from here (not your parent, child, sibling, or in your directory tree); ask the user to send it instead.`,
-    );
+    const allowed = await requestDaemonApproval({
+      agentManager: params.agentManager,
+      agentId: params.callerAgentId,
+      kind: "other",
+      title: `Allow sending to unreachable agent ${params.targetRecord.id}?`,
+      description: `Agent ${params.targetRecord.id} is not your parent, child, sibling, or in your directory tree.`,
+      metadata: { targetAgentId: params.targetRecord.id, reason: "unreachable" },
+      signal: params.signal,
+    });
+    if (!allowed) {
+      throw new Error(
+        `The user declined the send to agent ${params.targetRecord.id}; it is not reachable from here.`,
+      );
+    }
+    return;
   }
   params.logger.warn(warning, "Agent prompt target is unreachable; would have denied");
 }
@@ -439,6 +477,7 @@ function getReachabilityCallerAgent(
 }
 
 async function resolveSendAgentPromptTarget(params: {
+  agentManager: AgentManager;
   agentId: string;
   callerAgentId: string | undefined;
   sessionMode: string | undefined;
@@ -446,8 +485,15 @@ async function resolveSendAgentPromptTarget(params: {
   resolveCallerAgent: () => ManagedAgent | null;
   daemonConfigStore: Pick<DaemonConfigStore, "get"> | undefined;
   logger: Logger;
+  signal?: AbortSignal;
 }): Promise<void> {
-  assertAgentScopedCannotChangeMode(params.callerAgentId, params.sessionMode);
+  await assertAgentScopedCannotChangeMode(
+    params.agentManager,
+    params.callerAgentId,
+    params.agentId,
+    params.sessionMode,
+    params.signal,
+  );
   if (params.callerAgentId === params.agentId) {
     throw new Error("Cannot send a prompt to yourself; use your own turn instead");
   }
@@ -475,12 +521,14 @@ async function resolveSendAgentPromptTarget(params: {
       }
       params.logger.warn(warning, "Agent prompt caller identity unresolved; would have denied");
     } else {
-      enforceAgentPromptReachability({
+      await enforceAgentPromptReachability({
         callerAgentId: params.callerAgentId,
         callerAgent,
         targetRecord,
         enforce,
         logger: params.logger,
+        agentManager: params.agentManager,
+        signal: params.signal,
       });
     }
   }
@@ -1985,15 +2033,19 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         guidance: z.string().optional(),
       },
     },
-    async ({
-      agentId,
-      prompt,
-      sessionMode,
-      background = Boolean(callerAgentId),
-      notifyOnFinish = Boolean(callerAgentId),
-    }) => {
+    async (
+      {
+        agentId,
+        prompt,
+        sessionMode,
+        background = Boolean(callerAgentId),
+        notifyOnFinish = Boolean(callerAgentId),
+      },
+      context,
+    ) => {
       const shouldNotifyOnFinish = Boolean(callerAgentId && notifyOnFinish && background);
       await resolveSendAgentPromptTarget({
+        agentManager,
         agentId,
         callerAgentId,
         sessionMode,
@@ -2001,6 +2053,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         resolveCallerAgent: () => getReachabilityCallerAgent(agentManager, callerAgentId),
         daemonConfigStore,
         logger: childLogger,
+        signal: context.signal,
       });
 
       await sendPromptToAgent({
@@ -2270,9 +2323,15 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         success: z.boolean(),
       },
     },
-    async ({ agentId, name, labels, settings }) => {
+    async ({ agentId, name, labels, settings }, context) => {
       assertAgentScopedCannotSetReservedLabels(callerAgentId, labels);
-      assertAgentScopedCannotChangeMode(callerAgentId, settings?.modeId);
+      await assertAgentScopedCannotChangeMode(
+        agentManager,
+        callerAgentId,
+        agentId,
+        settings?.modeId,
+        context.signal,
+      );
       if (settings?.modeId !== undefined) {
         await agentManager.setAgentMode(agentId, settings.modeId);
       }
@@ -3285,8 +3344,14 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         newMode: z.string(),
       },
     },
-    async ({ agentId, modeId }) => {
-      assertAgentScopedCannotChangeMode(callerAgentId, modeId);
+    async ({ agentId, modeId }, context) => {
+      await assertAgentScopedCannotChangeMode(
+        agentManager,
+        callerAgentId,
+        agentId,
+        modeId,
+        context.signal,
+      );
       const result = await setAgentModeCommand({ agentManager }, { agentId, modeId });
       return {
         content: [],
@@ -3350,6 +3415,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         agentId,
         requestId,
         response,
+        callerAgentId,
         logger: childLogger,
       });
       return {
