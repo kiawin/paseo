@@ -136,9 +136,8 @@ export function shouldBypassBearerAuth(method: string, path: string): boolean {
  * Authenticates a request to the Agent MCP endpoint (/mcp/agents), which is
  * exempt from the global daemon-password middleware. A per-agent token resolves
  * to that agent; a valid daemon-password bearer resolves to the human user.
- * Missing credentials remain top-level user access when no daemon password is
- * configured, matching the daemon's passwordless behavior. Unknown credentials
- * are rejected when a password is configured.
+ * Missing or unknown credentials are rejected, including when no daemon
+ * password is configured.
  */
 export type AgentMcpPrincipal =
   | { kind: "agent"; agentId: string }
@@ -156,9 +155,6 @@ export async function resolveAgentMcpCaller(input: {
     if (agentId !== undefined) {
       return { kind: "agent", agentId };
     }
-  }
-  if (!input.password) {
-    return { kind: "user" };
   }
   if (input.password && (await isBearerTokenValidAsync({ password: input.password, token }))) {
     return { kind: "user" };
