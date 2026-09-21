@@ -139,6 +139,7 @@ import type {
 import type {
   AgentConfigApply,
   ArtifactRecordPayload,
+  NoteRecordPayload,
   MutableDaemonConfig,
   MutableDaemonConfigPatch,
 } from "@getpaseo/protocol/messages";
@@ -938,6 +939,39 @@ export interface DownloadArtifactResult {
   title: string | null;
   mimeType: string;
   size: number | null;
+}
+
+export interface SaveNoteInput {
+  projectId: string;
+  body: string;
+  noteId?: string | null;
+  requestId?: string;
+}
+
+export interface ReadNoteInput {
+  noteId: string;
+  projectId?: string;
+  requestId?: string;
+}
+
+export interface ReadNoteResult {
+  note: NoteRecordPayload;
+  body: string;
+}
+
+export interface SaveNoteResult {
+  note: NoteRecordPayload;
+  replacedRevision: number | null;
+}
+
+export class NoteDeleteError extends Error {
+  constructor(
+    message: string,
+    readonly currentRevision: number | null,
+  ) {
+    super(message);
+    this.name = "NoteDeleteError";
+  }
 }
 
 export interface UploadEntryInput {
@@ -2304,6 +2338,11 @@ export class DaemonClient {
       },
       options,
     );
+  }
+
+  /** Owns `note.changed` demand across reconnects and releases it with the returned handle. */
+  observeNoteChanges(options?: { signal?: AbortSignal; notifications?: boolean }) {
+    return this.observeEvents(["note.changed"], options);
   }
 
   observeAgents(
@@ -5159,6 +5198,87 @@ export class DaemonClient {
     });
     if (!payload.success) throw new Error(payload.error ?? "Failed to list artifacts.");
     return payload.artifacts;
+  }
+
+  /** Gate on `server_info.features.notes` before calling. */
+  async listNotes(projectId: string): Promise<NoteRecordPayload[]> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "note.list.request", projectId, requestId },
+      responseType: "note.list.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to list notes.");
+    return payload.notes;
+  }
+
+  /** Gate on `server_info.features.notes` before calling. */
+  async readNote(input: ReadNoteInput | string, projectId?: string): Promise<ReadNoteResult> {
+    const normalized = typeof input === "string" ? { noteId: input, projectId } : input;
+    const requestId = this.createRequestId(normalized.requestId);
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "note.read.request",
+        noteId: normalized.noteId,
+        ...(normalized.projectId ? { projectId: normalized.projectId } : {}),
+        requestId,
+      },
+      responseType: "note.read.response",
+    });
+    if (!payload.success || !payload.note || payload.body === null) {
+      throw new Error(payload.error ?? "Failed to read the note.");
+    }
+    return { note: payload.note, body: payload.body };
+  }
+
+  /** Gate on `server_info.features.notes` before calling. */
+  async saveNote(input: SaveNoteInput): Promise<SaveNoteResult> {
+    const requestId = this.createRequestId(input.requestId);
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "note.save.request",
+        projectId: input.projectId,
+        ...(input.noteId !== undefined ? { noteId: input.noteId } : {}),
+        body: input.body,
+        requestId,
+      },
+      responseType: "note.save.response",
+    });
+    if (!payload.success || !payload.note) {
+      throw new Error(payload.error ?? "Failed to save the note.");
+    }
+    return { note: payload.note, replacedRevision: payload.replacedRevision };
+  }
+
+  /** Gate on `server_info.features.notes` before calling. */
+  async deleteNote(
+    input: { noteId: string; expectedRevision: number; projectId?: string } | string,
+    expectedRevision?: number,
+  ): Promise<void> {
+    const normalized =
+      typeof input === "string"
+        ? { noteId: input, expectedRevision: expectedRevision as number }
+        : input;
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "note.delete.request",
+        noteId: normalized.noteId,
+        expectedRevision: normalized.expectedRevision,
+        ...(normalized.projectId ? { projectId: normalized.projectId } : {}),
+        requestId,
+      },
+      responseType: "note.delete.response",
+    });
+    if (!payload.success) {
+      throw new NoteDeleteError(
+        payload.error ?? "Failed to delete the note.",
+        payload.currentRevision,
+      );
+    }
   }
 
   /**

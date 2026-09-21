@@ -69,6 +69,22 @@ const manifests = {
     supportedHosts: ["main", "explorer"],
     resourceKey: (target) => target.artifactId,
   },
+  // The list is an Explorer view; a single note opens like a file, in either host.
+  notes: {
+    kind: "notes",
+    supportedHosts: ["explorer"],
+    resourceKey: () => "notes",
+  },
+  note_draft: {
+    kind: "note_draft",
+    supportedHosts: ["main", "explorer"],
+    resourceKey: (target) => `${target.serverId}:${target.draftId}`,
+  },
+  note: {
+    kind: "note",
+    supportedHosts: ["main", "explorer"],
+    resourceKey: (target) => `${target.serverId}:${target.noteId}`,
+  },
   file: {
     kind: "file",
     supportedHosts: ["main", "explorer"],

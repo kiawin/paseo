@@ -4,6 +4,7 @@ import {
   AgentTimelineItemPayloadSchema,
   WorkspaceGitHubRuntimePayloadSchema,
 } from "@getpaseo/protocol/messages";
+import type { NoteRecordPayload } from "@getpaseo/protocol/messages";
 import { AgentProviderSchema } from "@getpaseo/protocol/provider-manifest";
 import type { PluginTimelineData } from "@getpaseo/plugin";
 import {
@@ -66,6 +67,11 @@ export interface CachedTimeline {
   items: StreamItem[];
   range: AgentTimelineCursorState | null;
   hasOlder: boolean;
+}
+
+export interface CachedNoteMetadataRead {
+  notes: NoteRecordPayload[];
+  hasInvalidRows: boolean;
 }
 
 const PERSIST_DELAY_MS = 1_000;
@@ -335,6 +341,17 @@ const StoredProjectSchema = z.strictObject({
   projectKind: z.enum(["git", "non_git", "directory"]),
 });
 
+const StoredNoteMetadataSchema = z.strictObject({
+  noteId: z.string(),
+  projectId: z.string(),
+  displayTitle: z.string(),
+  size: z.number().int().nonnegative(),
+  contentSha256: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  revision: z.number().int().positive(),
+});
+
 const StoredTimelineSchema = z.strictObject({
   agentId: z.string(),
   items: z.array(StoredTimelineItemSchema),
@@ -354,6 +371,7 @@ type StoredTimelineItem = z.infer<typeof StoredTimelineItemSchema>;
 type StoredToolCall = Extract<StoredTimelineItem, { kind: "tool_call" }>["item"];
 type StoredWorkspace = z.infer<typeof StoredWorkspaceSchema>;
 type StoredProject = z.infer<typeof StoredProjectSchema>;
+type StoredNoteMetadata = z.infer<typeof StoredNoteMetadataSchema>;
 
 interface ReplicaCacheOptions {
   maxBytes?: number;
@@ -365,6 +383,7 @@ type StructuredReplicaUpsert =
   | { serverId: string; kind: "workspace"; id: string; value: WorkspaceDescriptor }
   | { serverId: string; kind: "project"; id: string; value: ProjectDescriptor }
   | { serverId: string; kind: "timeline"; id: string; value: CachedTimeline }
+  | { serverId: string; kind: "note"; id: string; value: NoteRecordPayload }
   | { serverId: string; kind: "checkpoint"; id: string; value: DirectoryCheckpoint };
 
 const DirectoryCursorSchema = z.strictObject({
@@ -669,6 +688,19 @@ function deserializeAgent(serverId: string, stored: StoredAgent): Agent {
   };
 }
 
+function serializeNoteMetadata(note: NoteRecordPayload): StoredNoteMetadata {
+  return {
+    noteId: note.noteId,
+    projectId: note.projectId,
+    displayTitle: note.displayTitle,
+    size: note.size,
+    contentSha256: note.contentSha256,
+    createdAt: note.createdAt,
+    updatedAt: note.updatedAt,
+    revision: note.revision,
+  };
+}
+
 function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
   return {
     id: workspace.id,
@@ -819,6 +851,7 @@ interface PendingReplicaChanges {
   upserts: StructuredReplicaUpsert[];
   deletes: ReplicaRowKey[];
   baselines: Set<string>;
+  noteBaselines: Map<string, { serverId: string; projectId: string }>;
 }
 
 function applyDirectoryRow(
@@ -863,6 +896,16 @@ function directoryEntityForRow(row: ReplicaRow): keyof DirectoryCheckpoint | und
   return undefined;
 }
 
+function noteProjectIdForRow(row: ReplicaRow): string | undefined {
+  if (row.kind !== "note") return undefined;
+  try {
+    const parsed = StoredNoteMetadataSchema.safeParse(parseJsonPayload(row.payload));
+    return parsed.success && parsed.data.noteId === row.id ? parsed.data.projectId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class ReplicaCache {
   private readonly activeServerIds = new Set<string>();
   private readonly hostRevisions = new Map<string, number>();
@@ -872,6 +915,7 @@ export class ReplicaCache {
   private pendingUpserts = new Map<string, StructuredReplicaUpsert>();
   private pendingDeletes = new Map<string, ReplicaRowKey>();
   private pendingBaselines = new Set<string>();
+  private pendingNoteBaselines = new Map<string, { serverId: string; projectId: string }>();
   private readonly invalidatedHosts = new Set<string>();
   private readonly maxBytes: number;
   private totalBytes = 0;
@@ -958,6 +1002,23 @@ export class ReplicaCache {
       await this.repairInvalidDirectoryRows(serverId, invalidRows, result.checkpoint);
     }
     return result;
+  }
+
+  async readNoteMetadata(serverId: string): Promise<CachedNoteMetadataRead> {
+    const rows = await this.readRows(serverId, ["note"]);
+    const notes: NoteRecordPayload[] = [];
+    const invalidRows: ReplicaRow[] = [];
+    for (const row of rows) {
+      try {
+        const stored = parseStoredPayload(StoredNoteMetadataSchema, row.payload);
+        if (stored.noteId !== row.id) throw new Error("Replica note row id mismatch");
+        notes.push(stored);
+      } catch {
+        invalidRows.push(row);
+      }
+    }
+    if (invalidRows.length > 0) await this.repairInvalidNoteRows(invalidRows);
+    return { notes, hasInvalidRows: invalidRows.length > 0 };
   }
 
   async readTimeline(serverId: string, agentId: string): Promise<CachedTimeline | undefined> {
@@ -1064,6 +1125,14 @@ export class ReplicaCache {
     });
   }
 
+  private async repairInvalidNoteRows(invalidRows: ReplicaRow[]): Promise<void> {
+    const changes: ReplicaRowChanges = { deletes: invalidRows, upserts: [] };
+    await this.queueOperation(async () => {
+      await this.rowStore.apply(changes);
+      this.applyStoredChanges(changes);
+    });
+  }
+
   commitDirectoryMutations(
     serverId: string,
     mutations: readonly DirectoryReplicaMutation[],
@@ -1098,12 +1167,14 @@ export class ReplicaCache {
   replaceDirectoryBaseline(serverId: string, directory: CachedDirectory): void {
     if (!this.activeServerIds.has(serverId)) return;
     this.advanceHostRevision(serverId);
-    // Replacing the directory must not discard independently accepted timeline changes.
+    // Replacing the directory must not discard independently accepted timeline or note changes.
     for (const [key, row] of this.pendingUpserts) {
-      if (row.serverId === serverId && row.kind !== "timeline") this.pendingUpserts.delete(key);
+      if (row.serverId === serverId && row.kind !== "timeline" && row.kind !== "note")
+        this.pendingUpserts.delete(key);
     }
     for (const [key, row] of this.pendingDeletes) {
-      if (row.serverId === serverId && row.kind !== "timeline") this.pendingDeletes.delete(key);
+      if (row.serverId === serverId && row.kind !== "timeline" && row.kind !== "note")
+        this.pendingDeletes.delete(key);
     }
     this.pendingBaselines.add(serverId);
     for (const [id, value] of directory.agents) {
@@ -1131,6 +1202,31 @@ export class ReplicaCache {
     if (timeline.agentId !== agentId) throw new Error("Timeline cache key does not match payload");
     this.advanceHostRevision(serverId);
     this.queueUpsert({ serverId, kind: "timeline", id: agentId, value: timeline });
+    this.schedulePersist();
+  }
+
+  replaceNoteMetadata(
+    serverId: string,
+    projectId: string,
+    notes: readonly NoteRecordPayload[],
+  ): void {
+    if (!this.activeServerIds.has(serverId)) return;
+    if (notes.some((note) => note.projectId !== projectId)) {
+      throw new Error("Note cache project key does not match payload");
+    }
+    this.advanceHostRevision(serverId);
+    const baselineKey = `${serverId}\u0000${projectId}`;
+    this.pendingNoteBaselines.set(baselineKey, { serverId, projectId });
+    for (const note of notes) {
+      this.queueUpsert({ serverId, kind: "note", id: note.noteId, value: note });
+    }
+    this.schedulePersist();
+  }
+
+  deleteNoteMetadata(serverId: string, noteId: string): void {
+    if (!this.activeServerIds.has(serverId)) return;
+    this.advanceHostRevision(serverId);
+    this.queueEntityDelete(serverId, "note", noteId);
     this.schedulePersist();
   }
 
@@ -1231,7 +1327,10 @@ export class ReplicaCache {
 
   private hasPendingChanges(): boolean {
     return (
-      this.pendingUpserts.size > 0 || this.pendingDeletes.size > 0 || this.pendingBaselines.size > 0
+      this.pendingUpserts.size > 0 ||
+      this.pendingDeletes.size > 0 ||
+      this.pendingBaselines.size > 0 ||
+      this.pendingNoteBaselines.size > 0
     );
   }
 
@@ -1245,6 +1344,9 @@ export class ReplicaCache {
 
   private hasPendingHostChanges(serverId: string): boolean {
     if (this.pendingBaselines.has(serverId)) return true;
+    for (const baseline of this.pendingNoteBaselines.values()) {
+      if (baseline.serverId === serverId) return true;
+    }
     for (const row of this.pendingUpserts.values()) {
       if (row.serverId === serverId) return true;
     }
@@ -1263,10 +1365,12 @@ export class ReplicaCache {
       upserts: [...this.pendingUpserts.values()],
       deletes: [...this.pendingDeletes.values()],
       baselines: this.pendingBaselines,
+      noteBaselines: this.pendingNoteBaselines,
     };
     this.pendingUpserts = new Map();
     this.pendingDeletes = new Map();
     this.pendingBaselines = new Set();
+    this.pendingNoteBaselines = new Map();
     return changes;
   }
 
@@ -1280,10 +1384,35 @@ export class ReplicaCache {
     }
     for (const serverId of pending.baselines) {
       const replacementKeys = new Set(
-        upserts.filter((row) => row.serverId === serverId && row.kind !== "timeline").map(rowKey),
+        upserts
+          .filter(
+            (row) => row.serverId === serverId && row.kind !== "timeline" && row.kind !== "note",
+          )
+          .map(rowKey),
       );
       for (const row of this.storedRows.get(serverId)?.values() ?? []) {
-        if (row.kind !== "timeline" && !replacementKeys.has(rowKey(row))) {
+        if (row.kind !== "timeline" && row.kind !== "note" && !replacementKeys.has(rowKey(row))) {
+          deletes.set(pendingRowKey(row), row);
+        }
+      }
+    }
+    for (const { serverId, projectId } of pending.noteBaselines.values()) {
+      const replacementKeys = new Set(
+        upserts
+          .filter(
+            (row) =>
+              row.serverId === serverId &&
+              row.kind === "note" &&
+              noteProjectIdForRow(row) === projectId,
+          )
+          .map(rowKey),
+      );
+      for (const row of this.storedRows.get(serverId)?.values() ?? []) {
+        if (
+          row.kind === "note" &&
+          noteProjectIdForRow(row) === projectId &&
+          !replacementKeys.has(rowKey(row))
+        ) {
           deletes.set(pendingRowKey(row), row);
         }
       }
@@ -1307,6 +1436,9 @@ export class ReplicaCache {
         value = serializeTimeline(upsert.value);
         if (!value) return null;
         break;
+      case "note":
+        value = serializeNoteMetadata(upsert.value);
+        break;
       case "checkpoint":
         value = upsert.value;
         break;
@@ -1322,6 +1454,12 @@ export class ReplicaCache {
   private restorePendingChanges(changes: PendingReplicaChanges): void {
     for (const serverId of changes.baselines) {
       if (this.activeServerIds.has(serverId)) this.pendingBaselines.add(serverId);
+    }
+    for (const baseline of changes.noteBaselines.values()) {
+      if (this.activeServerIds.has(baseline.serverId)) {
+        const key = `${baseline.serverId}\u0000${baseline.projectId}`;
+        this.pendingNoteBaselines.set(key, baseline);
+      }
     }
     for (const key of changes.deletes) {
       const pendingKey = pendingRowKey(key);
@@ -1445,6 +1583,9 @@ export class ReplicaCache {
 
   private dropPendingHostChanges(serverId: string): void {
     this.pendingBaselines.delete(serverId);
+    for (const [key, baseline] of this.pendingNoteBaselines) {
+      if (baseline.serverId === serverId) this.pendingNoteBaselines.delete(key);
+    }
     for (const [key, row] of this.pendingUpserts) {
       if (row.serverId === serverId) this.pendingUpserts.delete(key);
     }
@@ -1463,6 +1604,12 @@ export class ReplicaCache {
     }
     for (const serverId of changes.baselines) {
       this.pendingBaselines.add(serverId === oldServerId ? newServerId : serverId);
+    }
+    for (const baseline of changes.noteBaselines.values()) {
+      const nextBaseline =
+        baseline.serverId === oldServerId ? { ...baseline, serverId: newServerId } : baseline;
+      const nextKey = `${nextBaseline.serverId}\u0000${nextBaseline.projectId}`;
+      this.pendingNoteBaselines.set(nextKey, nextBaseline);
     }
     if (this.invalidatedHosts.delete(oldServerId)) this.invalidatedHosts.add(newServerId);
   }

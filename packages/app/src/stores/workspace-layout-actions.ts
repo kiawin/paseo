@@ -1105,7 +1105,11 @@ export function collectAllPanes(root: SplitNode): SplitPane[] {
 }
 
 function isEphemeralTab(tab: WorkspaceTab): boolean {
-  return tab.target.kind === "commit_diff" || tab.target.kind === "new_tab";
+  return (
+    tab.target.kind === "commit_diff" ||
+    tab.target.kind === "new_tab" ||
+    tab.target.kind === "note_draft"
+  );
 }
 
 function stripEphemeralTabsFromNode(node: SplitNodeInternal): SplitNodeInternal {
@@ -1894,6 +1898,51 @@ export function convertDraftToAgentInLayout(
     };
   }
 
+  return {
+    tabId: canonicalTabId,
+    layout: withNormalizedParentTabMap({
+      root: replaceTabInTree(layout.root, {
+        tabId: input.tabId,
+        nextTabId: canonicalTabId,
+        target,
+      }),
+      focusedPaneId: layout.focusedPaneId,
+      parentTabIdByTabId: input.layout.parentTabIdByTabId,
+    }),
+  };
+}
+
+interface ConvertNoteDraftToNoteInLayoutInput {
+  layout: WorkspaceLayout;
+  tabId: string;
+  serverId: string;
+  noteId: string;
+}
+
+interface ConvertNoteDraftToNoteInLayoutResult {
+  layout: WorkspaceLayout;
+  tabId: string;
+}
+
+export function convertNoteDraftToNoteInLayout(
+  input: ConvertNoteDraftToNoteInLayoutInput,
+): ConvertNoteDraftToNoteInLayoutResult | null {
+  const layout = asInternalLayout(input.layout);
+  const currentTab = collectAllTabs(layout.root).find((tab) => tab.tabId === input.tabId) ?? null;
+  if (
+    !currentTab ||
+    currentTab.target.kind !== "note_draft" ||
+    currentTab.target.serverId !== input.serverId
+  ) {
+    return null;
+  }
+
+  const target: WorkspaceTabTarget = {
+    kind: "note",
+    serverId: input.serverId,
+    noteId: input.noteId,
+  };
+  const canonicalTabId = buildDeterministicWorkspaceTabId(target);
   return {
     tabId: canonicalTabId,
     layout: withNormalizedParentTabMap({

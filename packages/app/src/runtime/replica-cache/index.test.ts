@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceDescriptorPayload } from "@getpaseo/protocol/messages";
+import type { NoteRecordPayload, WorkspaceDescriptorPayload } from "@getpaseo/protocol/messages";
 import {
   normalizeProjectDescriptor,
   normalizeWorkspaceDescriptor,
@@ -169,6 +169,23 @@ function workspacePayload(): WorkspaceDescriptorPayload {
   };
 }
 
+function noteMetadata(
+  noteId = "note-1",
+  projectId = "project-1",
+  displayTitle = "Cached note",
+): NoteRecordPayload {
+  return {
+    noteId,
+    projectId,
+    displayTitle,
+    size: displayTitle.length,
+    contentSha256: `sha-${noteId}`,
+    createdAt: "2026-07-18T08:00:00.000Z",
+    updatedAt: "2026-07-18T08:01:00.000Z",
+    revision: 1,
+  };
+}
+
 function timelineItem(text = "Cached"): StreamItem {
   return {
     kind: "assistant_message",
@@ -273,6 +290,50 @@ describe("ReplicaCache", () => {
     expect(restoredDirectory.projects.get("project-1")?.projectDisplayName).toBe("Paseo");
     expect(restoredDirectory.checkpoint).toEqual({ agents: { generation: "g", afterSeq: 12 } });
     expect(restoredTimeline).toEqual(timeline());
+  });
+
+  it("round-trips note metadata without caching bodies or crossing project baselines", async () => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const withBody = { ...noteMetadata(), body: "must not be cached" } as NoteRecordPayload & {
+      body: string;
+    };
+    writer.replaceNoteMetadata(SERVER_ID, "project-1", [withBody]);
+    writer.replaceNoteMetadata(SERVER_ID, "project-2", [noteMetadata("note-2", "project-2")]);
+    await writer.flush();
+
+    const noteRow = [...storage.rows.values()].find(
+      (row) => row.kind === "note" && row.id === "note-1",
+    );
+    expect(noteRow?.payload).not.toContain("must not be cached");
+    expect(await createCache(storage).readNoteMetadata(SERVER_ID)).toEqual({
+      notes: [noteMetadata(), noteMetadata("note-2", "project-2")],
+      hasInvalidRows: false,
+    });
+
+    writer.replaceNoteMetadata(SERVER_ID, "project-1", []);
+    await writer.flush();
+    expect(await createCache(storage).readNoteMetadata(SERVER_ID)).toEqual({
+      notes: [noteMetadata("note-2", "project-2")],
+      hasInvalidRows: false,
+    });
+  });
+
+  it("repairs invalid note rows instead of returning them", async () => {
+    const storage = new MemoryStorage();
+    storage.rows.set(`${SERVER_ID}:note:note-1`, {
+      serverId: SERVER_ID,
+      kind: "note",
+      id: "note-1",
+      payload: "{bad",
+    });
+    const cache = createCache(storage);
+
+    await expect(cache.readNoteMetadata(SERVER_ID)).resolves.toEqual({
+      notes: [],
+      hasInvalidRows: true,
+    });
+    expect(storage.rows.has(`${SERVER_ID}:note:note-1`)).toBe(false);
   });
 
   it("preserves pending timeline updates across directory baseline replacement", async () => {
