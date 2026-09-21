@@ -1260,6 +1260,8 @@ export const ja: TranslationResources = {
         rename: "ワークスペースの名前を変更",
         pin: "上部に固定",
         unpin: "固定解除",
+        enableAgentTools: "Enable Paseo tools (next launch)",
+        disableAgentTools: "Disable Paseo tools (next launch)",
         archive: "アーカイブ",
         archiveWorkspace: "ワークスペースをアーカイブ",
         hideFromSidebar: "サイドバーから非表示",

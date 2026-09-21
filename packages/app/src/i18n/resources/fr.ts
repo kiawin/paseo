@@ -1282,6 +1282,8 @@ export const fr: TranslationResources = {
         rename: "Renommer l'espace de travail",
         pin: "Épingler en haut",
         unpin: "Désépingler",
+        enableAgentTools: "Enable Paseo tools (next launch)",
+        disableAgentTools: "Disable Paseo tools (next launch)",
         archive: "Archive",
         archiveWorkspace: "Archiver l’espace de travail",
         hideFromSidebar: "Masquer de la barre latérale",

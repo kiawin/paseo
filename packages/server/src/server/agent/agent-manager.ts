@@ -346,6 +346,7 @@ export interface AgentManagerOptions {
   paseoToolsEnabled?: boolean;
   paseoToolCatalogFactory?: PaseoToolCatalogFactory;
   resolvePaseoToolPolicy?: (provider: AgentProvider) => ProviderPaseoToolsPolicy | undefined;
+  resolveWorkspaceAgentToolsEnabled?: (workspaceId: string) => Promise<boolean | undefined>;
   appendSystemPrompt?: string;
   agentStreamCoalesceWindowMs?: number;
   rescueTimeouts?: AgentManagerRescueTimeouts;
@@ -763,6 +764,9 @@ export class AgentManager {
   private readonly resolvePaseoToolPolicy: (
     provider: AgentProvider,
   ) => ProviderPaseoToolsPolicy | undefined;
+  private resolveWorkspaceAgentToolsEnabled: NonNullable<
+    AgentManagerOptions["resolveWorkspaceAgentToolsEnabled"]
+  > = async () => undefined;
   private appendSystemPrompt: string;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
@@ -811,6 +815,8 @@ export class AgentManager {
   private configurePaseoTools(options: AgentManagerOptions): void {
     this.paseoToolsEnabled = options.paseoToolsEnabled ?? true;
     this.paseoToolCatalogFactory = options.paseoToolCatalogFactory ?? null;
+    this.resolveWorkspaceAgentToolsEnabled =
+      options.resolveWorkspaceAgentToolsEnabled ?? (async () => undefined);
   }
 
   private createPaseoToolPolicyResolver(
@@ -1277,7 +1283,7 @@ export class AgentManager {
     const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
       config,
       resolvedAgentId,
-      { env: options?.env },
+      { env: options?.env, workspaceId: options?.workspaceId },
     );
     this.requireEnabledProvider(storedConfig.provider);
     const client = await this.requireAvailableClient({
@@ -1392,7 +1398,7 @@ export class AgentManager {
     const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
       mergedConfig,
       resolvedAgentId,
-      { purpose },
+      { purpose, workspaceId: options?.workspaceId },
     );
     const client = this.requireClient(handle.provider);
     const available = await client.isAvailable();
@@ -1461,6 +1467,7 @@ export class AgentManager {
         cwd: input.cwd,
       },
       resolvedAgentId,
+      { workspaceId: input.workspaceId },
     );
     this.paseoToolPolicies.set(resolvedAgentId, paseoToolPolicy);
     const launchContext = await this.buildLaunchContext(
@@ -1555,6 +1562,7 @@ export class AgentManager {
     const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
       refreshConfig,
       agentId,
+      { workspaceId: existing.workspaceId },
     );
     const hadPreviousPaseoToolPolicy = this.paseoToolPolicies.has(agentId);
     const previousPaseoToolPolicy = this.paseoToolPolicies.get(agentId);
@@ -5164,13 +5172,21 @@ export class AgentManager {
   private async prepareSessionConfig(
     config: AgentSessionConfig,
     agentId: string,
-    options: { env?: Record<string, string>; purpose?: AgentResumePurpose } = {},
+    options: {
+      env?: Record<string, string>;
+      purpose?: AgentResumePurpose;
+      workspaceId?: string;
+    } = {},
   ): Promise<PreparedSessionConfig> {
     const storedConfig = await this.normalizeConfig(stripInternalPaseoMcpServer(config), {
       env: options.env,
       purpose: options.purpose,
     });
-    const paseoToolPolicy = this.paseoToolsEnabled
+    const paseoToolsEnabled =
+      this.paseoToolsEnabled &&
+      (options.workspaceId === undefined ||
+        (await this.resolveWorkspaceAgentToolsEnabled(options.workspaceId)) !== false);
+    const paseoToolPolicy = paseoToolsEnabled
       ? this.resolvePaseoToolPolicy(storedConfig.provider)
       : { enabled: false };
     const launchConfig = this.applyDaemonAppendSystemPrompt(
@@ -5178,9 +5194,7 @@ export class AgentManager {
         config: storedConfig,
         agentId,
         mcpBaseUrl:
-          this.paseoToolsEnabled && isPaseoToolPolicyEnabled(paseoToolPolicy)
-            ? this.mcpBaseUrl
-            : null,
+          paseoToolsEnabled && isPaseoToolPolicyEnabled(paseoToolPolicy) ? this.mcpBaseUrl : null,
         mcpAuthToken: this.mcpAuthToken,
       }),
     );
@@ -5235,6 +5249,8 @@ export class AgentManager {
     };
     if (
       this.paseoToolsEnabled &&
+      (opening?.workspaceId == null ||
+        (await this.resolveWorkspaceAgentToolsEnabled(opening.workspaceId)) !== false) &&
       isPaseoToolPolicyEnabled(paseoToolPolicy) &&
       client.capabilities.supportsNativePaseoTools &&
       this.paseoToolCatalogFactory

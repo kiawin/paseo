@@ -1254,6 +1254,8 @@ export const en = {
         rename: "Rename workspace",
         pin: "Pin to top",
         unpin: "Unpin",
+        enableAgentTools: "Enable Paseo tools (next launch)",
+        disableAgentTools: "Disable Paseo tools (next launch)",
         archive: "Archive",
         archiveWorkspace: "Archive workspace",
         hideFromSidebar: "Hide from sidebar",

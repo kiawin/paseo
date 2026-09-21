@@ -3326,6 +3326,109 @@ test("keeps the global Paseo-tools gate outside provider policy and MCP injectio
   rmSync(workdir, { recursive: true, force: true });
 });
 
+test("workspace agent tools gate disables native and MCP catalogs with host precedence", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-workspace-tools-test-"));
+  const paseoTools: PaseoToolCatalog = {
+    tools: new Map(),
+    getTool: () => undefined,
+    executeTool: async () => {
+      throw new Error("No tools registered in test catalog");
+    },
+  };
+
+  class CaptureClient extends TestAgentClient {
+    override readonly capabilities = {
+      ...TEST_CAPABILITIES,
+      supportsMcpServers: true,
+      supportsNativePaseoTools: true,
+    };
+    lastConfig: AgentSessionConfig | null = null;
+    lastLaunchContext: AgentLaunchContext | undefined;
+
+    override async createSession(
+      config: AgentSessionConfig,
+      launchContext?: AgentLaunchContext,
+    ): Promise<AgentSession> {
+      this.lastConfig = config;
+      this.lastLaunchContext = launchContext;
+      return new TestAgentSession(config);
+    }
+  }
+
+  const createManager = (options: {
+    paseoToolsEnabled?: boolean;
+    workspaceAgentToolsEnabled?: boolean;
+    supportsNativePaseoTools?: boolean;
+  }) => {
+    const client = new CaptureClient();
+    if (!options.supportsNativePaseoTools) {
+      (client.capabilities as { supportsNativePaseoTools?: boolean }).supportsNativePaseoTools =
+        false;
+    }
+    const manager = new AgentManager({
+      clients: { codex: client },
+      registry: new AgentStorage(join(workdir, "agents"), logger),
+      mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
+      paseoToolsEnabled: options.paseoToolsEnabled,
+      resolvePaseoToolPolicy: () => ({ enabled: true }),
+      resolveWorkspaceAgentToolsEnabled: async () => options.workspaceAgentToolsEnabled,
+      paseoToolCatalogFactory: async () => paseoTools,
+      logger,
+    });
+    return { client, manager };
+  };
+
+  try {
+    const inheritedMcp = createManager({});
+    await inheritedMcp.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-inherit",
+    });
+    expect(inheritedMcp.client.lastConfig?.mcpServers?.paseo).toBeDefined();
+
+    const inheritedNative = createManager({ supportsNativePaseoTools: true });
+    await inheritedNative.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-inherit-native",
+    });
+    expect(inheritedNative.client.lastLaunchContext?.paseoTools).toBe(paseoTools);
+
+    const optedOutMcp = createManager({ workspaceAgentToolsEnabled: false });
+    await optedOutMcp.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-opted-out",
+    });
+    expect(optedOutMcp.client.lastConfig?.mcpServers?.paseo).toBeUndefined();
+
+    const optedOutNative = createManager({
+      workspaceAgentToolsEnabled: false,
+      supportsNativePaseoTools: true,
+    });
+    await optedOutNative.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-opted-out-native",
+    });
+    expect(optedOutNative.client.lastLaunchContext?.paseoTools).toBeUndefined();
+
+    const hostOffMcp = createManager({
+      paseoToolsEnabled: false,
+      workspaceAgentToolsEnabled: true,
+    });
+    await hostOffMcp.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-host-off",
+    });
+    expect(hostOffMcp.client.lastConfig?.mcpServers?.paseo).toBeUndefined();
+
+    const hostOffNative = createManager({
+      paseoToolsEnabled: false,
+      workspaceAgentToolsEnabled: true,
+      supportsNativePaseoTools: true,
+    });
+    await hostOffNative.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-host-off-native",
+    });
+    expect(hostOffNative.client.lastLaunchContext?.paseoTools).toBeUndefined();
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("resumeAgentFromPersistence replaces stored internal paseo MCP with current runtime URL", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storagePath = join(workdir, "agents");

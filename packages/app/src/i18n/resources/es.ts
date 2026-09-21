@@ -1282,6 +1282,8 @@ export const es: TranslationResources = {
         rename: "Cambiar nombre del espacio de trabajo",
         pin: "Anclar arriba",
         unpin: "Desanclar",
+        enableAgentTools: "Enable Paseo tools (next launch)",
+        disableAgentTools: "Disable Paseo tools (next launch)",
         archive: "Archivo",
         archiveWorkspace: "Archivar espacio de trabajo",
         hideFromSidebar: "Ocultar de la barra lateral",

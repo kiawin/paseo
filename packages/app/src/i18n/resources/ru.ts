@@ -1264,6 +1264,8 @@ export const ru: TranslationResources = {
         rename: "Переименовать рабочее пространство",
         pin: "Закрепить вверху",
         unpin: "Открепить",
+        enableAgentTools: "Enable Paseo tools (next launch)",
+        disableAgentTools: "Disable Paseo tools (next launch)",
         archive: "Архивировать",
         archiveWorkspace: "Архивировать рабочее пространство",
         hideFromSidebar: "Скрыть на боковой панели",

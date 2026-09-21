@@ -1272,6 +1272,8 @@ export const ptBR: TranslationResources = {
         rename: "Renomear workspace",
         pin: "Fixar no topo",
         unpin: "Desafixar",
+        enableAgentTools: "Enable Paseo tools (next launch)",
+        disableAgentTools: "Disable Paseo tools (next launch)",
         archive: "Arquivar",
         archiveWorkspace: "Arquivar workspace",
         hideFromSidebar: "Ocultar da barra lateral",

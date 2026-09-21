@@ -1246,6 +1246,8 @@ export const ar: TranslationResources = {
         rename: "إعادة تسمية مساحة العمل",
         pin: "تثبيت في الأعلى",
         unpin: "إلغاء التثبيت",
+        enableAgentTools: "Enable Paseo tools (next launch)",
+        disableAgentTools: "Disable Paseo tools (next launch)",
         archive: "أرشيف",
         archiveWorkspace: "أرشفة مساحة العمل",
         hideFromSidebar: "إخفاء من الشريط الجانبي",

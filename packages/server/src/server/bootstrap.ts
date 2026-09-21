@@ -971,6 +971,8 @@ export async function createPaseoDaemon(
     mcpAuthToken: agentMcpAuthToken,
     resolvePaseoToolPolicy: (provider) =>
       resolvePaseoToolPolicy(provider, daemonConfigStore.get().providers),
+    resolveWorkspaceAgentToolsEnabled: async (workspaceId) =>
+      (await workspaceRegistry?.get(workspaceId))?.agentToolsEnabled,
     logger,
   });
   const syncPluginProviders = () => {
