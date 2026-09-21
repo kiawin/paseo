@@ -448,6 +448,7 @@ export interface PaseoDaemonConfig {
     }>;
   };
   peerMessagingEnforceReachability?: boolean;
+  peerMessagingCwdReachability?: boolean;
   providerOverrides?: Record<string, ProviderOverride>;
   log?: PersistedConfig["log"];
   onLifecycleIntent?: (intent: DaemonLifecycleIntent) => void;
@@ -571,7 +572,10 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
 
 function createMutableAgentConfig(config: PaseoDaemonConfig): MutableDaemonConfig["agents"] {
   return {
-    peerMessaging: { enforceReachability: config.peerMessagingEnforceReachability ?? false },
+    peerMessaging: {
+      enforceReachability: config.peerMessagingEnforceReachability ?? false,
+      cwdReachability: config.peerMessagingCwdReachability ?? true,
+    },
   };
 }
 

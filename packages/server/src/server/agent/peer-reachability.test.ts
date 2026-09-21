@@ -15,6 +15,7 @@ describe("getAgentReachabilityRule", () => {
       getAgentReachabilityRule(
         caller,
         target({ id: "child", labels: { [PARENT_AGENT_ID_LABEL]: "caller" } }),
+        true,
       ),
     ).toBe("child");
   });
@@ -24,6 +25,7 @@ describe("getAgentReachabilityRule", () => {
       getAgentReachabilityRule(
         { ...caller, labels: { [PARENT_AGENT_ID_LABEL]: "target" } },
         target(),
+        true,
       ),
     ).toBe("parent");
   });
@@ -33,22 +35,42 @@ describe("getAgentReachabilityRule", () => {
       getAgentReachabilityRule(
         { ...caller, labels: { [PARENT_AGENT_ID_LABEL]: "committee" } },
         target({ labels: { [PARENT_AGENT_ID_LABEL]: "committee" } }),
+        true,
       ),
     ).toBe("sibling");
   });
 
   it("allows the cwd relationship", () => {
-    expect(getAgentReachabilityRule(caller, target({ cwd: "/repo/nested" }))).toBe("cwd");
+    expect(getAgentReachabilityRule(caller, target({ cwd: "/repo/nested" }), true)).toBe("cwd");
+    expect(getAgentReachabilityRule(caller, target({ cwd: "/repo/nested" }), false)).toBeNull();
   });
 
   it("does not treat two parentless agents as siblings", () => {
-    expect(getAgentReachabilityRule(caller, target())).toBeNull();
+    expect(getAgentReachabilityRule(caller, target(), true)).toBeNull();
+    expect(getAgentReachabilityRule(caller, target(), false)).toBeNull();
   });
 
   it("only allows the target inside the caller cwd", () => {
-    expect(getAgentReachabilityRule(caller, target({ cwd: "/repo/nested" }))).toBe("cwd");
+    expect(getAgentReachabilityRule(caller, target({ cwd: "/repo/nested" }), true)).toBe("cwd");
     expect(
-      getAgentReachabilityRule({ ...caller, cwd: "/repo/nested" }, target({ cwd: "/repo" })),
+      getAgentReachabilityRule({ ...caller, cwd: "/repo/nested" }, target({ cwd: "/repo" }), true),
     ).toBeNull();
   });
+
+  it.each([true, false])(
+    "lineage rules are unaffected when cwdReachability=%s",
+    (cwdReachability) => {
+      expect(
+        getAgentReachabilityRule(
+          caller,
+          target({
+            id: "child",
+            labels: { [PARENT_AGENT_ID_LABEL]: "caller" },
+            cwd: "/repo/nested",
+          }),
+          cwdReachability,
+        ),
+      ).toBe("child");
+    },
+  );
 });

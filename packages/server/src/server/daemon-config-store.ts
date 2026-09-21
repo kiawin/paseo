@@ -23,7 +23,7 @@ interface SupportedMutableConfigPatch {
   providers?: MutableDaemonConfig["providers"];
   removeProviders?: string[];
   metadataGeneration?: MutableDaemonConfig["metadataGeneration"];
-  agents?: MutableDaemonConfig["agents"];
+  agents?: MutableDaemonConfigPatch["agents"];
   autoArchiveAfterMerge?: boolean;
   enableTerminalAgentHooks?: boolean;
   appendSystemPrompt?: string;
@@ -189,6 +189,7 @@ const RELOADABLE_PATHS = [
   "agents.catalogRefreshTimeoutMs",
   "agents.metadataGeneration",
   "agents.peerMessaging.enforceReachability",
+  "agents.peerMessaging.cwdReachability",
   "agents.skills.selection",
   "pluginsEnabled",
 ] as const;
@@ -213,6 +214,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["agents.catalogRefreshTimeoutMs", "catalogRefreshTimeoutMs"],
   ["agents.metadataGeneration", "metadataGeneration"],
   ["agents.peerMessaging.enforceReachability", "agents.peerMessaging.enforceReachability"],
+  ["agents.peerMessaging.cwdReachability", "agents.peerMessaging.cwdReachability"],
   ["agents.skills.selection", "skills.selection"],
   ["pluginsEnabled", "pluginsEnabled"],
 ]);
@@ -287,9 +289,17 @@ function pickPeerMessagingPatch(
   patch: MutableDaemonConfigPatch,
 ): Pick<SupportedMutableConfigPatch, "agents"> | undefined {
   const enforceReachability = patch.agents?.peerMessaging?.enforceReachability;
-  return enforceReachability === undefined
+  const cwdReachability = patch.agents?.peerMessaging?.cwdReachability;
+  return enforceReachability === undefined && cwdReachability === undefined
     ? undefined
-    : { agents: { peerMessaging: { enforceReachability } } };
+    : {
+        agents: {
+          peerMessaging: {
+            ...(enforceReachability !== undefined ? { enforceReachability } : {}),
+            ...(cwdReachability !== undefined ? { cwdReachability } : {}),
+          },
+        },
+      };
 }
 
 export function applyMutableProviderConfigToOverrides(

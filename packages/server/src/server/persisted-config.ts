@@ -315,7 +315,10 @@ export const PersistedConfigSchema = z
         catalogRefreshTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),
         metadataGeneration: AgentMetadataGenerationSchema.optional(),
         peerMessaging: z
-          .object({ enforceReachability: z.boolean().optional() })
+          .object({
+            enforceReachability: z.boolean().optional(),
+            cwdReachability: z.boolean().optional(),
+          })
           .strict()
           .optional(),
         skills: z.object({ selection: AgentSkillSelectionSchema.optional() }).strict().optional(),

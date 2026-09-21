@@ -198,7 +198,10 @@ export const MutableDaemonConfigSchema = z
     agents: z
       .object({
         peerMessaging: z
-          .object({ enforceReachability: z.boolean().default(false) })
+          .object({
+            enforceReachability: z.boolean().default(false),
+            cwdReachability: z.boolean().default(true),
+          })
           .passthrough()
           .optional(),
       })
@@ -231,7 +234,10 @@ export const MutableDaemonConfigPatchSchema = z
     agents: z
       .object({
         peerMessaging: z
-          .object({ enforceReachability: z.boolean().optional() })
+          .object({
+            enforceReachability: z.boolean().optional(),
+            cwdReachability: z.boolean().optional(),
+          })
           .passthrough()
           .optional(),
       })

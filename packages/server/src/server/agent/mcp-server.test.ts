@@ -5375,11 +5375,12 @@ describe("provider listing MCP tool", () => {
 function daemonConfigStoreStub(
   agentProfiles?: AgentProfile[],
   enforceReachability = false,
+  cwdReachability = true,
 ): Pick<DaemonConfigStore, "get"> {
   const config = MutableDaemonConfigSchema.parse({
     relay: { enabled: true },
     mcp: { injectIntoAgents: true },
-    agents: { peerMessaging: { enforceReachability } },
+    agents: { peerMessaging: { enforceReachability, cwdReachability } },
     ...(agentProfiles !== undefined ? { agentProfiles } : {}),
   });
   return { get: () => config };
@@ -5703,8 +5704,83 @@ describe("send_agent_prompt reachability", () => {
     expect(spies.agentManager.streamAgent).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { enforceReachability: false, cwdReachability: true, needsApproval: false },
+    { enforceReachability: true, cwdReachability: true, needsApproval: false },
+    { enforceReachability: false, cwdReachability: false, needsApproval: false },
+    { enforceReachability: true, cwdReachability: false, needsApproval: true },
+  ])(
+    "handles cwd-only sends with enforceReachability=$enforceReachability and cwdReachability=$cwdReachability",
+    async ({ enforceReachability, cwdReachability, needsApproval }) => {
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      const testLogger = createTestLogger();
+      const info = vi.spyOn(testLogger, "info");
+      const warning = vi.spyOn(testLogger, "warn");
+      spies.agentManager.getAgent.mockReturnValue(
+        createManagedAgent({ id: "caller-agent", cwd: "/tmp/caller", labels: {} }),
+      );
+      spies.agentStorage.get.mockResolvedValue(
+        createStoredRecord({
+          id: "cwd-agent",
+          cwd: "/tmp/caller/child",
+          labels: {},
+          archivedAt: null,
+        }),
+      );
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        daemonConfigStore: daemonConfigStoreStub(undefined, enforceReachability, cwdReachability),
+        callerAgentId: "caller-agent",
+        logger: testLogger,
+      });
+
+      const request = registeredTool(server, "send_agent_prompt").handler({
+        agentId: "cwd-agent",
+        prompt: "Follow up",
+      });
+      if (needsApproval) {
+        await vi.waitFor(() =>
+          expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled(),
+        );
+        const approval = spies.agentManager.publishDaemonApprovalRequested.mock.calls[0]?.[1];
+        if (!approval) throw new Error("Expected daemon approval request");
+        resolveDaemonApproval(agentManager, "caller-agent", approval.id, { behavior: "allow" });
+      }
+      await request;
+
+      expect(spies.agentManager.streamAgent).toHaveBeenCalled();
+      if (cwdReachability) {
+        expect(info).toHaveBeenCalledWith(
+          {
+            callerAgentId: "caller-agent",
+            targetAgentId: "cwd-agent",
+            callerCwd: "/tmp/caller",
+            targetCwd: "/tmp/caller/child",
+          },
+          "Agent prompt target reachable only by cwd rule",
+        );
+        expect(warning).not.toHaveBeenCalled();
+        expect(spies.agentManager.publishDaemonApprovalRequested).not.toHaveBeenCalled();
+      } else {
+        expect(info).not.toHaveBeenCalled();
+        if (enforceReachability) {
+          expect(spies.agentManager.publishDaemonApprovalRequested).toHaveBeenCalled();
+        } else {
+          expect(warning).toHaveBeenCalledWith(
+            { callerAgentId: "caller-agent", targetAgentId: "cwd-agent", wouldHaveDenied: true },
+            "Agent prompt target is unreachable; would have denied",
+          );
+        }
+      }
+    },
+  );
+
   it("allows a reachable target when enforcement is enabled", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
+    const testLogger = createTestLogger();
+    const info = vi.spyOn(testLogger, "info");
     spies.agentManager.getAgent.mockImplementation((agentId: string) =>
       createManagedAgent({
         id: agentId,
@@ -5726,7 +5802,7 @@ describe("send_agent_prompt reachability", () => {
       providerSnapshotManager: createOpenCodeManager().manager,
       daemonConfigStore: daemonConfigStoreStub(undefined, true),
       callerAgentId: "parent-agent",
-      logger: createTestLogger(),
+      logger: testLogger,
     });
 
     await registeredTool(server, "send_agent_prompt").handler({
@@ -5736,6 +5812,7 @@ describe("send_agent_prompt reachability", () => {
 
     expect(spies.agentManager.streamAgent).toHaveBeenCalled();
     expect(spies.agentManager.publishDaemonApprovalRequested).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
   });
 
   it("never applies reachability to top-level callers", async () => {

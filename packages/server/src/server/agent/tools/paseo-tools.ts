@@ -438,10 +438,26 @@ async function enforceAgentPromptReachability(params: {
   callerAgent: ManagedAgent;
   targetRecord: StoredAgentRecord;
   enforce: boolean;
+  cwdReachability: boolean;
   logger: Logger;
   signal?: AbortSignal;
 }): Promise<void> {
-  const reachabilityRule = getAgentReachabilityRule(params.callerAgent, params.targetRecord);
+  const reachabilityRule = getAgentReachabilityRule(
+    params.callerAgent,
+    params.targetRecord,
+    params.cwdReachability,
+  );
+  if (reachabilityRule === "cwd") {
+    params.logger.info(
+      {
+        callerAgentId: params.callerAgentId,
+        targetAgentId: params.targetRecord.id,
+        callerCwd: params.callerAgent.cwd,
+        targetCwd: params.targetRecord.cwd,
+      },
+      "Agent prompt target reachable only by cwd rule",
+    );
+  }
   if (reachabilityRule !== null) return;
 
   const warning = {
@@ -508,6 +524,8 @@ async function resolveSendAgentPromptTarget(params: {
     const callerAgent = params.resolveCallerAgent();
     const enforce =
       params.daemonConfigStore?.get().agents?.peerMessaging?.enforceReachability ?? false;
+    const cwdReachability =
+      params.daemonConfigStore?.get().agents?.peerMessaging?.cwdReachability ?? true;
     if (!callerAgent) {
       const warning = {
         callerAgentId: params.callerAgentId,
@@ -526,6 +544,7 @@ async function resolveSendAgentPromptTarget(params: {
         callerAgent,
         targetRecord,
         enforce,
+        cwdReachability,
         logger: params.logger,
         agentManager: params.agentManager,
         signal: params.signal,
