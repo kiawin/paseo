@@ -2530,6 +2530,12 @@ export const ar: TranslationResources = {
           hint: "سيتمكن الوكلاء من إدارة أشجار العمل والوكلاء والجداول الزمنية",
           accessibilityLabel: "حقن أدوات Paseo",
         },
+        enforceReachability: en.settings.host.orchestration.enforceReachability,
+        cwdReachability: {
+          title: "Allow messages to agents in nested folders",
+          hint: "Lets an agent message any agent working in a folder inside its own. Turn this off so agents can only message agents they created, agents that created them, or agents with the same creator.",
+          accessibilityLabel: "Allow messages to agents in nested folders",
+        },
         systemPrompt: {
           title: "موجه النظام",
           hint: "إضافة موجه النظام إلى كافة الوكلاء",

@@ -2592,6 +2592,12 @@ export const fr: TranslationResources = {
           hint: "Les agents pourront gérer les arbres de travail, les agents et les horaires",
           accessibilityLabel: "Injecter les outils Paseo",
         },
+        enforceReachability: en.settings.host.orchestration.enforceReachability,
+        cwdReachability: {
+          title: "Allow messages to agents in nested folders",
+          hint: "Lets an agent message any agent working in a folder inside its own. Turn this off so agents can only message agents they created, agents that created them, or agents with the same creator.",
+          accessibilityLabel: "Allow messages to agents in nested folders",
+        },
         systemPrompt: {
           title: "Invite système",
           hint: "Ajoute une invite système à tous les agents",

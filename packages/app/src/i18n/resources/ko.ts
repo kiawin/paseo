@@ -2542,6 +2542,12 @@ export const ko: TranslationResources = {
           hint: "에이전트가 워크트리, 에이전트, 일정을 관리할 수 있습니다",
           accessibilityLabel: "Paseo 도구 주입",
         },
+        enforceReachability: en.settings.host.orchestration.enforceReachability,
+        cwdReachability: {
+          title: "Allow messages to agents in nested folders",
+          hint: "Lets an agent message any agent working in a folder inside its own. Turn this off so agents can only message agents they created, agents that created them, or agents with the same creator.",
+          accessibilityLabel: "Allow messages to agents in nested folders",
+        },
         systemPrompt: {
           title: "시스템 프롬프트",
           hint: "모든 에이전트에 시스템 프롬프트를 추가합니다",

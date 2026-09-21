@@ -2653,6 +2653,16 @@ export const en = {
           hint: "Agents will be able to manage worktrees, agents and schedules",
           accessibilityLabel: "Inject Paseo tools",
         },
+        enforceReachability: {
+          title: "Limit agent-to-agent messages",
+          hint: "Agents can message related agents and agents working nearby. Other messages ask you first. Turning this on may show approval prompts.",
+          accessibilityLabel: "Limit agent-to-agent messages",
+        },
+        cwdReachability: {
+          title: "Allow messages to agents in nested folders",
+          hint: "Lets an agent message any agent working in a folder inside its own. Turn this off so agents can only message agents they created, agents that created them, or agents with the same creator.",
+          accessibilityLabel: "Allow messages to agents in nested folders",
+        },
         systemPrompt: {
           title: "System prompt",
           hint: "Adds a system prompt to all agents",
