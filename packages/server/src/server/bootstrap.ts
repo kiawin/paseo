@@ -150,6 +150,7 @@ import { createSpeechService } from "./speech/speech-runtime.js";
 import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { ArtifactStore } from "./artifact-store.js";
+import { NoteStore } from "./note-store.js";
 import { createExternalArtifactRecorder } from "./artifact-capture.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
@@ -659,6 +660,19 @@ function subscribeArtifactCascade(
   });
 }
 
+function subscribeNoteCascade(
+  projectRegistry: FileBackedProjectRegistry,
+  noteStore: NoteStore,
+): void {
+  projectRegistry.subscribeToPendingRemoval?.(async (projectId) => {
+    await noteStore.deleteProject(projectId);
+  });
+  projectRegistry.subscribeToMutations?.(async (mutation) => {
+    if (mutation.kind !== "remove") return;
+    await noteStore.deleteProject(mutation.projectId);
+  });
+}
+
 export async function createPaseoDaemon(
   config: PaseoDaemonConfig,
   rootLogger: Logger,
@@ -1001,6 +1015,7 @@ export async function createPaseoDaemon(
     workspaceRegistry,
   });
   const artifactStore = new ArtifactStore(path.join(config.paseoHome, "artifacts"), logger);
+  const noteStore = new NoteStore(path.join(config.paseoHome, "notes"), logger);
   const github = createGitHubService();
   const forgeResolver = createForgeResolver({
     createService: (forge) => (forge === "github" ? github : createForgeService(forge)),
@@ -1149,6 +1164,8 @@ export async function createPaseoDaemon(
   await workspaceLabelService.initialize();
   await artifactStore.initialize();
   subscribeArtifactCascade(projectRegistry, artifactStore);
+  await noteStore.initialize();
+  subscribeNoteCascade(projectRegistry, noteStore);
   logger.info({ elapsed: elapsed() }, "Workspace registries bootstrapped");
   const teardownArchivedWorkspaceRuntime = (workspaceId: string): void => {
     scriptRuntimeStore.removeForWorkspace(workspaceId);
@@ -2020,6 +2037,7 @@ export async function createPaseoDaemon(
               workspaceLabelService,
               workspaceArchiveOperations,
               artifactStore,
+              noteStore,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();

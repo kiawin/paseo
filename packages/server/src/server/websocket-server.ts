@@ -98,6 +98,7 @@ import {
 } from "./push/index.js";
 import type { ScriptHealthState } from "./script-health-monitor.js";
 import type { ServiceProxySubsystem } from "./service-proxy.js";
+import { type NoteChange, type NoteStore } from "./note-store.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import type { SpeechReadinessSnapshot, SpeechService } from "./speech/speech-runtime.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
@@ -599,6 +600,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly workspaceBaseBranch: WorkspaceBaseBranchService;
   private readonly workspaceLabelService: WorkspaceLabelService | null;
   private readonly artifactStore: ArtifactStore | undefined;
+  private readonly noteStore: NoteStore | undefined;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -730,6 +732,7 @@ export class VoiceAssistantWebSocketServer {
     workspaceLabelService?: WorkspaceLabelService,
     workspaceArchiveOperations?: WorkspaceArchiveOperations,
     artifactStore?: ArtifactStore,
+    noteStore?: NoteStore,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -807,7 +810,9 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
     this.artifactStore = artifactStore;
+    this.noteStore = noteStore;
     this.subscribeToArtifactChanges();
+    this.subscribeToNoteChanges();
     const requiredServices = requireWebSocketServices({
       scheduleService,
       checkoutDiffManager,
@@ -1089,6 +1094,14 @@ export class VoiceAssistantWebSocketServer {
       // have listed artifacts, which is both the compatibility proof and the audience.
       for (const connection of new Set(this.sessions.values())) {
         connection.session.publishArtifactChanged(projectId);
+      }
+    });
+  }
+
+  private subscribeToNoteChanges(): void {
+    this.noteStore?.subscribeToDetailedChanges((change: NoteChange) => {
+      for (const connection of new Set(this.sessions.values())) {
+        connection.session.publishNoteChanged(change);
       }
     });
   }
@@ -1759,6 +1772,7 @@ export class VoiceAssistantWebSocketServer {
       workspaceBaseBranch: this.workspaceBaseBranch,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
       artifactStore: this.artifactStore,
+      noteStore: this.noteStore,
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -2158,6 +2172,11 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(projectWorktreeLocation): added in v0.8.0, remove gate after 2027-09-02.
         // Advertised only now that creation, listing and recovery honour it.
         projectWorktreeLocation: true,
+        projectHidden: true,
+        notes: true,
+        notePin: true,
+        noteSearch: true,
+        noteArchive: true,
         checkoutForgeSetAutoMerge: true,
         // COMPAT(checkoutGithubSetAutoMerge): added in v0.1.75 and retained as
         // the fallback for checkoutForgeSetAutoMerge. Stop advertising it after

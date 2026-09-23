@@ -1,6 +1,8 @@
 import { agentPanelRegistration } from "@/panels/agent-panel";
 import { artifactPanelRegistration } from "@/panels/artifact-panel";
 import { artifactsPanelRegistration } from "@/panels/artifacts-panel";
+import { noteDraftPanelRegistration, notePanelRegistration } from "@/panels/note-panel";
+import { notesPanelRegistration } from "@/panels/notes-panel";
 import { browserPanelRegistration } from "@/desktop/browser/panel";
 import {
   changesTreePanelRegistration,
@@ -36,6 +38,9 @@ export function ensurePanelsRegistered(): void {
   registerPanel(pullRequestPanelRegistration);
   registerPanel(artifactsPanelRegistration);
   registerPanel(artifactPanelRegistration);
+  registerPanel(notesPanelRegistration);
+  registerPanel(noteDraftPanelRegistration);
+  registerPanel(notePanelRegistration);
   registerPanel(commitDiffPanelRegistration);
   registerPanel(workingDiffPanelRegistration);
   registerPanel(changesTreePanelRegistration);
