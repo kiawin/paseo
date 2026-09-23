@@ -562,6 +562,13 @@ function resolveStaticLoadConfigSettings(
   };
 }
 
+function resolvePeerMessagingConfig(persisted: PersistedConfig) {
+  return {
+    peerMessagingEnforceReachability: persisted.agents?.peerMessaging?.enforceReachability ?? false,
+    peerMessagingCwdReachability: persisted.agents?.peerMessaging?.cwdReachability ?? true,
+  };
+}
+
 interface ResolveConfigFromPersistedOptions {
   env?: NodeJS.ProcessEnv;
   cli?: CliConfigOverrides;
@@ -641,6 +648,10 @@ export function resolveConfigFromPersisted(
     voiceLlmProviderExplicit: voiceLlm.providerExplicit,
     voiceLlmModel: voiceLlm.model,
     agentProviderSettings: extractAgentProviderSettings(settings.providerOverrides),
+    providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
+    metadataGeneration: persisted.agents?.metadataGeneration,
+    ...resolvePeerMessagingConfig(persisted),
+    providerOverrides: settings.providerOverrides,
     log: resolveLogConfigFromEnv(env, persisted),
     configReload: {
       env: { ...env },

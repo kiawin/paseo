@@ -11,6 +11,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Wrench,
   Tag,
   Trash2,
 } from "lucide-react-native";
@@ -60,6 +61,7 @@ const ThemedPencil = withUnistyles(Pencil);
 const ThemedCircleCheck = withUnistyles(CircleCheck);
 const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
+const ThemedWrench = withUnistyles(Wrench);
 const ThemedTag = withUnistyles(Tag);
 const ThemedTrash = withUnistyles(Trash2);
 
@@ -73,6 +75,7 @@ const archiveLeadingIcon = <ThemedArchive size={14} uniProps={foregroundMutedCol
 const deleteLeadingIcon = <ThemedTrash size={14} uniProps={foregroundMutedColorMapping} />;
 const pinLeadingIcon = <ThemedPin size={14} uniProps={foregroundMutedColorMapping} />;
 const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorMapping} />;
+const agentToolsLeadingIcon = <ThemedWrench size={14} uniProps={foregroundMutedColorMapping} />;
 
 const triggerIconProps = densityIconProps("sm", foregroundMutedColorMapping);
 const triggerIconHoveredProps = densityIconProps("sm", foregroundColorMapping);
@@ -106,6 +109,8 @@ export interface SidebarWorkspaceMenuProps {
   deleteDisabledReason?: string;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  agentToolsEnabled?: boolean;
+  onToggleAgentTools?: () => void;
   openInFileManagerPath?: string | null;
   /**
    * Lifted so the row that reveals the kebab can keep it mounted while its menu is up. See
@@ -157,6 +162,8 @@ function SidebarWorkspaceMenuItems({
   deleteDisabledReason,
   isPinned,
   onTogglePin,
+  agentToolsEnabled,
+  onToggleAgentTools,
   openInFileManagerPath,
 }: SidebarWorkspaceMenuItemsProps & { surface: MenuSurface }): ReactNode {
   const { t } = useTranslation();
@@ -231,6 +238,18 @@ function SidebarWorkspaceMenuItems({
           {isPinned ? t("sidebar.workspace.actions.unpin") : t("sidebar.workspace.actions.pin")}
         </WorkspaceMenuItem>
       ) : null}
+      {onToggleAgentTools ? (
+        <WorkspaceMenuItem
+          surface={surface}
+          testID={`sidebar-workspace-menu-agent-tools-${workspaceKey}`}
+          leading={agentToolsLeadingIcon}
+          onSelect={onToggleAgentTools}
+        >
+          {agentToolsEnabled === false
+            ? t("sidebar.workspace.actions.enableAgentTools")
+            : t("sidebar.workspace.actions.disableAgentTools")}
+        </WorkspaceMenuItem>
+      ) : null}
       {serverId && workspaceId ? (
         <DropdownMenuSubTrigger
           id={WORKSPACE_LABEL_PAGE_ID}
@@ -294,6 +313,8 @@ export function SidebarWorkspaceMenu({
   deleteDisabledReason,
   isPinned,
   onTogglePin,
+  agentToolsEnabled,
+  onToggleAgentTools,
   openInFileManagerPath,
   open,
   onOpenChange,
@@ -342,6 +363,8 @@ export function SidebarWorkspaceMenu({
           deleteDisabledReason={deleteDisabledReason}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
+          agentToolsEnabled={agentToolsEnabled}
+          onToggleAgentTools={onToggleAgentTools}
           openInFileManagerPath={openInFileManagerPath}
         />
       </DropdownMenuContent>
@@ -377,6 +400,8 @@ export function SidebarWorkspaceContextMenu({
   deleteDisabledReason,
   isPinned,
   onTogglePin,
+  agentToolsEnabled,
+  onToggleAgentTools,
   openInFileManagerPath,
   accessibilityLabel,
   highlightStyle,
@@ -460,6 +485,8 @@ export function SidebarWorkspaceContextMenu({
           deleteDisabledReason={deleteDisabledReason}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
+          agentToolsEnabled={agentToolsEnabled}
+          onToggleAgentTools={onToggleAgentTools}
           openInFileManagerPath={openInFileManagerPath}
         />
       </ContextMenuContent>
