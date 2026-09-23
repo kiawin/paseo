@@ -232,6 +232,18 @@ export const MutableDaemonConfigSchema = z
     catalogRefreshTimeoutMs: z.number().int().positive().optional(),
     // COMPAT(usageSetting): added in v0.14, remove after 2027-05-01.
     usage: z.object({ enabled: z.boolean() }).optional(),
+    agents: z
+      .object({
+        peerMessaging: z
+          .object({
+            enforceReachability: z.boolean().default(false),
+            cwdReachability: z.boolean().default(true),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
     browserTools: MutableBrowserToolsConfigSchema.default({ enabled: false }),
     providers: z.record(z.string(), MutableDaemonProviderConfigSchema).default({}),
     metadataGeneration: MutableMetadataGenerationConfigSchema.default({ providers: [] }),
@@ -266,6 +278,18 @@ export const MutableDaemonConfigPatchSchema = z
       .optional(),
     removeProviders: z.array(z.string().min(1)).optional(),
     metadataGeneration: MutableMetadataGenerationConfigSchema.partial().optional(),
+    agents: z
+      .object({
+        peerMessaging: z
+          .object({
+            enforceReachability: z.boolean().optional(),
+            cwdReachability: z.boolean().optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
     autoArchiveAfterMerge: z.boolean().optional(),
     enableTerminalAgentHooks: z.boolean().optional(),
     idleRuntimeCleanup: z.boolean().optional(),
@@ -1157,6 +1181,13 @@ export const WorkspaceBaseBranchSetRequestSchema = z.object({
   type: z.literal("workspace.base_branch.set.request"),
   workspaceId: z.string(),
   baseRef: z.string(),
+  requestId: z.string(),
+});
+
+export const WorkspaceAgentToolsSetRequestSchema = z.object({
+  type: z.literal("workspace.agentTools.set.request"),
+  workspaceId: z.string(),
+  enabled: z.boolean(),
   requestId: z.string(),
 });
 
@@ -2416,6 +2447,19 @@ export const WorkspaceBaseBranchSetResponseSchema = z.object({
     baseRef: z.string().nullable(),
     error: z.string().nullable(),
   }),
+});
+
+export const WorkspaceAgentToolsSetResponsePayloadSchema = z.object({
+  requestId: z.string(),
+  workspaceId: z.string(),
+  accepted: z.boolean(),
+  agentToolsEnabled: z.boolean().nullable(),
+  error: z.string().nullable(),
+});
+
+export const WorkspaceAgentToolsSetResponseSchema = z.object({
+  type: z.literal("workspace.agentTools.set.response"),
+  payload: WorkspaceAgentToolsSetResponsePayloadSchema,
 });
 
 export const WorkspaceRecoveryStateSchema = z.discriminatedUnion("kind", [
@@ -3763,6 +3807,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceMetadataUpdateRequestSchema,
   WorkspacePinSetRequestSchema,
   WorkspaceBaseBranchSetRequestSchema,
+  WorkspaceAgentToolsSetRequestSchema,
   WorkspaceLabelListRequestSchema,
   WorkspaceLabelAssignmentSetRequestSchema,
   WorkspaceLabelUpdateRequestSchema,
@@ -4304,6 +4349,8 @@ export const ServerInfoStatusPayloadSchema = z
         providerSubagentNesting: z.boolean().optional(),
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.
         workspacePinning: z.boolean().optional(),
+        // COMPAT(workspaceAgentTools): added in v0.8.0, remove gate after 2027-03-21.
+        workspaceAgentTools: z.boolean().optional(),
         // COMPAT(workspaceMarkUnread): added in v0.5.0, remove after 2027-08-20.
         workspaceMarkUnread: z.boolean().optional(),
         // COMPAT(hubRelationship): added in v0.1.X, drop the gate when floor >= v0.1.X.
@@ -4703,6 +4750,8 @@ export const WorkspaceDescriptorPayloadSchema = z
     title: z.string().nullable().optional(),
     // COMPAT(workspacePinning): added in v0.1.107, remove optional after 2027-01-12.
     pinnedAt: z.string().nullable().optional(),
+    // COMPAT(workspaceAgentTools): added in v0.8.0, remove optional after 2027-03-21.
+    agentToolsEnabled: z.boolean().optional(),
     // COMPAT(workspaceLabels): added in v0.5.0, remove optional after 2027-08-14.
     labels: z.array(z.string()).optional(),
     metadata: EntityMetadataSchema.optional(),
@@ -7928,6 +7977,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceMetadataUpdateResponseSchema,
   WorkspacePinSetResponseSchema,
   WorkspaceBaseBranchSetResponseSchema,
+  WorkspaceAgentToolsSetResponseSchema,
   WorkspaceRecoveryInspectResponseSchema,
   WorkspaceRecoveryRestoreResponseSchema,
   WorkspaceArchiveUndoResponseSchema,
@@ -8326,6 +8376,11 @@ export type WorkspaceMetadataUpdateRequest = z.infer<typeof WorkspaceMetadataUpd
 export type AgentMetadataUpdateResponse = z.infer<typeof AgentMetadataUpdateResponseSchema>;
 export type WorkspaceMetadataUpdateResponse = z.infer<typeof WorkspaceMetadataUpdateResponseSchema>;
 export type WorkspaceBaseBranchSetRequest = z.infer<typeof WorkspaceBaseBranchSetRequestSchema>;
+export type WorkspaceAgentToolsSetRequest = z.infer<typeof WorkspaceAgentToolsSetRequestSchema>;
+export type WorkspaceAgentToolsSetResponse = z.infer<typeof WorkspaceAgentToolsSetResponseSchema>;
+export type WorkspaceAgentToolsSetResponsePayload = z.infer<
+  typeof WorkspaceAgentToolsSetResponsePayloadSchema
+>;
 export type WorkspaceRecoveryInspectRequest = z.infer<typeof WorkspaceRecoveryInspectRequestSchema>;
 export type WorkspaceRecoveryRestoreRequest = z.infer<typeof WorkspaceRecoveryRestoreRequestSchema>;
 export type WorkspaceArchiveUndoRequest = z.infer<typeof WorkspaceArchiveUndoRequestSchema>;
