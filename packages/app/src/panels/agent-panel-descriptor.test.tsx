@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { i18n } from "@/i18n/i18next";
 import { buildDraftPanelDescriptor } from "@/panels/draft-panel-descriptor";
+import { buildNotePanelDescriptor } from "@/panels/note-panel-descriptor";
 
 function TestIcon() {
   return null;
@@ -64,5 +65,35 @@ describe("buildDraftPanelDescriptor", () => {
       subtitle: "正在创建 Agent",
     });
     await i18n.changeLanguage("en");
+  });
+});
+
+describe("buildNotePanelDescriptor", () => {
+  it("uses the loaded note title and stops showing a title skeleton", () => {
+    const descriptor = buildNotePanelDescriptor({
+      record: { displayTitle: "Meeting notes" },
+      fallbackLabel: "Notes",
+      subtitle: "Project notes",
+      tooltip: "Notes written by agents in this project",
+      icon: TestIcon,
+    });
+
+    expect(descriptor).toMatchObject({
+      label: "Meeting notes",
+      tooltip: "Meeting notes",
+      titleState: "ready",
+    });
+  });
+
+  it("keeps the generic loading descriptor until the note record arrives", () => {
+    const descriptor = buildNotePanelDescriptor({
+      record: null,
+      fallbackLabel: "Notes",
+      subtitle: "Project notes",
+      tooltip: "Notes written by agents in this project",
+      icon: TestIcon,
+    });
+
+    expect(descriptor).toMatchObject({ label: "Notes", titleState: "loading" });
   });
 });
