@@ -1035,6 +1035,7 @@ test("advertises client capabilities in hello", async () => {
       terminal_reflowable_snapshot: true,
       timeline_notifications: true,
       artifact_tool_detail: true,
+      notes: true,
       plugin_timeline_items: true,
       workspace_setup_blocked: true,
       hello_rejection: true,

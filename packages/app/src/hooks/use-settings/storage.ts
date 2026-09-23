@@ -44,6 +44,7 @@ export type ServiceUrlBehavior = "ask" | "in-app" | "external";
  * the link context menu is the per-link chooser, so a prompt would be a second one.
  */
 export type AgentLinkBehavior = "in-app" | "external";
+export type NoteImageBehavior = "auto" | "tap-to-load" | "disabled";
 export type WorkspaceTitleSource = "title" | "branch";
 export type PullRequestOpenLocation = "main" | "side" | "explorer";
 /** What a sidebar workspace row shows in the space to the right of its title. */
@@ -92,6 +93,7 @@ export interface AppSettings {
   composerSendKey: ComposerSendKey;
   serviceUrlBehavior: ServiceUrlBehavior;
   agentLinkBehavior: AgentLinkBehavior;
+  noteImageBehavior: NoteImageBehavior;
   terminalScrollbackLines: number;
   useLegacyTerminalRenderer: boolean;
   uiFontFamily: string; // "" = platform default UI stack
@@ -152,6 +154,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   composerSendKey: "enter",
   serviceUrlBehavior: "ask",
   agentLinkBehavior: "external",
+  noteImageBehavior: "tap-to-load",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
   useLegacyTerminalRenderer: false,
   uiFontFamily: "",
@@ -232,6 +235,7 @@ const StoredAppSettingsSchema = z
     composerSendKey: z.enum(["enter", "shift-enter"]).catch("enter"),
     serviceUrlBehavior: z.enum(["ask", "in-app", "external"]).catch("ask"),
     agentLinkBehavior: z.enum(["in-app", "external"]).catch("external"),
+    noteImageBehavior: z.enum(["auto", "tap-to-load", "disabled"]).catch("tap-to-load"),
     terminalScrollbackLines: clampedNumber(
       MIN_TERMINAL_SCROLLBACK_LINES,
       MAX_TERMINAL_SCROLLBACK_LINES,
