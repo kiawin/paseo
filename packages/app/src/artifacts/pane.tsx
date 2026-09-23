@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { ExternalLink, Pencil, Pin, PinOff, RotateCcw, Search, Trash2 } from "lucide-react-native";
+import { ScrollView, Text, View } from "react-native";
+import { PressHighlight } from "@/components/ui/press-highlight";
+import { ExternalLink, Pencil, Pin, PinOff, RotateCcw, Trash2 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { ArtifactRecordPayload } from "@getpaseo/protocol/messages";
@@ -9,7 +10,7 @@ import { useArtifactSearch, useProjectArtifacts, useWorkspaceProjectId } from "@
 import { getArtifactDisplayTitle } from "@/artifacts/title";
 import { AdaptiveRenameModal } from "@/components/rename-modal";
 import { formatBytes } from "@/components/transfer-status";
-import { EditingTextInput as TextInput } from "@/components/ui/text-input";
+import { PanelSearchFailure, PanelSearchField } from "@/components/panel-search";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -17,19 +18,12 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useToast } from "@/contexts/toast-context";
-import { isWeb } from "@/constants/platform";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import { externalLinkHost } from "@/utils/external-link-host";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { formatTimeAgo } from "@/utils/time";
 import { useOpenAgentLink } from "@/utils/use-link-behavior";
 
-const ThemedSearch = withUnistyles(Search, (theme) => ({
-  color: theme.colors.mutedForeground,
-}));
-const ThemedTextInput = withUnistyles(TextInput, (theme) => ({
-  placeholderTextColor: theme.colors.mutedForeground,
-}));
 const ThemedExternalLink = withUnistyles(ExternalLink, (theme) => ({
   color: theme.colors.mutedForeground,
 }));
@@ -121,7 +115,7 @@ function ArtifactRow({
           </Text>
         ) : null}
         {externalUrl && host ? (
-          <Pressable
+          <PressHighlight
             style={styles.linkRow}
             onPress={handleOpenLink}
             testID={`artifact-link-${artifactId}`}
@@ -130,7 +124,7 @@ function ArtifactRow({
             <Text style={styles.linkText} numberOfLines={1}>
               {host}
             </Text>
-          </Pressable>
+          </PressHighlight>
         ) : null}
       </ContextMenuTrigger>
       <ContextMenuContent width={180} testID={`artifact-menu-${artifactId}`}>
@@ -175,17 +169,11 @@ function ArtifactRow({
 function ArtifactSearchFailure({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
   return (
-    <View style={styles.searchFailure} testID="artifacts-search-error">
-      <Text style={styles.searchError}>{t("panels.artifacts.searchFailed")}</Text>
-      <Pressable
-        style={styles.retryButton}
-        onPress={onRetry}
-        accessibilityRole="button"
-        testID="artifacts-search-retry"
-      >
-        <Text style={styles.retryText}>{t("common.actions.retry")}</Text>
-      </Pressable>
-    </View>
+    <PanelSearchFailure
+      testID="artifacts-search"
+      message={t("panels.artifacts.searchFailed")}
+      onRetry={onRetry}
+    />
   );
 }
 
@@ -321,10 +309,7 @@ export function ArtifactsPane({
   const { artifacts, isLoading, error, supported, renameSupported, remove, setPinned, rename } =
     useProjectArtifacts(serverId, projectId);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [renamingArtifact, setRenamingArtifact] = useState<ArtifactRecordPayload | null>(null);
-  const onSearchFocus = useCallback(() => setIsSearchFocused(true), []);
-  const onSearchBlur = useCallback(() => setIsSearchFocused(false), []);
   const search = useArtifactSearch(serverId, projectId, artifacts, searchQuery);
   const searchLabel = search.contentSearchSupported
     ? t("panels.artifacts.searchTitlesAndText")
@@ -410,22 +395,11 @@ export function ArtifactsPane({
   }
   return (
     <View style={styles.container}>
-      <View style={[styles.searchField, isSearchFocused && styles.searchFieldFocused]}>
-        <ThemedSearch size={16} />
-        <ThemedTextInput
-          testID="artifacts-search"
-          onChangeText={setSearchQuery}
-          onFocus={onSearchFocus}
-          onBlur={onSearchBlur}
-          accessibilityLabel={searchLabel}
-          placeholder={searchLabel}
-          // @ts-expect-error - outlineStyle is web-only
-          style={[styles.searchInput, isWeb && { outlineStyle: "none" }]}
-          maxLength={200}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </View>
+      <PanelSearchField
+        testID="artifacts-search"
+        label={searchLabel}
+        onChangeText={setSearchQuery}
+      />
       <ArtifactSearchResults
         artifacts={search.matchingArtifacts}
         snippetsById={search.snippetsById}
@@ -458,52 +432,10 @@ const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
   },
-  searchField: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    margin: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
-    backgroundColor: theme.colors.surface2,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
-    borderRadius: theme.borderRadius.lg,
-  },
-  searchFieldFocused: {
-    outlineColor: theme.colors.accent,
-    outlineOffset: 1,
-    outlineStyle: "solid" as const,
-    outlineWidth: 2,
-  },
-  searchInput: {
-    flex: 1,
-    minWidth: 0,
-    paddingVertical: theme.spacing[2],
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
-  },
   searchStatus: {
     color: theme.colors.mutedForeground,
     fontSize: theme.fontSize.xs,
     marginHorizontal: theme.spacing[3],
-  },
-  searchFailure: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: theme.spacing[2],
-    marginHorizontal: theme.spacing[3],
-  },
-  searchError: {
-    color: theme.colors.destructive,
-    fontSize: theme.fontSize.xs,
-  },
-  retryButton: {
-    paddingVertical: theme.spacing[1],
-  },
-  retryText: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.xs,
   },
   list: {
     flex: 1,

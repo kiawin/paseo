@@ -1111,6 +1111,9 @@ function WorkspaceScreenContent({
   );
   const openTab = useWorkspaceLayoutStore((state) => state.openTab);
   const replaceWorkspaceTabTarget = useWorkspaceLayoutStore((state) => state.replaceTab);
+  const convertWorkspaceNoteDraft = useWorkspaceLayoutStore(
+    (state) => state.convertNoteDraftToNote,
+  );
   const openWorkspaceTabFocused = useCallback(
     (workspaceKey: string, target: WorkspaceTabTarget, placement?: WorkspaceTabPlacement) =>
       openTab({ workspaceKey, target, intent: "reveal", placement }),
@@ -2968,6 +2971,12 @@ function WorkspaceScreenContent({
           }
           replaceWorkspaceTabTarget(persistenceKey, input.tab.tabId, target);
         },
+        onConvertCurrentTabToNote: (noteId) => {
+          if (!persistenceKey) {
+            return;
+          }
+          convertWorkspaceNoteDraft(persistenceKey, input.tab.tabId, normalizedServerId, noteId);
+        },
         onSetCurrentTabState: (state) => {
           if (persistenceKey) {
             setWorkspaceTabState(persistenceKey, input.tab.tabId, state);
@@ -2996,6 +3005,7 @@ function WorkspaceScreenContent({
       revealWorkspaceChildTab,
       persistenceKey,
       replaceWorkspaceTabTarget,
+      convertWorkspaceNoteDraft,
       setWorkspaceTabState,
       explorerSidebarPaneId,
       lastMainPaneId,
