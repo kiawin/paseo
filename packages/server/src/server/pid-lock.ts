@@ -1,5 +1,6 @@
 import { open, readFile, stat, unlink, utimes } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
+import { writeFileAtomic } from "./atomic-file.js";
 import { ensurePrivateDirectory } from "./private-files.js";
 import { join } from "node:path";
 import { hostname, uptime } from "node:os";
@@ -326,6 +327,7 @@ export async function updatePidLock(
   const pidPath = getPidFilePath(paseoHome);
   const lockOwnerPid = resolveOwnerPid(options?.ownerPid);
   const fd = await open(pidPath, "r+");
+  let updatedLock: PidLockInfo;
   try {
     const existingLock = await readPidLockFromHandleWithRetry(fd);
     if (!existingLock) {
@@ -338,15 +340,14 @@ export async function updatePidLock(
       );
     }
 
-    const updatedLock: PidLockInfo = {
+    updatedLock = {
       ...existingLock,
       ...patch,
     };
-    await fd.truncate(0);
-    await fd.writeFile(JSON.stringify(updatedLock));
   } finally {
     await fd.close();
   }
+  await writeFileAtomic(pidPath, JSON.stringify(updatedLock));
 }
 
 export async function releasePidLock(
