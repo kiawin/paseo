@@ -387,6 +387,24 @@ describe("loadAppSettingsFromStorage", () => {
     expect(result.forgeLinkBehavior).toBe("in-app");
   });
 
+  it("defaults remote note images to tap-to-load", async () => {
+    const result = await loadAppSettingsFromStorage(makeDeps());
+
+    expect(result.noteImageBehavior).toBe("tap-to-load");
+  });
+
+  it("falls back to tap-to-load for an invalid stored image behavior", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ noteImageBehavior: "blocked" }),
+      }),
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.noteImageBehavior).toBe("tap-to-load");
+  });
+
   it("falls back to the external browser for an invalid stored forge link behavior", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({
@@ -413,6 +431,7 @@ describe("loadAppSettingsFromStorage", () => {
 
     expect(result.forgeLinkBehavior).toBe("in-app");
     expect(result.agentLinkBehavior).toBe("external");
+    expect(result.noteImageBehavior).toBe("tap-to-load");
   });
 
   it("loads the per-device legacy terminal renderer preference", async () => {
