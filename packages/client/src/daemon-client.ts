@@ -3109,6 +3109,26 @@ export class DaemonClient {
     return { pinnedAt: payload.pinnedAt };
   }
 
+  async setWorkspaceAgentTools(
+    workspaceId: string,
+    enabled: boolean,
+    requestId?: string,
+  ): Promise<{ agentToolsEnabled: boolean | null }> {
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "workspace.agentTools.set.request",
+        workspaceId,
+        enabled,
+      },
+      responseType: "workspace.agentTools.set.response",
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "setWorkspaceAgentTools rejected");
+    }
+    return { agentToolsEnabled: payload.agentToolsEnabled };
+  }
+
   async inspectWorkspaceRecovery(
     workspaceId: string,
     requestId?: string,

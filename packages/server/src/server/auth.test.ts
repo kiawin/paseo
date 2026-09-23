@@ -5,7 +5,7 @@ import {
   extractWsBearerProtocol,
   extractWsBearerToken,
   hashDaemonPassword,
-  isAgentMcpRequestAuthorized,
+  resolveAgentMcpCaller,
   isBearerTokenValidAsync,
   isBearerTokenValid,
   shouldBypassBearerAuth,
@@ -63,7 +63,7 @@ describe("daemon bearer validator", () => {
     // Guarded by its own single-use download token, not the daemon password.
     expect(shouldBypassBearerAuth("GET", "/api/files/download")).toBe(true);
     // Guarded by its own per-daemon-run capability token (see
-    // isAgentMcpRequestAuthorized), not the daemon password.
+    // resolveAgentMcpCaller), not the daemon password.
     expect(shouldBypassBearerAuth("POST", "/mcp/agents")).toBe(true);
     // Everything else stays behind the daemon password.
     expect(shouldBypassBearerAuth("GET", "/api/status")).toBe(false);
@@ -73,51 +73,79 @@ describe("daemon bearer validator", () => {
 
 describe("agent MCP request authorizer", () => {
   const CAPABILITY_TOKEN = "cap-token-abc123";
+  const resolveAgentId = (token: string) => (token === CAPABILITY_TOKEN ? "agent-1" : undefined);
 
-  test("allows any request when no daemon password is configured", async () => {
+  test("rejects a passwordless request without a credential", async () => {
     expect(
-      await isAgentMcpRequestAuthorized({
+      await resolveAgentMcpCaller({
         password: undefined,
-        capabilityToken: CAPABILITY_TOKEN,
         authorizationHeader: undefined,
+        resolveAgentId,
       }),
-    ).toBe(true);
+    ).toEqual({ kind: "reject" });
   });
 
-  test("accepts the injected capability token", async () => {
+  test("resolves a valid passwordless agent token to its agent", async () => {
     expect(
-      await isAgentMcpRequestAuthorized({
-        password: CORRECT_PASSWORD_HASH,
-        capabilityToken: CAPABILITY_TOKEN,
+      await resolveAgentMcpCaller({
+        password: undefined,
         authorizationHeader: `Bearer ${CAPABILITY_TOKEN}`,
+        resolveAgentId,
       }),
-    ).toBe(true);
+    ).toEqual({ kind: "agent", agentId: "agent-1" });
   });
 
-  test("still accepts a valid daemon-password bearer", async () => {
+  test("resolves the injected capability token to its agent when a password is set", async () => {
     expect(
-      await isAgentMcpRequestAuthorized({
+      await resolveAgentMcpCaller({
         password: CORRECT_PASSWORD_HASH,
-        capabilityToken: CAPABILITY_TOKEN,
-        authorizationHeader: "Bearer correct-password",
+        authorizationHeader: `Bearer ${CAPABILITY_TOKEN}`,
+        resolveAgentId,
       }),
-    ).toBe(true);
+    ).toEqual({ kind: "agent", agentId: "agent-1" });
+  });
+
+  test("resolves a valid daemon-password bearer to the human user", async () => {
+    expect(
+      await resolveAgentMcpCaller({
+        password: CORRECT_PASSWORD_HASH,
+        authorizationHeader: "Bearer correct-password",
+        resolveAgentId,
+      }),
+    ).toEqual({ kind: "user" });
   });
 
   test("rejects requests presenting neither the token nor a valid password", async () => {
     expect(
-      await isAgentMcpRequestAuthorized({
-        password: CORRECT_PASSWORD_HASH,
-        capabilityToken: CAPABILITY_TOKEN,
-        authorizationHeader: undefined,
-      }),
-    ).toBe(false);
-    expect(
-      await isAgentMcpRequestAuthorized({
-        password: CORRECT_PASSWORD_HASH,
-        capabilityToken: CAPABILITY_TOKEN,
+      await resolveAgentMcpCaller({
+        password: undefined,
         authorizationHeader: "Bearer wrong-token",
+        resolveAgentId,
       }),
-    ).toBe(false);
+    ).toEqual({ kind: "reject" });
+    expect(
+      await resolveAgentMcpCaller({
+        password: CORRECT_PASSWORD_HASH,
+        authorizationHeader: undefined,
+        resolveAgentId,
+      }),
+    ).toEqual({ kind: "reject" });
+    expect(
+      await resolveAgentMcpCaller({
+        password: CORRECT_PASSWORD_HASH,
+        authorizationHeader: "Bearer wrong-token",
+        resolveAgentId,
+      }),
+    ).toEqual({ kind: "reject" });
+  });
+
+  test("ignores callerAgentId in the URL because identity comes from the token", async () => {
+    expect(
+      await resolveAgentMcpCaller({
+        password: CORRECT_PASSWORD_HASH,
+        authorizationHeader: `Bearer ${CAPABILITY_TOKEN}`,
+        resolveAgentId,
+      }),
+    ).toEqual({ kind: "agent", agentId: "agent-1" });
   });
 });

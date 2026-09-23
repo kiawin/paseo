@@ -46,8 +46,9 @@ import {
   useSidebarWorkspacePinController,
   type ToggleSidebarWorkspacePin,
 } from "@/hooks/use-sidebar-workspace-pin";
+import { useSidebarWorkspaceAgentToolsController } from "@/hooks/use-sidebar-workspace-agent-tools";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
-import { useHostFeatureMap } from "@/runtime/host-features";
+import { useHostFeature, useHostFeatureMap } from "@/runtime/host-features";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useProjectIcons } from "@/projects/icons";
 import {
@@ -650,6 +651,11 @@ function WorkspaceRowRightGroup({
   const workspacePath = workspace.workspaceDirectory ?? workspace.projectRootPath;
   const { t } = useTranslation();
   const trailing = useSidebarWorkspaceTrailing();
+  const supportsAgentTools = useHostFeature(workspace.serverId, "workspaceAgentTools");
+  const toggleAgentTools = useSidebarWorkspaceAgentToolsController();
+  const handleToggleAgentTools = useCallback(() => {
+    toggleAgentTools(workspace);
+  }, [toggleAgentTools, workspace]);
   const showShortcut = showShortcutBadge && shortcutNumber !== null;
   const {
     trailingPresentation,
@@ -702,6 +708,8 @@ function WorkspaceRowRightGroup({
                 archiveShortcutKeys={archiveShortcutKeys}
                 isPinned={isPinned}
                 onTogglePin={onTogglePin}
+                agentToolsEnabled={workspace.agentToolsEnabled}
+                onToggleAgentTools={supportsAgentTools ? handleToggleAgentTools : undefined}
                 openInFileManagerPath={workspacePath}
               />
             ) : null}
