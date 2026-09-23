@@ -226,7 +226,10 @@ describe("paseo daemon bootstrap", () => {
       const beforeMcp = await fetch(`http://127.0.0.1:${target.port}/mcp/agents`, {
         method: "POST",
       });
-      expect(beforeMcp.status).toBe(406);
+      // 401, not the transport's 406. An uncredentialed request is now refused at the auth check
+      // before it reaches the MCP transport, whether or not the daemon has a password — a
+      // passwordless daemon has no uncredentialed top-level MCP path.
+      expect(beforeMcp.status).toBe(401);
       const beforeProxyReload = await httpGetWithHost(target.port, proxyHost, "/", {
         "x-forwarded-proto": "https",
       });
