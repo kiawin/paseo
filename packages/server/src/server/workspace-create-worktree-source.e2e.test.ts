@@ -14,6 +14,7 @@ import {
   type WebSocketLike,
 } from "@getpaseo/client/internal/daemon-client";
 import { createTestPaseoDaemon } from "./test-utils/paseo-daemon.js";
+import { hashDaemonPassword } from "./auth.js";
 
 // The reshaped workspace.create.request forwards its worktree `source`
 // (action/refName/branchName/githubPrNumber/worktreeSlug) into createWorktreeCore.
@@ -611,7 +612,12 @@ function setupCommandOutput(detail: { commands: Array<{ log: string }> }): strin
 
 // Setup output is opt-in even for multiple sockets sharing one logical client.
 test("setup details follow one workspace/source and restore after reconnect with minimal directory status", async () => {
-  const daemon = await createTestPaseoDaemon({ mcpEnabled: true });
+  // The Agent MCP endpoint rejects uncredentialed callers; the password makes this the user.
+  const password = "daemon-secret";
+  const daemon = await createTestPaseoDaemon({
+    mcpEnabled: true,
+    auth: { password: hashDaemonPassword(password) },
+  });
   const { repoDir, tempRoot } = createGitRepoWithBranch();
   const clients: SocketDaemonClient[] = [];
   const sockets = new Map<string, WebSocket[]>();
@@ -622,7 +628,9 @@ test("setup details follow one workspace/source and restore after reconnect with
   const mcp = new Client({ name: "setup-test", version: "1.0.0" });
   try {
     await mcp.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${daemon.port}/mcp/agents`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${daemon.port}/mcp/agents`), {
+        requestInit: { headers: { Authorization: `Bearer ${password}` } },
+      }),
     );
     writeFileSync(
       path.join(repoDir, "paseo.json"),
@@ -657,6 +665,7 @@ const timer = setInterval(() => {
       const client = new SocketDaemonClient({
         url: `ws://127.0.0.1:${daemon.port}/ws`,
         clientId,
+        password,
         reconnect: { baseDelayMs: 10, maxDelayMs: 10 },
         webSocketFactory: (url) => {
           const socket = new WebSocket(url);
