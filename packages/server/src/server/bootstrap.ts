@@ -141,6 +141,7 @@ import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { createExternalArtifactRecorder } from "./artifact-capture.js";
+import { NoteStore } from "./note-store.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
@@ -254,6 +255,9 @@ import { ManagedPluginSources } from "./plugins/managed-source.js";
 
 const MCP_DEBUG_BATCH_LIMIT = 10;
 const MCP_DEBUG_SECRET = "[redacted]";
+// MCP notes are capped at 64 KiB after JSON decoding. Control-character-heavy bodies can
+// expand to roughly six times their decoded size, so keep this larger limit local to MCP.
+const AGENT_MCP_JSON_LIMIT = "512kb";
 const DOWNLOAD_OPEN_FLAGS =
   process.platform === "win32" ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW;
 
@@ -643,6 +647,19 @@ function subscribeArtifactCascade(
   });
 }
 
+function subscribeNoteCascade(
+  projectRegistry: FileBackedProjectRegistry,
+  noteStore: NoteStore,
+): void {
+  projectRegistry.subscribeToPendingRemoval?.(async (projectId) => {
+    await noteStore.deleteProject(projectId);
+  });
+  projectRegistry.subscribeToMutations?.(async (mutation) => {
+    if (mutation.kind !== "remove") return;
+    await noteStore.deleteProject(mutation.projectId);
+  });
+}
+
 export async function createPaseoDaemon(
   config: PaseoDaemonConfig,
   rootLogger: Logger,
@@ -858,6 +875,9 @@ export async function createPaseoDaemon(
     }),
   );
 
+  // This route needs room for the encoded form of a 64 KiB note. Keep the default parser limit
+  // unchanged for every other route.
+  app.use("/mcp/agents", express.json({ limit: AGENT_MCP_JSON_LIMIT }));
   app.use(express.json());
 
   // Serve static files from public directory
@@ -963,6 +983,7 @@ export async function createPaseoDaemon(
     workspaceRegistry,
   });
   const artifactStore = new ArtifactStore(path.join(config.paseoHome, "artifacts"), logger);
+  const noteStore = new NoteStore(path.join(config.paseoHome, "notes"), logger);
   const github = createGitHubService();
   const workspaceGitService = new WorkspaceGitServiceImpl({
     logger,
@@ -1079,6 +1100,8 @@ export async function createPaseoDaemon(
   await workspaceLabelService.initialize();
   await artifactStore.initialize();
   subscribeArtifactCascade(projectRegistry, artifactStore);
+  await noteStore.initialize();
+  subscribeNoteCascade(projectRegistry, noteStore);
   logger.info({ elapsed: elapsed() }, "Workspace registries bootstrapped");
   const teardownArchivedWorkspaceRuntime = (workspaceId: string): void => {
     scriptRuntimeStore.removeForWorkspace(workspaceId);
@@ -1556,6 +1579,7 @@ export async function createPaseoDaemon(
     emitWorkspaceUpdatesForWorkspaceIds: emitWorkspaceUpdatesExternal,
     workspaceRegistry,
     projectRegistry,
+    noteStore,
     createDirectoryWorkspace: async (cwd, title, projectId, context) => {
       const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
         cwd,
@@ -1895,6 +1919,7 @@ export async function createPaseoDaemon(
               orchestrationSkills,
               workspaceLabelService,
               artifactStore,
+              noteStore,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
