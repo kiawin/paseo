@@ -138,6 +138,24 @@ describe("translation resources", () => {
     }
   });
 
+  it("localizes the Notes surface copy in every supported language", () => {
+    const keys = [
+      "subtitle",
+      "tooltip",
+      "newNote",
+      "emptyTitle",
+      "emptyDescription",
+      "loadFailed",
+      "hostTooOld",
+      "disconnected",
+    ] as const;
+    for (const resource of [ar, es, fr, ja, ko, ptBR, ru, zhCN]) {
+      for (const key of keys) {
+        expect(resource.panels.notes[key]).not.toBe(en.panels.notes[key]);
+      }
+    }
+  });
+
   it("preserves interpolation placeholders in every language", () => {
     expect(findInterpolationMismatches(ar)).toEqual([]);
     expect(findInterpolationMismatches(es)).toEqual([]);
