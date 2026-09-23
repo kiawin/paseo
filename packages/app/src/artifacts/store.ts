@@ -33,6 +33,30 @@ const EMPTY_CONTENT: ArtifactContentState = {
   error: null,
 };
 
+/** Streams an artifact's document off the binary channel and decodes it. */
+export async function downloadArtifactHtml(
+  client: Pick<DaemonClient, "downloadArtifact">,
+  artifactId: string,
+): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  await client.downloadArtifact({
+    artifactId,
+    sink: {
+      onChunk: (chunk: Uint8Array) => {
+        chunks.push(chunk);
+      },
+    },
+  });
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+}
+
 function listKey(serverId: string, projectId: string): string {
   return `${serverId}:${projectId}`;
 }
@@ -98,22 +122,7 @@ export const useArtifactsStore = create<ArtifactsState>((set, get) => ({
       },
     }));
     try {
-      const chunks: Uint8Array[] = [];
-      await client.downloadArtifact({
-        artifactId,
-        sink: {
-          onChunk: (chunk: Uint8Array) => {
-            chunks.push(chunk);
-          },
-        },
-      });
-      const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-      const merged = new Uint8Array(total);
-      let offset = 0;
-      for (const chunk of chunks) {
-        merged.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
+      const html = await downloadArtifactHtml(client, artifactId);
       set((state) => {
         // Superseded while this was in flight: a newer digest owns the slot, and committing
         // here would overwrite it with the older document.
@@ -122,7 +131,7 @@ export const useArtifactsStore = create<ArtifactsState>((set, get) => ({
           contents: {
             ...state.contents,
             [key]: {
-              html: new TextDecoder().decode(merged),
+              html,
               contentSha256,
               loadingSha256: null,
               isLoading: false,

@@ -38,6 +38,12 @@ export function normalizeWorkspaceTabTarget(
   if (value.kind === "plugin") {
     return normalizePluginTabTarget(value);
   }
+  if (value.kind === "note") {
+    return normalizeNoteTarget(value);
+  }
+  if (value.kind === "note_draft") {
+    return normalizeNoteDraftTarget(value);
+  }
   return normalizeSimpleWorkspaceTabTarget(value);
 }
 
@@ -59,6 +65,7 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
     case "files":
     case "pull_request":
     case "artifacts":
+    case "notes":
       return { kind: value.kind };
     case "artifact": {
       const artifactId = trimNonEmpty(value.artifactId);
@@ -75,6 +82,22 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
     default:
       return null;
   }
+}
+
+function normalizeNoteTarget(
+  value: Extract<WorkspaceTabTarget, { kind: "note" }>,
+): WorkspaceTabTarget | null {
+  const serverId = trimNonEmpty(value.serverId);
+  const noteId = trimNonEmpty(value.noteId);
+  return serverId && noteId ? { kind: "note", serverId, noteId } : null;
+}
+
+function normalizeNoteDraftTarget(
+  value: Extract<WorkspaceTabTarget, { kind: "note_draft" }>,
+): WorkspaceTabTarget | null {
+  const serverId = trimNonEmpty(value.serverId);
+  const draftId = trimNonEmpty(value.draftId);
+  return serverId && draftId ? { kind: "note_draft", serverId, draftId } : null;
 }
 
 export function normalizeWorkspaceDraftTabSetup(
@@ -138,6 +161,7 @@ const SINGLETON_TARGET_KINDS: ReadonlySet<WorkspaceTabTarget["kind"]> = new Set(
   "changes_tree",
   "pull_request",
   "artifacts",
+  "notes",
 ]);
 
 function secondaryWorkspaceTabTargetsEqual(
@@ -159,6 +183,9 @@ function secondaryWorkspaceTabTargetsEqual(
   if (left.kind === "artifact" && right.kind === "artifact") {
     return left.artifactId === right.artifactId;
   }
+  if (left.kind === "note" || left.kind === "note_draft") {
+    return noteTargetsEqual(left, right);
+  }
   if (left.kind === "setup" && right.kind === "setup") {
     return left.workspaceId === right.workspaceId;
   }
@@ -166,6 +193,21 @@ function secondaryWorkspaceTabTargetsEqual(
     return left.sha === right.sha;
   }
   return false;
+}
+
+type NoteTarget = Extract<WorkspaceTabTarget, { kind: "note" | "note_draft" }>;
+
+function noteTargetsEqual(left: NoteTarget, right: WorkspaceTabTarget): boolean {
+  if (left.kind === "note") {
+    return (
+      right.kind === "note" && left.serverId === right.serverId && left.noteId === right.noteId
+    );
+  }
+  return (
+    right.kind === "note_draft" &&
+    left.serverId === right.serverId &&
+    left.draftId === right.draftId
+  );
 }
 
 function workspaceDraftTabSetupsEqual(
@@ -233,12 +275,19 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
     target.kind === "changes_tree" ||
     target.kind === "files" ||
     target.kind === "pull_request" ||
-    target.kind === "artifacts"
+    target.kind === "artifacts" ||
+    target.kind === "notes"
   ) {
     return target.kind;
   }
   if (target.kind === "artifact") {
     return `artifact_${target.artifactId}`;
+  }
+  if (target.kind === "note") {
+    return `note_${target.serverId.length}_${target.serverId}_${target.noteId.length}_${target.noteId}`;
+  }
+  if (target.kind === "note_draft") {
+    return `note_draft_${target.serverId.length}_${target.serverId}_${target.draftId.length}_${target.draftId}`;
   }
   if (target.kind === "plugin") {
     const identity = `${target.pluginId.length}_${target.pluginId}_${target.panelId.length}_${target.panelId}`;
