@@ -692,3 +692,82 @@ test("setup progress is adapted per socket without changing the canonical snapsh
   expect(message.payload.status).toBe("blocked");
   await session.cleanup();
 });
+
+test("gates note.changed by capability, subscription, and list/read demand", async () => {
+  const legacy = {};
+  const capable = {};
+  const unlisted = {};
+  const delivered = new Map<object, SessionOutboundMessage[]>();
+  const session = createSessionForWireCompatTest({
+    onMessageToSource: (source, message) =>
+      delivered.set(source, [...(delivered.get(source) ?? []), message]),
+  });
+
+  session.updateClientCapabilities(
+    {
+      [CLIENT_CAPS.ownedSubscriptions]: true,
+      [CLIENT_CAPS.explicitEventSubscriptions]: true,
+    },
+    legacy,
+  );
+  session.updateClientCapabilities(
+    {
+      [CLIENT_CAPS.ownedSubscriptions]: true,
+      [CLIENT_CAPS.explicitEventSubscriptions]: true,
+      [CLIENT_CAPS.notes]: true,
+    },
+    capable,
+  );
+  session.updateClientCapabilities(
+    {
+      [CLIENT_CAPS.ownedSubscriptions]: true,
+      [CLIENT_CAPS.explicitEventSubscriptions]: true,
+      [CLIENT_CAPS.notes]: true,
+    },
+    unlisted,
+  );
+
+  for (const source of [legacy, capable]) {
+    await session.handleMessage(
+      { type: "note.list.request", projectId: "project-1", requestId: "notes-list" },
+      source,
+    );
+    await session.handleMessage(
+      {
+        type: "session.events.set_subscription.request",
+        requestId: "notes-events",
+        events: ["note.changed"],
+      },
+      source,
+    );
+  }
+  delivered.clear();
+
+  const changed = {
+    projectId: "project-1",
+    noteId: "note-1",
+    revision: 1,
+    kind: "create" as const,
+  };
+  session.publishNoteChanged(changed);
+
+  expect(delivered.get(legacy)).toBeUndefined();
+  expect(delivered.get(unlisted)).toBeUndefined();
+  expect(delivered.get(capable)).toEqual([
+    {
+      type: "note.changed",
+      payload: { ...changed, subscriptionId: expect.any(String) },
+    },
+  ]);
+  expect(SessionOutboundMessageSchema.parse(delivered.get(capable)?.[0])).toEqual(
+    delivered.get(capable)?.[0],
+  );
+  expect(
+    SessionInboundMessageSchema.parse({
+      type: "artifact.list.request",
+      projectId: "project-1",
+      requestId: "old-client-request",
+    }),
+  ).toMatchObject({ type: "artifact.list.request" });
+  await session.cleanup();
+});
