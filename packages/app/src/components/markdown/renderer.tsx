@@ -60,6 +60,8 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
   agentCommands?: boolean;
 }
 
+export type { RemoteImageBehavior } from "./image-policy";
+
 /** All Markdown surfaces share the same engine and source adaptation. */
 export const MarkdownRenderer = memo(function MarkdownRenderer(props: MarkdownRendererProps) {
   const streaming = !isWeb && !!props.streaming;
@@ -103,16 +105,20 @@ const MarkdownPart = memo(function MarkdownPart({
     (environment.client?.readFile
       ? { readFile: environment.client.readFile.bind(environment.client) }
       : undefined);
-  const { markdown, imageSources, linkRecognition, linkSource } = useMarkdownSource(
-    text,
-    {
-      workspaceRoot: environment.workspaceRoot,
-      serverId: environment.serverId,
-      ...imageContext,
-      client,
-    },
-    { commandNames: commandHints?.names, forgeReferencePattern: forgeShorthand?.pattern },
-  );
+  const [loadedRemoteImageSources, setLoadedRemoteImageSources] =
+    useState<ReadonlySet<string>>(EMPTY_REMOTE_IMAGES);
+  const { markdown, imageSources, linkRecognition, linkSource, remoteImagePlaceholders } =
+    useMarkdownSource(
+      text,
+      {
+        workspaceRoot: environment.workspaceRoot,
+        serverId: environment.serverId,
+        ...imageContext,
+        client,
+        loadedRemoteImageSources,
+      },
+      { commandNames: commandHints?.names, forgeReferencePattern: forgeShorthand?.pattern },
+    );
   const [image, setImage] = useState<ImageLightboxSource | null>(null);
   const openLinkMenu = useAssistantLinkContextMenu();
   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
@@ -137,6 +143,16 @@ const MarkdownPart = memo(function MarkdownPart({
     openLinkMenu(event.url, event);
   });
   const pressImage = useStableEvent(({ url }: { url: string }) => {
+    const remoteSource = remoteImagePlaceholders.get(url);
+    if (remoteSource) {
+      setLoadedRemoteImageSources((current) => {
+        if (current.has(remoteSource)) return current;
+        const next = new Set(current);
+        next.add(remoteSource);
+        return next;
+      });
+      return;
+    }
     if (url !== PENDING_MARKDOWN_IMAGE) setImage({ type: "uri", uri: url });
   });
   const closeImage = useStableEvent(() => setImage(null));
@@ -177,3 +193,5 @@ const MarkdownPart = memo(function MarkdownPart({
     </MermaidStreamingContext.Provider>
   );
 });
+
+const EMPTY_REMOTE_IMAGES: ReadonlySet<string> = new Set();

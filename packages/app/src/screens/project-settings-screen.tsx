@@ -29,6 +29,7 @@ import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import { SettingsTextAreaCard } from "@/components/settings-textarea";
 import { SettingsGroup } from "@/components/settings/headings/settings-group";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
+import { CopyFromHostSection } from "@/screens/settings/copy-from-host-section";
 import {
   WorktreeLocationSection,
   type WorktreeLocationSectionProps,
@@ -333,6 +334,8 @@ function ProjectSettingsBody({
         onBackToProjects,
         showBackToProjects,
       })}
+
+      <CopyFromHostSection project={project} target={selectedHost} targetClient={client} />
     </View>
   );
 }
