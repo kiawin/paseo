@@ -44,6 +44,9 @@ export type WorkspaceTabTarget =
   | { kind: "pull_request" }
   | { kind: "artifacts" }
   | { kind: "artifact"; artifactId: string }
+  | { kind: "notes" }
+  | { kind: "note_draft"; serverId: string; draftId: string }
+  | { kind: "note"; serverId: string; noteId: string }
   | WorkspaceFileTabTarget
   | WorkspaceWorkingDiffTabTarget
   | PluginWorkspaceTabTarget
