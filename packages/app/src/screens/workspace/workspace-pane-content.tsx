@@ -35,6 +35,7 @@ export interface BuildWorkspacePaneContentModelInput {
   onOpenTargetToSide?: (target: WorkspaceTabDescriptor["target"]) => void;
   onCloseCurrentTab: () => void;
   onRetargetCurrentTab: (target: WorkspaceTabDescriptor["target"]) => void;
+  onConvertCurrentTabToNote?: (noteId: string) => void;
   onSetCurrentTabState: (state: WorkspaceTabDescriptor["state"]) => void;
   onOpenWorkspaceFile: (request: WorkspaceFileOpenRequest) => void;
   onOpenImportSheet: () => void;
@@ -51,6 +52,7 @@ export function buildWorkspacePaneContentModel({
   onOpenTargetToSide,
   onCloseCurrentTab,
   onRetargetCurrentTab,
+  onConvertCurrentTabToNote,
   onSetCurrentTabState,
   onOpenWorkspaceFile,
   onOpenImportSheet,
@@ -74,6 +76,7 @@ export function buildWorkspacePaneContentModel({
       openTargetToSide: onOpenTargetToSide,
       closeCurrentTab: onCloseCurrentTab,
       retargetCurrentTab: onRetargetCurrentTab,
+      convertCurrentTabToNote: onConvertCurrentTabToNote ?? (() => undefined),
       setCurrentTabState: onSetCurrentTabState,
       openFileInWorkspace: onOpenWorkspaceFile,
       openImportSheet: onOpenImportSheet,
@@ -100,6 +103,7 @@ export function WorkspacePaneContent({
   const openTargetToSide = useStableEvent(paneContextValue.openTargetToSide ?? (() => undefined));
   const closeCurrentTab = useStableEvent(paneContextValue.closeCurrentTab);
   const retargetCurrentTab = useStableEvent(paneContextValue.retargetCurrentTab);
+  const convertCurrentTabToNote = useStableEvent(paneContextValue.convertCurrentTabToNote);
   const setCurrentTabState = useStableEvent(paneContextValue.setCurrentTabState);
   const openFileInWorkspace = useStableEvent(paneContextValue.openFileInWorkspace);
   const openImportSheet = useStableEvent(paneContextValue.openImportSheet);
@@ -117,6 +121,7 @@ export function WorkspacePaneContent({
       openTargetToSide: paneContextValue.openTargetToSide ? openTargetToSide : undefined,
       closeCurrentTab,
       retargetCurrentTab,
+      convertCurrentTabToNote,
       setCurrentTabState,
       openFileInWorkspace,
       openImportSheet,
@@ -137,6 +142,7 @@ export function WorkspacePaneContent({
       paneContextValue.host,
       paneContextValue.openTargetToSide,
       retargetCurrentTab,
+      convertCurrentTabToNote,
       setCurrentTabState,
     ],
   );
