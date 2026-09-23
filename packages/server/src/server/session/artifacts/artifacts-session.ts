@@ -14,6 +14,7 @@ import type {
   ArtifactListRequest,
   ArtifactSearchRequest,
   ArtifactPinSetRequest,
+  ArtifactArchiveSetRequest,
   ArtifactRenameRequest,
   ArtifactPublishRequest,
   ArtifactRecordPayload,
@@ -51,6 +52,7 @@ export function toArtifactRecordPayload(record: PersistedArtifactRecord): Artifa
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     pinned: record.pinned,
+    ...(record.archived ? { archived: true } : {}),
     externalUrl: record.externalUrl,
     origin: {
       agentId: record.origin.agentId,
@@ -223,6 +225,42 @@ export class ArtifactsSession {
     }
   }
 
+  async handleArchiveSetRequest(
+    request: ArtifactArchiveSetRequest,
+    source?: object,
+  ): Promise<void> {
+    const { artifactId, archived, requestId } = request;
+    try {
+      const record = await this.requireStore().setArchived(artifactId, archived);
+      if (!record) throw new ArtifactError("artifact_not_found", `No artifact ${artifactId}`);
+      this.host.emit(
+        {
+          type: "artifact.archive.set.response",
+          payload: {
+            artifact: toArtifactRecordPayload(record),
+            success: true,
+            error: null,
+            requestId,
+          },
+        },
+        source,
+      );
+    } catch (error) {
+      this.host.emit(
+        {
+          type: "artifact.archive.set.response",
+          payload: {
+            artifact: null,
+            success: false,
+            error: getErrorMessage(error),
+            requestId,
+          },
+        },
+        source,
+      );
+    }
+  }
+
   async handleRenameRequest(request: ArtifactRenameRequest, source?: object): Promise<void> {
     const { artifactId, title, requestId } = request;
     try {
@@ -264,7 +302,8 @@ export class ArtifactsSession {
    * project has to exist. It never evicts: copying in must not destroy what is already there.
    */
   async handlePublishRequest(request: ArtifactPublishRequest, source?: object): Promise<void> {
-    const { projectId, title, customTitle, html, externalUrl, pinned, requestId } = request;
+    const { projectId, title, customTitle, html, externalUrl, pinned, archived, requestId } =
+      request;
     try {
       const store = this.requireStore();
       if (!(await this.host.isActiveProject(projectId))) {
@@ -277,6 +316,7 @@ export class ArtifactsSession {
         externalUrl,
         ...(customTitle !== undefined ? { customTitle } : {}),
         ...(pinned !== undefined ? { pinned } : {}),
+        ...(archived !== undefined ? { archived } : {}),
         allowEviction: false,
         origin: { agentId: null, workspaceId: null, provider: null },
       });

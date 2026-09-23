@@ -35,6 +35,7 @@ function getFallbackTabOptionLabel(
     files: string;
     pullRequest: string;
     artifacts: string;
+    notes: string;
   },
 ): string {
   if (tab.target.kind === "new_tab") {
@@ -67,6 +68,13 @@ function getFallbackTabOptionLabel(
   if (tab.target.kind === "artifacts" || tab.target.kind === "artifact") {
     return labels.artifacts;
   }
+  if (
+    tab.target.kind === "notes" ||
+    tab.target.kind === "note" ||
+    tab.target.kind === "note_draft"
+  ) {
+    return labels.notes;
+  }
   if (tab.target.kind === "commit_diff") {
     return tab.target.sha.slice(0, 7);
   }
@@ -86,6 +94,7 @@ function getFallbackTabOptionDescription(
     files: string;
     pullRequest: string;
     artifacts: string;
+    notes: string;
   },
 ): string {
   if (tab.target.kind === "new_tab") {
@@ -123,6 +132,13 @@ function getFallbackTabOptionDescription(
   }
   if (tab.target.kind === "artifacts" || tab.target.kind === "artifact") {
     return labels.artifacts;
+  }
+  if (
+    tab.target.kind === "notes" ||
+    tab.target.kind === "note" ||
+    tab.target.kind === "note_draft"
+  ) {
+    return labels.notes;
   }
   if (tab.target.kind === "plugin") {
     return tab.target.panelId;
@@ -241,6 +257,7 @@ function MobileWorkspaceTabOption({
       files: t("panels.files.label"),
       pullRequest: t("panels.pullRequest.label"),
       artifacts: t("panels.artifacts.label"),
+      notes: t("panels.notes.label"),
     }),
     [t],
   );
@@ -319,6 +336,7 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
       files: t("panels.files.label"),
       pullRequest: t("panels.pullRequest.label"),
       artifacts: t("panels.artifacts.label"),
+      notes: t("panels.notes.label"),
     }),
     [t],
   );
