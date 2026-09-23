@@ -154,12 +154,19 @@ function getCloseButtonTestId(tab: WorkspaceTabDescriptor): string {
   if (
     tab.target.kind === "files" ||
     tab.target.kind === "pull_request" ||
-    tab.target.kind === "artifacts"
+    tab.target.kind === "artifacts" ||
+    tab.target.kind === "notes"
   ) {
     return `workspace-${tab.target.kind}-close`;
   }
   if (tab.target.kind === "artifact") {
     return `workspace-artifact-close-${tab.target.artifactId}`;
+  }
+  if (tab.target.kind === "note") {
+    return `workspace-note-close-${encodeFilePathForPathSegment(buildDeterministicWorkspaceTabId(tab.target))}`;
+  }
+  if (tab.target.kind === "note_draft") {
+    return `workspace-note-draft-close-${encodeFilePathForPathSegment(buildDeterministicWorkspaceTabId(tab.target))}`;
   }
   if (tab.target.kind === "plugin") {
     return `workspace-plugin-close-${encodeFilePathForPathSegment(buildDeterministicWorkspaceTabId(tab.target))}`;

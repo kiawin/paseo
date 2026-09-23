@@ -72,6 +72,7 @@ import { DirectorySync, type RefreshAgentDirectoryResult } from "@/runtime/direc
 import { ReplicaCache } from "@/runtime/replica-cache";
 import type { ReplicaRowStore } from "@/runtime/replica-cache/row-store";
 import { createReplicaRowStore } from "@/runtime/replica-cache/row-store-factory";
+import { createNoteMetadataOwner, type NoteMetadataOwner } from "@/notes/replica";
 import {
   createTimelineReplica,
   createViewedTimelineOwner,
@@ -118,6 +119,11 @@ export interface HostRuntimeSnapshot {
   probeByConnectionId: Map<string, ConnectionProbeState>;
   clientGeneration: number;
   connectionEpoch: number;
+}
+
+function noteFeatureAvailability(client: DaemonClient | null): boolean | null {
+  const serverInfo = client?.getLastServerInfoMessage();
+  return serverInfo ? serverInfo.features?.notes === true : null;
 }
 
 type HostRuntimeSnapshotPatch = Partial<Omit<HostRuntimeSnapshot, "serverId" | "clientGeneration">>;
@@ -1466,6 +1472,7 @@ export class HostRuntimeStore {
   private directorySyncByServer = new Map<string, DirectorySync>();
   private nextCancellationRequestId = 0;
   private timelineReplicaByServer = new Map<string, TimelineReplica>();
+  private noteMetadataOwnerByServer = new Map<string, NoteMetadataOwner>();
   private configuredOverrideBootstrapInFlight: Promise<void> | null = null;
   private bootPromise: Promise<void> | null = null;
   private storage: HostRuntimeStorage;
@@ -1733,6 +1740,8 @@ export class HostRuntimeStore {
     this.directorySyncByServer.get(oldServerId)?.dispose();
     this.directorySyncByServer.delete(oldServerId);
     this.timelineReplicaByServer.delete(oldServerId);
+    this.noteMetadataOwnerByServer.get(oldServerId)?.dispose();
+    this.noteMetadataOwnerByServer.delete(oldServerId);
     const directory = new DirectorySync(
       newServerId,
       {
@@ -1744,6 +1753,10 @@ export class HostRuntimeStore {
       this.replicaCache,
     );
     this.directorySyncByServer.set(newServerId, directory);
+    this.noteMetadataOwnerByServer.set(
+      newServerId,
+      createNoteMetadataOwner({ serverId: newServerId, storage: this.replicaCache }),
+    );
     this.timelineReplicaByServer.set(
       newServerId,
       createTimelineReplica({
@@ -1759,6 +1772,15 @@ export class HostRuntimeStore {
     directory.connectionChanged({
       client: snapshot.client,
       status: snapshot.connectionStatus === "online" ? "online" : "offline",
+      source: {
+        clientGeneration: snapshot.clientGeneration,
+        connectionEpoch: snapshot.connectionEpoch,
+      },
+    });
+    this.noteMetadataOwnerByServer.get(newServerId)?.connectionChanged({
+      client: snapshot.client,
+      status: snapshot.connectionStatus === "online" ? "online" : "offline",
+      supported: noteFeatureAvailability(snapshot.client),
       source: {
         clientGeneration: snapshot.clientGeneration,
         connectionEpoch: snapshot.connectionEpoch,
@@ -2191,6 +2213,8 @@ export class HostRuntimeStore {
       this.directorySyncByServer.get(serverId)?.dispose();
       this.directorySyncByServer.delete(serverId);
       this.timelineReplicaByServer.delete(serverId);
+      this.noteMetadataOwnerByServer.get(serverId)?.dispose();
+      this.noteMetadataOwnerByServer.delete(serverId);
       this.clearHostReplica(serverId);
       void controller.stop();
       this.emit(serverId);
@@ -2226,6 +2250,10 @@ export class HostRuntimeStore {
         this.replicaCache,
       );
       this.directorySyncByServer.set(host.serverId, directory);
+      this.noteMetadataOwnerByServer.set(
+        host.serverId,
+        createNoteMetadataOwner({ serverId: host.serverId, storage: this.replicaCache }),
+      );
       this.timelineReplicaByServer.set(
         host.serverId,
         createTimelineReplica({
@@ -2285,6 +2313,15 @@ export class HostRuntimeStore {
     directory?.connectionChanged({
       client: snapshot.client,
       status: snapshot.connectionStatus === "online" ? "online" : "offline",
+      source: {
+        clientGeneration: snapshot.clientGeneration,
+        connectionEpoch: snapshot.connectionEpoch,
+      },
+    });
+    this.noteMetadataOwnerByServer.get(serverId)?.connectionChanged({
+      client: snapshot.client,
+      status: snapshot.connectionStatus === "online" ? "online" : "offline",
+      supported: noteFeatureAvailability(snapshot.client),
       source: {
         clientGeneration: snapshot.clientGeneration,
         connectionEpoch: snapshot.connectionEpoch,
@@ -2428,6 +2465,10 @@ export class HostRuntimeStore {
 
   getClient(serverId: string): DaemonClient | null {
     return this.controllers.get(serverId)?.getClient() ?? null;
+  }
+
+  getNoteMetadataOwner(serverId: string): NoteMetadataOwner | null {
+    return this.noteMetadataOwnerByServer.get(serverId) ?? null;
   }
 
   subscribe(serverId: string, listener: () => void): () => void {
