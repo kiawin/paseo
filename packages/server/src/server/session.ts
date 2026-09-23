@@ -189,6 +189,8 @@ import { UsageSession } from "./session/usage/usage-session.js";
 import { WorkspaceFilesSession } from "./session/files/workspace-files-session.js";
 import { ArtifactsSession } from "./session/artifacts/artifacts-session.js";
 import type { ArtifactStore } from "./artifact-store.js";
+import { NotesSession } from "./session/notes/notes-session.js";
+import type { NoteChange, NoteStore } from "./note-store.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
 import { ProjectConfigSession } from "./session/project-config/project-config-session.js";
 import { DaemonSession, type DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
@@ -488,6 +490,7 @@ export interface SessionOptions {
   directorySync?: DirectorySyncService;
   workspaceLabelService?: WorkspaceLabelService;
   artifactStore?: ArtifactStore;
+  noteStore?: NoteStore;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -816,6 +819,7 @@ export class Session {
   private readonly usageSession: UsageSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly artifactsSession: ArtifactsSession;
+  private readonly notesSession: NotesSession;
   private readonly agentConfigSession: AgentConfigSession;
   private readonly projectConfigSession: ProjectConfigSession;
   private readonly daemonSession: DaemonSession;
@@ -851,6 +855,7 @@ export class Session {
       directorySync,
       workspaceLabelService,
       artifactStore,
+      noteStore,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -920,6 +925,7 @@ export class Session {
       logger: this.sessionLogger,
     });
     this.artifactsSession = this.createArtifactsSession(artifactStore);
+    this.notesSession = this.createNotesSession(noteStore);
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry;
@@ -1320,10 +1326,16 @@ export class Session {
     this.artifactsSession.broadcastChanged(projectId);
   }
 
+  /** Fans a store-driven note change out to subscribed sockets that have listed or read notes. */
+  publishNoteChanged(change: NoteChange): void {
+    this.notesSession.broadcastChanged(change);
+  }
+
   /** A socket going away must not strand the transfers it started, in either subsystem. */
   cancelWorkspaceTransfersForSource(source: object): void {
     this.workspaceFilesSession.cancelTransfersForSource(source);
     this.artifactsSession.cancelTransfersForSource(source);
+    this.notesSession.cancelForSource(source);
   }
 
   clearAgentTimelineSubscription(source: object): void {
@@ -2334,6 +2346,10 @@ export class Session {
 
   public publishToSource(source: object, message: SessionOutboundMessage): void {
     if (!this.authorization.allowsOutbound(message)) return;
+    // COMPAT(notes): added in v0.9.0; do not send the new discriminator to clients that did not
+    // advertise the validator support, even if an event subscription was somehow retained.
+    if (message.type === "note.changed" && !this.supportsForSource(CLIENT_CAPS.notes, source))
+      return;
     this.emitSubscribedEvent(message, source);
   }
 
@@ -2470,6 +2486,7 @@ export class Session {
     (msg) => this.dispatchWorkspaceAndProjectMessage(msg),
     (msg, source) => this.dispatchWorkspaceFileMessage(msg, source),
     (msg, source) => this.dispatchArtifactMessage(msg, source),
+    (msg, source) => this.dispatchNoteMessage(msg, source),
     (msg) => this.dispatchProviderMessage(msg),
     (msg) => this.dispatchOrchestrationSkillsMessage(msg),
     (msg) => this.dispatchPluginDirectoryMessage(msg),
@@ -3143,6 +3160,17 @@ export class Session {
     );
   }
 
+  private createNotesSession(noteStore: NoteStore | undefined): NotesSession {
+    return new NotesSession(
+      {
+        emit: (msg, source) => this.emitForSource(msg, source),
+        emitChanged: (msg, source) => this.publishToSource(source, msg),
+      },
+      noteStore ?? null,
+      this.sessionLogger,
+    );
+  }
+
   private dispatchArtifactMessage(
     msg: SessionInboundMessage,
     source?: object,
@@ -3170,6 +3198,28 @@ export class Session {
         return this.artifactsSession.handleRenameRequest(msg, source);
       case "artifact.publish.request":
         return this.artifactsSession.handlePublishRequest(msg, source);
+      default:
+        return undefined;
+    }
+  }
+
+  private dispatchNoteMessage(
+    msg: SessionInboundMessage,
+    source?: object,
+  ): Promise<void> | undefined {
+    switch (msg.type) {
+      case "note.list.request":
+        return this.notesSession.handleListRequest(msg, source);
+      case "note.read.request":
+        return this.notesSession.handleReadRequest(msg, source);
+      case "note.save.request":
+        return this.notesSession.handleSaveRequest(msg, source);
+      case "note.delete.request":
+        return this.notesSession.handleDeleteRequest(msg, source);
+      case "note.pin.set.request":
+        return this.notesSession.handlePinSetRequest(msg, source);
+      case "note.search.request":
+        return this.notesSession.handleSearchRequest(msg, source);
       default:
         return undefined;
     }
@@ -8959,6 +9009,12 @@ export class Session {
     if (shouldNotify) notified.add(subscription.owner.source);
   }
 
+  // COMPAT(notes): added in v0.9.0; an explicit subscription does not replace the hello
+  // capability because older outbound validators reject an unknown discriminator.
+  private ownerAcceptsNotes(event: SessionEventSubscription, source: object): boolean {
+    return event !== "note.changed" || this.supportsForSource(CLIENT_CAPS.notes, source);
+  }
+
   private emitSubscribedEvent(message: SessionOutboundMessage, onlySource?: object): boolean {
     const event = sessionEventCategory(message);
     if (!event) return false;
@@ -8973,7 +9029,8 @@ export class Session {
             CLIENT_CAPS.workspaceSetupObservation,
             subscription.owner.source,
           )) ||
-        (onlySource && subscription.owner.source !== onlySource)
+        (onlySource && subscription.owner.source !== onlySource) ||
+        !this.ownerAcceptsNotes(event, subscription.owner.source)
       )
         continue;
       this.emitEventToOwner(subscription, message, notified);
@@ -9117,6 +9174,7 @@ export class Session {
     this.workspaceGitObserver.dispose();
     this.workspaceFilesSession.dispose();
     this.artifactsSession.dispose();
+    this.notesSession.dispose();
   }
 }
 
@@ -9187,6 +9245,7 @@ function sessionEventCategory(message: SessionOutboundMessage): SessionEventSubs
     case "hub.execution.agent.update":
     case "hub.execution.agent.stream":
     case "artifact.changed":
+    case "note.changed":
       return message.type;
     case "status":
       return statusEventCategory(message.payload.status);
@@ -9217,6 +9276,8 @@ function legacyWantsEvent(
   event: SessionEventSubscription,
   capabilities: ReadonlySet<ClientCapability>,
 ): boolean {
+  // COMPAT(notes): added in v0.9.0; old clients reject the whole outbound message.
+  if (event === "note.changed") return capabilities.has(CLIENT_CAPS.notes);
   if (event === "project.update" && !capabilities.has(CLIENT_CAPS.projectUpdates)) return false;
   switch (event) {
     case "project.update":
