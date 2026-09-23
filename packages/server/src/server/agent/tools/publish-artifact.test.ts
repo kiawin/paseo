@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { ArtifactStore } from "../../artifact-store.js";
+import { NOTE_MAX_BYTES, NoteStore } from "../../note-store.js";
 import type { AgentManager } from "../agent-manager.js";
 import type { AgentStorage } from "../agent-storage.js";
 import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
@@ -19,6 +20,7 @@ const PROJECT_ID = "prj_one";
 
 let root: string;
 let store: ArtifactStore;
+let noteStore: NoteStore;
 
 function stubAgentManager(agent: unknown): AgentManager {
   return {
@@ -52,6 +54,7 @@ async function buildCatalog(
     providerSnapshotManager: {} as ProviderSnapshotManager,
     workspaceRegistry: stubWorkspaceRegistry(),
     artifactStore: store,
+    noteStore,
     callerAgentId: "callerAgentId" in overrides ? overrides.callerAgentId : AGENT_ID,
     logger: createTestLogger(),
   });
@@ -61,6 +64,8 @@ beforeEach(async () => {
   root = mkdtempSync(path.join(os.tmpdir(), "paseo-publish-artifact-"));
   store = new ArtifactStore(root, createTestLogger());
   await store.initialize();
+  noteStore = new NoteStore(path.join(root, "notes"), createTestLogger());
+  await noteStore.initialize();
 });
 
 afterEach(() => {
@@ -155,5 +160,101 @@ describe("publish_artifact", () => {
     await expect(
       catalog.executeTool("publish_artifact", { title: "Anonymous", html: "<p/>" }),
     ).rejects.toThrow(/must be called by an agent/);
+  });
+});
+
+describe("note tools", () => {
+  test("registers list, read, and write tools", async () => {
+    const catalog = await buildCatalog();
+
+    expect(catalog.getTool("list_notes")).toBeDefined();
+    expect(catalog.getTool("read_note")).toBeDefined();
+    expect(catalog.getTool("write_note")).toBeDefined();
+  });
+
+  test("bounds list_notes to 50 by default and 200 at most, with metadata only", async () => {
+    const catalog = await buildCatalog();
+    for (let index = 0; index < 205; index += 1) {
+      await noteStore.save({ projectId: PROJECT_ID, body: `# Note ${index}` });
+    }
+
+    const defaultResult = await catalog.executeTool("list_notes", {});
+    const maxResult = await catalog.executeTool("list_notes", { limit: 200 });
+    const defaultNotes = defaultResult.structuredContent as {
+      notes: Array<Record<string, unknown>>;
+    };
+    const maxNotes = maxResult.structuredContent as { notes: Array<Record<string, unknown>> };
+
+    expect(defaultNotes.notes).toHaveLength(50);
+    expect(maxNotes.notes).toHaveLength(200);
+    expect(defaultNotes.notes[0]).not.toHaveProperty("body");
+  });
+
+  test("read_note returns the whole body", async () => {
+    const catalog = await buildCatalog();
+    const body = "x".repeat(NOTE_MAX_BYTES);
+    const saved = await noteStore.save({ projectId: PROJECT_ID, body });
+
+    const result = await catalog.executeTool("read_note", { noteId: saved.record.noteId });
+    const output = result.structuredContent as { body: string };
+
+    expect(output.body).toBe(body);
+  });
+
+  test("write_note creates and updates notes with replacement reporting", async () => {
+    const catalog = await buildCatalog();
+    const created = await catalog.executeTool("write_note", { body: "# First version" });
+    const createdOutput = created.structuredContent as {
+      note: { noteId: string; revision: number };
+      replacedRevision: number | null;
+    };
+
+    expect(createdOutput.note.revision).toBe(1);
+    expect(createdOutput.replacedRevision).toBeNull();
+
+    const updated = await catalog.executeTool("write_note", {
+      noteId: createdOutput.note.noteId,
+      body: "# Second version",
+    });
+    const updatedOutput = updated.structuredContent as {
+      note: { noteId: string; revision: number };
+      replacedRevision: number | null;
+    };
+
+    expect(updatedOutput.note).toMatchObject({ noteId: createdOutput.note.noteId, revision: 2 });
+    expect(updatedOutput.replacedRevision).toBe(1);
+  });
+
+  test("rejects a decoded body over the 64 KiB cap", async () => {
+    const catalog = await buildCatalog();
+
+    await expect(
+      catalog.executeTool("write_note", { body: "x".repeat(NOTE_MAX_BYTES + 1) }),
+    ).rejects.toThrow(/64 KiB/);
+    await expect(noteStore.listForProject(PROJECT_ID)).resolves.toHaveLength(0);
+  });
+
+  test("resolves the caller project and refuses a note from another project", async () => {
+    const catalog = await buildCatalog();
+    const own = await noteStore.save({ projectId: PROJECT_ID, body: "# Own" });
+    const other = await noteStore.save({ projectId: "prj_other", body: "# Other" });
+
+    const list = await catalog.executeTool("list_notes", { projectId: "prj_other" });
+    const listed = list.structuredContent as {
+      notes: Array<{ noteId: string; projectId: string }>;
+    };
+    expect(listed.notes).toHaveLength(1);
+    expect(listed.notes[0]).toMatchObject({ noteId: own.record.noteId, projectId: PROJECT_ID });
+
+    await expect(
+      catalog.executeTool("write_note", {
+        noteId: other.record.noteId,
+        projectId: "prj_other",
+        body: "# Hijacked",
+      }),
+    ).rejects.toThrow(/No note .* in project prj_one/);
+    await expect(noteStore.readContent(other.record)).resolves.toEqual(
+      Buffer.from("# Other", "utf8"),
+    );
   });
 });

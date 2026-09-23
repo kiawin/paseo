@@ -355,6 +355,33 @@ describe("FileEditorModel", () => {
     });
   });
 
+  test("keeps an observation conflicted when an edit occurs during the save", async () => {
+    const { model, session } = makeModel();
+    session.holdNextWrite();
+    model.edit("saving");
+
+    const save = model.save();
+    model.edit("newer local work");
+    observeFile(model, {
+      content: "remote",
+      hasBom: false,
+      version: ready("2026-07-18T00:00:02.000Z", 6),
+    });
+    session.finishHeldWrite({
+      status: "written",
+      modifiedAt: "2026-07-18T00:00:01.000Z",
+      size: 6,
+    });
+
+    await save;
+
+    expect(model.getSnapshot()).toMatchObject({
+      status: "conflict",
+      content: "newer local work",
+      observedVersion: { modifiedAt: "2026-07-18T00:00:02.000Z" },
+    });
+  });
+
   test("autosaves the latest edit after inactivity", async () => {
     const { model, session, clock } = makeModel();
 
