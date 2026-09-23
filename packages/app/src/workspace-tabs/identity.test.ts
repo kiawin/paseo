@@ -17,6 +17,17 @@ describe("New tab identity", () => {
   });
 });
 
+describe("note tab identity", () => {
+  it("keeps server identity in normalization, equality, and deterministic ids", () => {
+    const note = { kind: "note", serverId: "host-a", noteId: "note-1" } as const;
+    const otherHost = { ...note, serverId: "host-b" };
+
+    expect(normalizeWorkspaceTabTarget(note)).toEqual(note);
+    expect(workspaceTabTargetsEqual(note, otherHost)).toBe(false);
+    expect(buildDeterministicWorkspaceTabId(note)).toBe("note_6_host-a_6_note-1");
+  });
+});
+
 describe("provider subagent tab identity", () => {
   test("normalizes and compares the parent and provider child as one tab identity", () => {
     const target = normalizeWorkspaceTabTarget({

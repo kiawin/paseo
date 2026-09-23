@@ -3032,6 +3032,50 @@ export const ArtifactPinSetRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// ---------------------------------------------------------------------------
+// Notes — project-scoped markdown documents owned by the daemon.
+// ---------------------------------------------------------------------------
+
+export const NoteRecordPayloadSchema = z.object({
+  noteId: z.string(),
+  projectId: z.string(),
+  displayTitle: z.string(),
+  size: z.number().int().nonnegative(),
+  contentSha256: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  revision: z.number().int().positive(),
+});
+
+export const NoteListRequestSchema = z.object({
+  type: z.literal("note.list.request"),
+  projectId: z.string(),
+  requestId: z.string(),
+});
+
+export const NoteReadRequestSchema = z.object({
+  type: z.literal("note.read.request"),
+  noteId: z.string(),
+  projectId: z.string().optional(),
+  requestId: z.string(),
+});
+
+export const NoteSaveRequestSchema = z.object({
+  type: z.literal("note.save.request"),
+  projectId: z.string(),
+  noteId: z.string().nullable().optional(),
+  body: z.string(),
+  requestId: z.string(),
+});
+
+export const NoteDeleteRequestSchema = z.object({
+  type: z.literal("note.delete.request"),
+  noteId: z.string(),
+  expectedRevision: z.number().int().positive(),
+  projectId: z.string().optional(),
+  requestId: z.string(),
+});
+
 export const ProjectIconRequestSchema = z.object({
   type: z.literal("project_icon_request"),
   cwd: z.string(),
@@ -3355,6 +3399,7 @@ export const SessionEventSubscriptionSchema = z.enum([
   "activity_log",
   "hub.execution.agent.update",
   "hub.execution.agent.stream",
+  "note.changed",
 ]);
 export type SessionEventSubscription = z.infer<typeof SessionEventSubscriptionSchema>;
 export const SessionEventsSetSubscriptionRequestSchema = z.object({
@@ -3557,6 +3602,10 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ArtifactEntryDownloadRequestSchema,
   ArtifactDeleteRequestSchema,
   ArtifactPinSetRequestSchema,
+  NoteListRequestSchema,
+  NoteReadRequestSchema,
+  NoteSaveRequestSchema,
+  NoteDeleteRequestSchema,
   FileEntryDownloadRequestSchema,
   FileEntryUploadRequestSchema,
   FileTransferAckSchema,
@@ -3797,6 +3846,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceFileTransfer: z.boolean().optional(),
         // COMPAT(artifacts): added in v0.7.x, remove gate after 2028-03-01.
         artifacts: z.boolean().optional(),
+        // COMPAT(notes): added in v0.9.0; remove gate after the supported daemon floor includes Notes.
+        notes: z.boolean().optional(),
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the
         // feature gate and checkoutGithubSetAutoMerge fallback after 2027-01-17
         // once the supported daemon floor is >= v0.2.0.
@@ -6361,6 +6412,61 @@ export const ArtifactChangedMessageSchema = z.object({
   }),
 });
 
+export const NoteListResponseSchema = z.object({
+  type: z.literal("note.list.response"),
+  payload: z.object({
+    projectId: z.string(),
+    notes: z.array(NoteRecordPayloadSchema),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteReadResponseSchema = z.object({
+  type: z.literal("note.read.response"),
+  payload: z.object({
+    note: NoteRecordPayloadSchema.nullable(),
+    body: z.string().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteSaveResponseSchema = z.object({
+  type: z.literal("note.save.response"),
+  payload: z.object({
+    note: NoteRecordPayloadSchema.nullable(),
+    replacedRevision: z.number().int().positive().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteDeleteResponseSchema = z.object({
+  type: z.literal("note.delete.response"),
+  payload: z.object({
+    noteId: z.string(),
+    currentRevision: z.number().int().positive().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteChangedMessageSchema = z.object({
+  type: z.literal("note.changed"),
+  payload: z.object({
+    subscriptionId: z.string().optional(),
+    projectId: z.string(),
+    noteId: z.string(),
+    revision: z.number().int().positive().nullable(),
+    kind: z.enum(["create", "update", "delete"]),
+  }),
+});
+
 export const FileEntryUploadResponseSchema = z.object({
   type: z.literal("fs.entry.upload.response"),
   payload: z.object({
@@ -7273,6 +7379,11 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ArtifactDeleteResponseSchema,
   ArtifactPinSetResponseSchema,
   ArtifactChangedMessageSchema,
+  NoteListResponseSchema,
+  NoteReadResponseSchema,
+  NoteSaveResponseSchema,
+  NoteDeleteResponseSchema,
+  NoteChangedMessageSchema,
   FileEntryDownloadResponseSchema,
   FileEntryUploadResponseSchema,
   FileTransferAckSchema,
@@ -7743,6 +7854,16 @@ export type ArtifactDeleteResponse = z.infer<typeof ArtifactDeleteResponseSchema
 export type ArtifactPinSetRequest = z.infer<typeof ArtifactPinSetRequestSchema>;
 export type ArtifactPinSetResponse = z.infer<typeof ArtifactPinSetResponseSchema>;
 export type ArtifactChangedMessage = z.infer<typeof ArtifactChangedMessageSchema>;
+export type NoteRecordPayload = z.infer<typeof NoteRecordPayloadSchema>;
+export type NoteListRequest = z.infer<typeof NoteListRequestSchema>;
+export type NoteListResponse = z.infer<typeof NoteListResponseSchema>;
+export type NoteReadRequest = z.infer<typeof NoteReadRequestSchema>;
+export type NoteReadResponse = z.infer<typeof NoteReadResponseSchema>;
+export type NoteSaveRequest = z.infer<typeof NoteSaveRequestSchema>;
+export type NoteSaveResponse = z.infer<typeof NoteSaveResponseSchema>;
+export type NoteDeleteRequest = z.infer<typeof NoteDeleteRequestSchema>;
+export type NoteDeleteResponse = z.infer<typeof NoteDeleteResponseSchema>;
+export type NoteChangedMessage = z.infer<typeof NoteChangedMessageSchema>;
 export type FileEntryDownloadRequest = z.infer<typeof FileEntryDownloadRequestSchema>;
 export type FileEntryDownloadResponse = z.infer<typeof FileEntryDownloadResponseSchema>;
 export type FileEntryUploadRequest = z.infer<typeof FileEntryUploadRequestSchema>;
@@ -7839,6 +7960,7 @@ export const WSHelloMessageSchema = z.object({
       [CLIENT_CAPS.timelineReplacementInvalidation]: z.boolean().optional(),
       [CLIENT_CAPS.timelineNotifications]: z.boolean().optional(),
       [CLIENT_CAPS.artifactToolDetail]: z.boolean().optional(),
+      [CLIENT_CAPS.notes]: z.boolean().optional(),
       [CLIENT_CAPS.browserHost]: BrowserAutomationHostCapabilitySchema.optional(),
     })
     .passthrough()
