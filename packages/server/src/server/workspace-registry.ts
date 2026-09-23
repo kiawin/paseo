@@ -120,6 +120,10 @@ const PersistedWorkspaceRecordSchema = z.object({
     .nullable()
     .optional()
     .transform((value) => value ?? null),
+  // Undefined means inherit the host-level Paseo tools setting. False opts this
+  // workspace out; true is not persisted because workspaces cannot re-enable a
+  // host-level kill switch.
+  agentToolsEnabled: z.boolean().optional(),
   labels: z.array(z.string()).optional(),
   untrustedSource: UntrustedWorkspaceSourceSchema.optional(),
 });
@@ -539,6 +543,7 @@ export function createPersistedWorkspaceRecord(input: {
   archivedAt?: string | null;
   autoArchivedChangeRequestUrl?: string | null;
   pinnedAt?: string | null;
+  agentToolsEnabled?: boolean;
   labels?: string[];
   untrustedSource?: UntrustedWorkspaceSource;
 }): PersistedWorkspaceRecord {
@@ -554,6 +559,9 @@ export function createPersistedWorkspaceRecord(input: {
     archivedAt: input.archivedAt ?? null,
     autoArchivedChangeRequestUrl: input.autoArchivedChangeRequestUrl ?? null,
     pinnedAt: input.pinnedAt ?? null,
+    ...(input.agentToolsEnabled !== undefined
+      ? { agentToolsEnabled: input.agentToolsEnabled }
+      : {}),
   });
 }
 
