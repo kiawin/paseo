@@ -560,6 +560,18 @@
           },
           "additionalProperties": false
         },
+        "peerMessaging": {
+          "type": "object",
+          "properties": {
+            "enforceReachability": {
+              "type": "boolean"
+            },
+            "cwdReachability": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
         "skills": {
           "type": "object",
           "properties": {
