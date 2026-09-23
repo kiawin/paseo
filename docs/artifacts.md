@@ -22,6 +22,8 @@ the working tree, and reaching it from a phone means the file is on the wrong ma
 See [security.md](../SECURITY.md#artifacts) for the threat model, and
 [glossary.md](glossary.md) for the noun — "artifact" never means a CI build output here.
 
+For the sibling Notes view, see [notes.md](notes.md).
+
 ## Why the key is `projectId`
 
 A workspace is one `cwd`. A project spans every workspace on it, worktrees included. An agent that
@@ -116,6 +118,30 @@ document to the app. Scripts, styles, and document metadata are excluded from te
 Link-only rows remain searchable by title because the daemon does not fetch their destinations or
 hold their content. An older host without `features.artifactSearch` can still filter titles; the
 view tells you when that host cannot search document text.
+
+## Copying to another host
+
+Project settings offers "Copy from another host" when a project lives on more than one daemon. The
+app does the copy: it lists the source host's artifacts and notes, downloads each document, and
+writes it to the target with `artifact.publish.request` or `note.save.request`. Daemons never talk
+to each other, and nothing is removed from the source.
+
+- Hosts are matched by `projectKey`, the grouping notes federation reads, and each side is
+  addressed by its own `projectId`.
+- A copy is a new record with no origin agent. The title, custom title, pin and link carry over;
+  `createdAt`, the origin agent and note revisions do not. The pin and custom title commit with the
+  document, so a failed copy leaves no half-labelled row. A note's pin is applied after its save,
+  because `note.save` carries only the body; a note the target already holds still gets its pin, so
+  a second run repairs one the first could not apply.
+- An agent's publish takes its project from its workspace. A client names the project, so the
+  daemon refuses one it does not have, and the store refuses any `projectId` whose directory
+  resolves outside the artifact root, because legacy ids are joined into the path verbatim.
+- A client publish never evicts. At the record or byte cap it fails with
+  `artifact_quota_exceeded`, so copying into a full project reports what did not fit instead of
+  deleting what was there.
+- The publish is not idempotent. The app skips rows the target already holds, by digest or by link
+  for a link-only row, and runs one copy at a time per target, which is what makes a second run
+  pick up only what is missing.
 
 ## Invalidation is opt-in
 
