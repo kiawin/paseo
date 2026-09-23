@@ -1,27 +1,33 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { expect, test } from "vitest";
-import { createDaemonTestContext } from "../test-utils/index.js";
+import { createDaemonTestContext, type DaemonTestContext } from "../test-utils/index.js";
 
 test("an attended MCP caller can discover and supply a cross-provider child mode", async () => {
   const artifacts = path.join(process.cwd(), ".artifacts");
   await mkdir(artifacts, { recursive: true });
   const root = await mkdtemp(path.join(artifacts, "create-agent-mode-"));
-  const ctx = await createDaemonTestContext({ paseoHomeRoot: root, mcpEnabled: true });
+  const mcpTokenDir = path.join(root, "mcp-tokens");
+  const previousMcpTokenDir = process.env.PASEO_TEST_MCP_TOKEN_DIR;
   const mcp = new Client({ name: "mode-contract-test", version: "1" });
+  let ctx: DaemonTestContext | undefined;
   try {
+    await mkdir(mcpTokenDir, { recursive: true });
+    process.env.PASEO_TEST_MCP_TOKEN_DIR = mcpTokenDir;
+    ctx = await createDaemonTestContext({ paseoHomeRoot: root, mcpEnabled: true });
     const parent = await ctx.client.createAgent({
       provider: "claude",
       cwd: root,
       modeId: "default",
       title: "Attended parent",
     });
+    const token = await readFile(path.join(mcpTokenDir, `${parent.id}.token`), "utf8");
     await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${ctx.daemon.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${ctx.daemon.port}/mcp/agents`), {
+        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      }),
     );
     const { tools } = await mcp.listTools();
     const create = tools.find((tool) => tool.name === "create_agent");
@@ -61,7 +67,9 @@ test("an attended MCP caller can discover and supply a cross-provider child mode
     expect((await ctx.client.waitForFinish(childId, 5000)).status).toBe("idle");
   } finally {
     await mcp.close();
-    await ctx.cleanup();
+    await ctx?.cleanup();
+    if (previousMcpTokenDir === undefined) delete process.env.PASEO_TEST_MCP_TOKEN_DIR;
+    else process.env.PASEO_TEST_MCP_TOKEN_DIR = previousMcpTokenDir;
     await rm(root, { recursive: true, force: true });
   }
 }, 30_000);
