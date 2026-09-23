@@ -8,6 +8,7 @@ export interface PermissionResponseAgentManager extends AgentRunController {
     agentId: string,
     requestId: string,
     response: AgentPermissionResponse,
+    callerAgentId?: string,
   ): Promise<AgentPermissionResult | void>;
 }
 
@@ -16,19 +17,25 @@ export interface RespondToAgentPermissionParams {
   agentId: string;
   requestId: string;
   response: AgentPermissionResponse;
+  callerAgentId?: string;
   logger: Logger;
 }
 
 export async function respondToAgentPermission(
   params: RespondToAgentPermissionParams,
 ): Promise<void> {
-  const { agentManager, agentId, requestId, response, logger } = params;
+  const { agentManager, agentId, requestId, response, callerAgentId, logger } = params;
   logger.debug(
     { agentId, requestId },
     `Handling permission response for agent ${agentId}, request ${requestId}`,
   );
 
-  const result = await agentManager.respondToPermission(agentId, requestId, response);
+  const result = await agentManager.respondToPermission(
+    agentId,
+    requestId,
+    response,
+    callerAgentId,
+  );
   logger.debug({ agentId }, `Permission response forwarded to agent ${agentId}`);
 
   if (result?.followUpPrompt) {
