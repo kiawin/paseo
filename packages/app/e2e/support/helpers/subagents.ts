@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { connectDaemonClient } from "./daemon-client-loader";
 import { startIsolatedHostDaemon } from "./isolated-host-daemon";
 import { seedWorkspace } from "./seed-client";
@@ -336,6 +338,13 @@ export async function detachSubagentFromTrack(page: Page, childId: string): Prom
   await detachButton.click();
 }
 
+async function readAgentMcpToken(agentId: string): Promise<string> {
+  const directory = process.env.E2E_MCP_TOKEN_DIR;
+  if (!directory)
+    throw new Error("E2E_MCP_TOKEN_DIR is not set (expected from the worker fixture).");
+  return (await readFile(path.join(directory, `${agentId}.token`), "utf8")).trim();
+}
+
 /** The primary children come from the real agent MCP endpoint on A. */
 export async function delegateFleetThroughMcp() {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
@@ -387,6 +396,11 @@ export async function delegateFleetThroughMcp() {
     await mcp.connect(
       new StreamableHTTPClientTransport(
         new URL(`http://127.0.0.1:${getE2EDaemonPort()}/mcp/agents?callerAgentId=${parent.id}`),
+        {
+          requestInit: {
+            headers: { Authorization: `Bearer ${await readAgentMcpToken(parent.id)}` },
+          },
+        },
       ),
     );
     expect(await call("list_hosts")).toMatchObject({

@@ -236,7 +236,8 @@ import { withTimeout } from "../utils/promise-timeout.js";
 import { isHostnameAllowed, type HostnamesConfig } from "./hostnames.js";
 import {
   createRequireBearerMiddleware,
-  isAgentMcpRequestAuthorized,
+  isLoopbackAddress,
+  resolveAgentMcpCaller,
   type DaemonAuthConfig,
 } from "./auth.js";
 import { deleteLocalCredential, writeLocalCredential } from "./local-credential.js";
@@ -492,6 +493,8 @@ export interface PaseoDaemonConfig {
       thinkingOptionId?: string;
     }>;
   };
+  peerMessagingEnforceReachability?: boolean;
+  peerMessagingCwdReachability?: boolean;
   providerOverrides?: Record<string, ProviderOverride>;
   log?: PersistedConfig["log"];
   onLifecycleIntent?: (intent: DaemonLifecycleIntent) => void;
@@ -1764,18 +1767,8 @@ export async function createPaseoDaemon(
         res.status(404).json({ error: "Agent MCP endpoint disabled" });
         return;
       }
-      // This route is exempt from the global daemon-password middleware, so it
-      // authenticates here using the injected capability token (or a valid
-      // daemon password). Without this, a password-protected daemon would be
-      // wide open on its agent control plane.
-      if (
-        !(await isAgentMcpRequestAuthorized({
-          password: config.auth?.password,
-          capabilityToken: agentMcpAuthToken,
-          authorizationHeader: req.header("authorization"),
-        }))
-      ) {
-        res.status(401).json({ error: "Unauthorized" });
+      if (req.method === "POST" && !req.is("application/json")) {
+        res.status(415).json({ error: "Unsupported media type" });
         return;
       }
       if (config.mcpDebug) {
@@ -1789,6 +1782,22 @@ export async function createPaseoDaemon(
           },
           "Agent MCP request",
         );
+      }
+      // This route is exempt from the global daemon-password middleware. Agent
+      // clients use their injected capability; user clients use the daemon
+      // password or the configured loopback trust boundary when no password is
+      // set. Without this check, a password-protected daemon would be wide open
+      // on its agent control plane.
+      const caller = await resolveAgentMcpCaller({
+        password: config.auth?.password,
+        authorizationHeader: req.header("authorization"),
+        daemonCapabilityToken: agentMcpAuthToken,
+        resolveAgentId: (token) => agentManager.getMcpAgentId(token),
+        allowAnonymousLoopback: isLoopbackAddress(req.ip),
+      });
+      if (caller.kind === "reject") {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
       }
       try {
         // Stateless: GET (standalone SSE) and DELETE (session termination) have no
@@ -1805,13 +1814,7 @@ export async function createPaseoDaemon(
           });
           return;
         }
-        const callerAgentIdRaw = req.query.callerAgentId;
-        let callerAgentId: string | undefined;
-        if (typeof callerAgentIdRaw === "string") {
-          callerAgentId = callerAgentIdRaw;
-        } else if (Array.isArray(callerAgentIdRaw) && typeof callerAgentIdRaw[0] === "string") {
-          callerAgentId = callerAgentIdRaw[0];
-        }
+        const callerAgentId = caller.kind === "agent" ? caller.agentId : undefined;
         const { handler } = await createAgentMcpSession(callerAgentId);
         try {
           // express.json() already consumed the stream, so hand the parsed body over.
