@@ -1,6 +1,16 @@
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { ExternalLink, Pencil, Pin, PinOff, RotateCcw, Search, Trash2 } from "lucide-react-native";
+import { ScrollView, Text, View } from "react-native";
+import { PressHighlight } from "@/components/ui/press-highlight";
+import {
+  Archive,
+  ArchiveRestore,
+  ExternalLink,
+  Pencil,
+  Pin,
+  PinOff,
+  RotateCcw,
+  Trash2,
+} from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { ArtifactRecordPayload } from "@getpaseo/protocol/messages";
@@ -9,7 +19,12 @@ import { useArtifactSearch, useProjectArtifacts, useWorkspaceProjectId } from "@
 import { getArtifactDisplayTitle } from "@/artifacts/title";
 import { AdaptiveRenameModal } from "@/components/rename-modal";
 import { formatBytes } from "@/components/transfer-status";
-import { EditingTextInput as TextInput } from "@/components/ui/text-input";
+import {
+  filterByArchiveScope,
+  PanelSearchFailure,
+  PanelSearchField,
+  type ArchiveScope,
+} from "@/components/panel-search";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -17,24 +32,21 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useToast } from "@/contexts/toast-context";
-import { isWeb } from "@/constants/platform";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import { externalLinkHost } from "@/utils/external-link-host";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { formatTimeAgo } from "@/utils/time";
 import { useOpenAgentLink } from "@/utils/use-link-behavior";
 
-const ThemedSearch = withUnistyles(Search, (theme) => ({
-  color: theme.colors.mutedForeground,
-}));
-const ThemedTextInput = withUnistyles(TextInput, (theme) => ({
-  placeholderTextColor: theme.colors.mutedForeground,
-}));
 const ThemedExternalLink = withUnistyles(ExternalLink, (theme) => ({
   color: theme.colors.mutedForeground,
 }));
 const ThemedPin = withUnistyles(Pin, (theme) => ({ color: theme.colors.mutedForeground }));
 const ThemedPinOff = withUnistyles(PinOff, (theme) => ({ color: theme.colors.mutedForeground }));
+const ThemedArchive = withUnistyles(Archive, (theme) => ({ color: theme.colors.mutedForeground }));
+const ThemedArchiveRestore = withUnistyles(ArchiveRestore, (theme) => ({
+  color: theme.colors.mutedForeground,
+}));
 const ThemedPencil = withUnistyles(Pencil, (theme) => ({ color: theme.colors.mutedForeground }));
 const ThemedRotateCcw = withUnistyles(RotateCcw, (theme) => ({
   color: theme.colors.mutedForeground,
@@ -50,6 +62,8 @@ function ArtifactRow({
   onRename,
   onResetTitle,
   onTogglePin,
+  archiveSupported,
+  onToggleArchive,
   onDelete,
 }: {
   artifact: ArtifactRecordPayload;
@@ -60,10 +74,16 @@ function ArtifactRow({
   onRename: (artifact: ArtifactRecordPayload) => void;
   onResetTitle: (artifact: ArtifactRecordPayload) => void;
   onTogglePin: (artifact: ArtifactRecordPayload) => void;
+  archiveSupported: boolean;
+  onToggleArchive: (artifact: ArtifactRecordPayload) => void;
   onDelete: (artifact: ArtifactRecordPayload) => void;
 }) {
   const { t } = useTranslation();
   const { artifactId, externalUrl } = artifact;
+  const archived = artifact.archived === true;
+  let stateLabel: string | null = null;
+  if (artifact.pinned) stateLabel = t("panels.artifacts.pinned");
+  else if (archived) stateLabel = t("panels.artifacts.archived");
   const displayTitle = getArtifactDisplayTitle(artifact);
   const host = externalUrl ? externalLinkHost(externalUrl) : null;
   // A link-only artifact has nothing to preview, so the row is the link.
@@ -83,7 +103,15 @@ function ArtifactRow({
   const handleRename = useCallback(() => onRename(artifact), [artifact, onRename]);
   const handleResetTitle = useCallback(() => onResetTitle(artifact), [artifact, onResetTitle]);
   const handleTogglePin = useCallback(() => onTogglePin(artifact), [artifact, onTogglePin]);
+  const handleToggleArchive = useCallback(
+    () => onToggleArchive(artifact),
+    [artifact, onToggleArchive],
+  );
   const handleDelete = useCallback(() => onDelete(artifact), [artifact, onDelete]);
+  const archiveLeading = useMemo(
+    () => (archived ? <ThemedArchiveRestore size={16} /> : <ThemedArchive size={16} />),
+    [archived],
+  );
   const pinLeading = useMemo(
     () => (artifact.pinned ? <ThemedPinOff size={16} /> : <ThemedPin size={16} />),
     [artifact.pinned],
@@ -98,15 +126,14 @@ function ArtifactRow({
         onPress={handleOpen}
         testID={`artifact-row-${artifactId}`}
         accessibilityRole="button"
-        accessibilityLabel={
-          artifact.pinned ? `${displayTitle}, ${t("panels.artifacts.pinned")}` : displayTitle
-        }
+        accessibilityLabel={stateLabel ? `${displayTitle}, ${stateLabel}` : displayTitle}
       >
         <View style={styles.rowHeader}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
+          <Text style={[styles.rowTitle, archived && styles.rowTitleArchived]} numberOfLines={1}>
             {displayTitle}
           </Text>
           {artifact.pinned ? <ThemedPin size={12} /> : null}
+          {archived ? <ThemedArchive size={12} /> : null}
         </View>
         <Text style={styles.rowMeta} numberOfLines={1}>
           {meta}
@@ -121,7 +148,7 @@ function ArtifactRow({
           </Text>
         ) : null}
         {externalUrl && host ? (
-          <Pressable
+          <PressHighlight
             style={styles.linkRow}
             onPress={handleOpenLink}
             testID={`artifact-link-${artifactId}`}
@@ -130,7 +157,7 @@ function ArtifactRow({
             <Text style={styles.linkText} numberOfLines={1}>
               {host}
             </Text>
-          </Pressable>
+          </PressHighlight>
         ) : null}
       </ContextMenuTrigger>
       <ContextMenuContent width={180} testID={`artifact-menu-${artifactId}`}>
@@ -152,13 +179,24 @@ function ArtifactRow({
             {t("panels.artifacts.useAgentTitle")}
           </ContextMenuItem>
         ) : null}
-        <ContextMenuItem
-          leading={pinLeading}
-          onSelect={handleTogglePin}
-          testID={`artifact-pin-${artifactId}`}
-        >
-          {artifact.pinned ? t("panels.artifacts.unpin") : t("panels.artifacts.pin")}
-        </ContextMenuItem>
+        {archived ? null : (
+          <ContextMenuItem
+            leading={pinLeading}
+            onSelect={handleTogglePin}
+            testID={`artifact-pin-${artifactId}`}
+          >
+            {artifact.pinned ? t("panels.artifacts.unpin") : t("panels.artifacts.pin")}
+          </ContextMenuItem>
+        )}
+        {archiveSupported ? (
+          <ContextMenuItem
+            leading={archiveLeading}
+            onSelect={handleToggleArchive}
+            testID={`artifact-archive-${artifactId}`}
+          >
+            {archived ? t("panels.artifacts.unarchive") : t("panels.artifacts.archive")}
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuItem
           destructive
           leading={deleteLeading}
@@ -175,17 +213,11 @@ function ArtifactRow({
 function ArtifactSearchFailure({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
   return (
-    <View style={styles.searchFailure} testID="artifacts-search-error">
-      <Text style={styles.searchError}>{t("panels.artifacts.searchFailed")}</Text>
-      <Pressable
-        style={styles.retryButton}
-        onPress={onRetry}
-        accessibilityRole="button"
-        testID="artifacts-search-retry"
-      >
-        <Text style={styles.retryText}>{t("common.actions.retry")}</Text>
-      </Pressable>
-    </View>
+    <PanelSearchFailure
+      testID="artifacts-search"
+      message={t("panels.artifacts.searchFailed")}
+      onRetry={onRetry}
+    />
   );
 }
 
@@ -231,6 +263,8 @@ function ArtifactSearchResults({
   onRename,
   onResetTitle,
   onTogglePin,
+  archiveSupported,
+  onToggleArchive,
   onDelete,
 }: {
   artifacts: ArtifactRecordPayload[];
@@ -246,6 +280,8 @@ function ArtifactSearchResults({
   onRename: (artifact: ArtifactRecordPayload) => void;
   onResetTitle: (artifact: ArtifactRecordPayload) => void;
   onTogglePin: (artifact: ArtifactRecordPayload) => void;
+  archiveSupported: boolean;
+  onToggleArchive: (artifact: ArtifactRecordPayload) => void;
   onDelete: (artifact: ArtifactRecordPayload) => void;
 }) {
   const { t } = useTranslation();
@@ -294,6 +330,8 @@ function ArtifactSearchResults({
             onRename={onRename}
             onResetTitle={onResetTitle}
             onTogglePin={onTogglePin}
+            archiveSupported={archiveSupported}
+            onToggleArchive={onToggleArchive}
             onDelete={onDelete}
           />
         ))}
@@ -318,14 +356,30 @@ export function ArtifactsPane({
   const { t } = useTranslation();
   const toast = useToast();
   const projectId = useWorkspaceProjectId(serverId, workspaceId ?? null);
-  const { artifacts, isLoading, error, supported, renameSupported, remove, setPinned, rename } =
-    useProjectArtifacts(serverId, projectId);
+  const {
+    artifacts,
+    isLoading,
+    error,
+    supported,
+    renameSupported,
+    archiveSupported,
+    remove,
+    setPinned,
+    setArchived,
+    rename,
+  } = useProjectArtifacts(serverId, projectId);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [archiveScope, setArchiveScope] = useState<ArchiveScope>("active");
   const [renamingArtifact, setRenamingArtifact] = useState<ArtifactRecordPayload | null>(null);
-  const onSearchFocus = useCallback(() => setIsSearchFocused(true), []);
-  const onSearchBlur = useCallback(() => setIsSearchFocused(false), []);
-  const search = useArtifactSearch(serverId, projectId, artifacts, searchQuery);
+  const visibleArtifacts = useMemo(
+    () => filterByArchiveScope(artifacts, archiveScope),
+    [artifacts, archiveScope],
+  );
+  const archiveScopeControl = useMemo(
+    () => (archiveSupported ? { value: archiveScope, onValueChange: setArchiveScope } : undefined),
+    [archiveSupported, archiveScope],
+  );
+  const search = useArtifactSearch(serverId, projectId, visibleArtifacts, searchQuery);
   const searchLabel = search.contentSearchSupported
     ? t("panels.artifacts.searchTitlesAndText")
     : t("panels.artifacts.searchTitles");
@@ -357,6 +411,14 @@ export function ArtifactsPane({
       })();
     },
     [setPinned, t, toast],
+  );
+  const onToggleArchive = useCallback(
+    (artifact: ArtifactRecordPayload) => {
+      setArchived(artifact.artifactId, artifact.archived !== true).catch(() => {
+        toast.error(t("panels.artifacts.archiveFailed"));
+      });
+    },
+    [setArchived, t, toast],
   );
   const onDelete = useCallback(
     (artifact: ArtifactRecordPayload) => {
@@ -410,38 +472,37 @@ export function ArtifactsPane({
   }
   return (
     <View style={styles.container}>
-      <View style={[styles.searchField, isSearchFocused && styles.searchFieldFocused]}>
-        <ThemedSearch size={16} />
-        <ThemedTextInput
-          testID="artifacts-search"
-          onChangeText={setSearchQuery}
-          onFocus={onSearchFocus}
-          onBlur={onSearchBlur}
-          accessibilityLabel={searchLabel}
-          placeholder={searchLabel}
-          // @ts-expect-error - outlineStyle is web-only
-          style={[styles.searchInput, isWeb && { outlineStyle: "none" }]}
-          maxLength={200}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </View>
-      <ArtifactSearchResults
-        artifacts={search.matchingArtifacts}
-        snippetsById={search.snippetsById}
-        pending={search.pending}
-        failed={search.failed}
-        contentSearchSupported={search.contentSearchSupported}
-        hasQuery={search.hasQuery}
-        onRetry={search.retry}
-        onOpen={onOpenArtifact}
-        onOpenLink={onOpenLink}
-        renameSupported={renameSupported}
-        onRename={onRename}
-        onResetTitle={onResetTitle}
-        onTogglePin={onTogglePin}
-        onDelete={onDelete}
+      <PanelSearchField
+        testID="artifacts-search"
+        label={searchLabel}
+        onChangeText={setSearchQuery}
+        archiveScope={archiveScopeControl}
       />
+      {visibleArtifacts.length === 0 ? (
+        <View style={styles.centerState} testID="artifacts-no-active">
+          <Text style={styles.emptyTitle}>{t("panels.artifacts.noActiveTitle")}</Text>
+          <Text style={styles.emptyBody}>{t("panels.artifacts.noActiveDescription")}</Text>
+        </View>
+      ) : (
+        <ArtifactSearchResults
+          artifacts={search.matchingArtifacts}
+          snippetsById={search.snippetsById}
+          pending={search.pending}
+          failed={search.failed}
+          contentSearchSupported={search.contentSearchSupported}
+          hasQuery={search.hasQuery}
+          onRetry={search.retry}
+          onOpen={onOpenArtifact}
+          onOpenLink={onOpenLink}
+          renameSupported={renameSupported}
+          onRename={onRename}
+          onResetTitle={onResetTitle}
+          onTogglePin={onTogglePin}
+          archiveSupported={archiveSupported}
+          onToggleArchive={onToggleArchive}
+          onDelete={onDelete}
+        />
+      )}
       {renamingArtifact ? (
         <ArtifactRenameEditor
           key={renamingArtifact.artifactId}
@@ -458,52 +519,10 @@ const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
   },
-  searchField: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    margin: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
-    backgroundColor: theme.colors.surface2,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
-    borderRadius: theme.borderRadius.lg,
-  },
-  searchFieldFocused: {
-    outlineColor: theme.colors.accent,
-    outlineOffset: 1,
-    outlineStyle: "solid" as const,
-    outlineWidth: 2,
-  },
-  searchInput: {
-    flex: 1,
-    minWidth: 0,
-    paddingVertical: theme.spacing[2],
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
-  },
   searchStatus: {
     color: theme.colors.mutedForeground,
     fontSize: theme.fontSize.xs,
     marginHorizontal: theme.spacing[3],
-  },
-  searchFailure: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: theme.spacing[2],
-    marginHorizontal: theme.spacing[3],
-  },
-  searchError: {
-    color: theme.colors.destructive,
-    fontSize: theme.fontSize.xs,
-  },
-  retryButton: {
-    paddingVertical: theme.spacing[1],
-  },
-  retryText: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.xs,
   },
   list: {
     flex: 1,
@@ -522,6 +541,9 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
+  },
+  rowTitleArchived: {
+    color: theme.colors.mutedForeground,
   },
   rowMeta: {
     color: theme.colors.mutedForeground,

@@ -1,6 +1,6 @@
 export { REPLICA_ROW_STORE_SCHEMA_VERSION, REPLICA_SINGLETON_ROW_ID } from "./row-store-schema";
 
-export type ReplicaRowKind = "agent" | "workspace" | "project" | "timeline" | "checkpoint";
+export type ReplicaRowKind = "agent" | "workspace" | "project" | "timeline" | "note" | "checkpoint";
 
 export interface ReplicaRowKey {
   serverId: string;
