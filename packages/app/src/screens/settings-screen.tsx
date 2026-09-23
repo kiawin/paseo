@@ -59,6 +59,7 @@ import {
   type AgentLinkBehavior,
   type ComposerSendKey,
   type AppSettings,
+  type NoteImageBehavior,
   type SendBehavior,
   type ServiceUrlBehavior,
   type Settings as EffectiveSettings,
@@ -288,6 +289,17 @@ function getAgentLinkBehaviorLabel(t: TFunction, value: AgentLinkBehavior): stri
 
 const AGENT_LINK_BEHAVIOR_VALUES: AgentLinkBehavior[] = ["external", "in-app"];
 
+function getNoteImageBehaviorLabel(t: TFunction, value: NoteImageBehavior): string {
+  const labels: Record<NoteImageBehavior, string> = {
+    auto: t("settings.general.noteImages.options.auto"),
+    "tap-to-load": t("settings.general.noteImages.options.tapToLoad"),
+    disabled: t("settings.general.noteImages.options.disabled"),
+  };
+  return labels[value];
+}
+
+const NOTE_IMAGE_BEHAVIOR_VALUES: NoteImageBehavior[] = ["tap-to-load", "disabled", "auto"];
+
 function getComposerSendKeyLabel(t: TFunction, value: ComposerSendKey): string {
   const labels: Record<ComposerSendKey, string> = {
     enter: t("settings.general.sendKey.options.enter"),
@@ -317,6 +329,7 @@ interface GeneralSectionProps {
   handleComposerSendKeyChange: (sendKey: ComposerSendKey) => void;
   handleServiceUrlBehaviorChange: (behavior: ServiceUrlBehavior) => void;
   handleAgentLinkBehaviorChange: (behavior: AgentLinkBehavior) => void;
+  handleNoteImageBehaviorChange: (behavior: NoteImageBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
   handleTerminalScrollbackLinesChange: (lines: number) => void;
 }
@@ -340,6 +353,13 @@ interface AgentLinkBehaviorMenuItemProps {
   label: string;
   selected: boolean;
   onChange: (value: AgentLinkBehavior) => void;
+}
+
+interface NoteImageBehaviorMenuItemProps {
+  value: NoteImageBehavior;
+  label: string;
+  selected: boolean;
+  onChange: (value: NoteImageBehavior) => void;
 }
 
 interface SendBehaviorMenuItemProps {
@@ -408,6 +428,22 @@ function AgentLinkBehaviorMenuItem({
   );
 }
 
+function NoteImageBehaviorMenuItem({
+  value,
+  label,
+  selected,
+  onChange,
+}: NoteImageBehaviorMenuItemProps) {
+  const handleSelect = useCallback(() => {
+    onChange(value);
+  }, [onChange, value]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect}>
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
 interface LanguageMenuItemProps {
   value: AppLanguage;
   activeLocale: SupportedLocale;
@@ -439,6 +475,7 @@ function GeneralSection({
   handleComposerSendKeyChange,
   handleServiceUrlBehaviorChange,
   handleAgentLinkBehaviorChange,
+  handleNoteImageBehaviorChange,
   handleLanguageChange,
   handleTerminalScrollbackLinesChange,
 }: GeneralSectionProps) {
@@ -636,6 +673,38 @@ function GeneralSection({
             </DropdownMenu>
           </View>
         ) : null}
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>{t("settings.general.noteImages.label")}</Text>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.general.noteImages.description")}
+            </Text>
+          </View>
+          <DropdownMenu>
+            <DropdownTrigger
+              accessibilityRole="button"
+              accessibilityLabel={t("settings.general.noteImages.accessibilityLabel", {
+                value: getNoteImageBehaviorLabel(t, settings.noteImageBehavior),
+              })}
+              style={themeTriggerStyle}
+            >
+              <Text style={styles.themeTriggerText}>
+                {getNoteImageBehaviorLabel(t, settings.noteImageBehavior)}
+              </Text>
+            </DropdownTrigger>
+            <DropdownMenuContent side="bottom" align="end" width={220}>
+              {NOTE_IMAGE_BEHAVIOR_VALUES.map((value) => (
+                <NoteImageBehaviorMenuItem
+                  key={value}
+                  value={value}
+                  label={getNoteImageBehaviorLabel(t, value)}
+                  selected={settings.noteImageBehavior === value}
+                  onChange={handleNoteImageBehaviorChange}
+                />
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </View>
         <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
             <Text style={settingsStyles.rowTitle}>
@@ -1442,6 +1511,13 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleNoteImageBehaviorChange = useCallback(
+    (behavior: NoteImageBehavior) => {
+      void updateSettings({ noteImageBehavior: behavior });
+    },
+    [updateSettings],
+  );
+
   const handleLanguageChange = useCallback(
     (language: AppLanguage) => {
       void updateSettings({ language });
@@ -1694,6 +1770,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
                   handleComposerSendKeyChange={handleComposerSendKeyChange}
                   handleServiceUrlBehaviorChange={handleServiceUrlBehaviorChange}
                   handleAgentLinkBehaviorChange={handleAgentLinkBehaviorChange}
+                  handleNoteImageBehaviorChange={handleNoteImageBehaviorChange}
                   handleLanguageChange={handleLanguageChange}
                   handleTerminalScrollbackLinesChange={handleTerminalScrollbackLinesChange}
                 />

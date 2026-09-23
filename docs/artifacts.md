@@ -22,6 +22,8 @@ the working tree, and reaching it from a phone means the file is on the wrong ma
 See [security.md](../SECURITY.md#artifacts) for the threat model, and
 [glossary.md](glossary.md) for the noun — "artifact" never means a CI build output here.
 
+For the sibling Notes view, see [notes.md](notes.md).
+
 ## Why the key is `projectId`
 
 A workspace is one `cwd`. A project spans every workspace on it, worktrees included. An agent that

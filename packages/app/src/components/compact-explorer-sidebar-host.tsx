@@ -25,6 +25,7 @@ import {
   type CompactExplorerSidebarHostModel,
 } from "@/components/compact-explorer-sidebar-host-state";
 import { AppearanceStyleBoundary } from "@/components/appearance-style-boundary";
+import type { NoteTarget } from "@/notes/federation";
 
 interface CompactExplorerOpenGestureSurfaceProps {
   children: ReactNode;
@@ -168,6 +169,23 @@ export function CompactExplorerSidebarHost({
     [focusWorkspaceTab, model, openWorkspaceTabInFocusedPane, presentation, showMobileAgent],
   );
 
+  const handleOpenNote = useCallback(
+    (target: NoteTarget) => {
+      if (!model) {
+        return;
+      }
+      openWorkspaceTargetFromExplorer({
+        target,
+        persistenceKey: model.persistenceKey,
+        closeExplorerAfterOpen: presentation === "overlay",
+        showMobileAgent,
+        openWorkspaceTabInFocusedPane,
+        focusWorkspaceTab,
+      });
+    },
+    [focusWorkspaceTab, model, openWorkspaceTabInFocusedPane, presentation, showMobileAgent],
+  );
+
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const nextWidth = event.nativeEvent.layout.width;
     setContainerWidth((current) => (current === nextWidth ? current : nextWidth));
@@ -186,6 +204,7 @@ export function CompactExplorerSidebarHost({
             containerWidth={containerWidth}
             onOpenFile={handleOpenFile}
             onOpenArtifact={handleOpenArtifact}
+            onOpenNote={handleOpenNote}
           />
         ) : (
           <CompactExplorerSidebar
@@ -195,6 +214,7 @@ export function CompactExplorerSidebarHost({
             isGit={model.isGit}
             onOpenFile={handleOpenFile}
             onOpenArtifact={handleOpenArtifact}
+            onOpenNote={handleOpenNote}
           />
         )}
       </DiffDocumentWorkspaceCacheProvider>
