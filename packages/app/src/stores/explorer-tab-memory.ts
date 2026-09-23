@@ -1,10 +1,11 @@
-export type ExplorerTab = "changes" | "files" | "pr" | "artifacts";
+export type ExplorerTab = "changes" | "files" | "pr" | "artifacts" | "notes";
 
 const EXPLORER_TABS: ReadonlySet<string> = new Set<ExplorerTab>([
   "changes",
   "files",
   "pr",
   "artifacts",
+  "notes",
 ]);
 
 export function isExplorerTab(value: unknown): value is ExplorerTab {
