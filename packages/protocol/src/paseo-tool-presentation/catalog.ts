@@ -400,6 +400,43 @@ export const PASEO_TOOL_CATALOG = {
     },
   },
 
+  // Notes
+  list_notes: {
+    label: "List notes",
+    completedLabel: "Listed notes",
+    detail: { inputOrder: ["limit"] },
+  },
+  read_note: {
+    label: "Read note",
+    completedLabel: "Read note",
+    context: field("noteId"),
+    detail: { inputOrder: ["noteId"] },
+  },
+  search_notes: {
+    label: "Search notes",
+    completedLabel: "Searched notes",
+    context: field("query"),
+    detail: { inputOrder: ["query", "limit"] },
+  },
+  pin_note: {
+    label: "Pin note",
+    completedLabel: "Pinned note",
+    context: field("noteId"),
+    detail: { inputOrder: ["noteId", "pinned"] },
+  },
+  write_note: {
+    label: "Write note",
+    completedLabel: "Wrote note",
+    context: field("noteId"),
+    detail: { inputOrder: ["noteId", "body"] },
+  },
+  patch_note: {
+    label: "Patch note",
+    completedLabel: "Patched note",
+    context: field("noteId"),
+    detail: { inputOrder: ["noteId", "edits"] },
+  },
+
   // Browser
   browser_list_hosts: browser("List browser hosts", "Listed browser hosts"),
   browser_list_tabs: browser("List browser tabs", "Listed browser tabs"),

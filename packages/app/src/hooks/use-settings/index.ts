@@ -49,7 +49,11 @@ import {
   type ComposerSendKey,
 >>>>>>> d68f1ab8c (feat(app): choose which Enter chord sends a message)
   type ForgeLinkBehavior,
+<<<<<<< HEAD
 >>>>>>> d1d3452c0 (feat(app): let agent message links open in the Paseo browser (#17))
+=======
+  type NoteImageBehavior,
+>>>>>>> ec1690db9 (feat(notes): add a project-scoped Notes tab people and agents both write (#48))
   type OpenInSidePanePreferences,
   type PullRequestOpenLocation,
   type DesktopSettingsBridge,
@@ -96,6 +100,7 @@ export type {
   AppLanguage,
   ComposerSendKey,
   ForgeLinkBehavior,
+  NoteImageBehavior,
   OpenInSidePanePreferences,
   PullRequestOpenLocation,
   DesktopSettingsBridge,

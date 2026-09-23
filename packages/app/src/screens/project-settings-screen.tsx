@@ -29,18 +29,12 @@ import { EditingTextInput as TextInput } from "@/components/ui/text-input";
 import { SettingsTextAreaCard } from "@/components/settings-textarea";
 import { SettingsGroup } from "@/components/settings/headings/settings-group";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
-<<<<<<< HEAD
-<<<<<<< HEAD
-import { SettingsBackLink, SettingsDetailHeader } from "@/components/settings";
-=======
-=======
 import { SettingsBackLink, SettingsDetailHeader } from "@/components/settings";
 import { CopyFromHostSection } from "@/screens/settings/copy-from-host-section";
 import {
   PrAutomationSection,
   type PrAutomationSectionProps,
 } from "@/screens/settings/pr-automation-section";
->>>>>>> 0e6f1cb29 (fixup! feat: per-project worktree location, with archive that only deletes what it owns (#19))
 import {
   WorktreeLocationSection,
   type WorktreeLocationSectionProps,
@@ -358,6 +352,8 @@ function ProjectSettingsBody({
         onBackToProjects,
         showBackToProjects,
       })}
+
+      <CopyFromHostSection project={project} target={selectedHost} targetClient={client} />
     </View>
   );
 }
