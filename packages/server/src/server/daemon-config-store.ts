@@ -27,6 +27,7 @@ interface SupportedMutableConfigPatch {
   providers?: MutableDaemonConfig["providers"];
   removeProviders?: string[];
   metadataGeneration?: MutableDaemonConfig["metadataGeneration"];
+  agents?: MutableDaemonConfigPatch["agents"];
   autoArchiveAfterMerge?: boolean;
   enableTerminalAgentHooks?: boolean;
   idleRuntimeCleanup?: boolean;
@@ -202,6 +203,8 @@ const RELOADABLE_PATHS = [
   "agents.providers",
   "agents.catalogRefreshTimeoutMs",
   "agents.metadataGeneration",
+  "agents.peerMessaging.enforceReachability",
+  "agents.peerMessaging.cwdReachability",
   "agents.skills.selection",
   "pluginsEnabled",
 ] as const;
@@ -230,6 +233,8 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["agents.providers", "providers"],
   ["agents.catalogRefreshTimeoutMs", "catalogRefreshTimeoutMs"],
   ["agents.metadataGeneration", "metadataGeneration"],
+  ["agents.peerMessaging.enforceReachability", "agents.peerMessaging.enforceReachability"],
+  ["agents.peerMessaging.cwdReachability", "agents.peerMessaging.cwdReachability"],
   ["agents.skills.selection", "skills.selection"],
   ["pluginsEnabled", "pluginsEnabled"],
 ]);
@@ -296,6 +301,7 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...(patch.metadataGeneration?.providers !== undefined
       ? { metadataGeneration: { providers: patch.metadataGeneration.providers } }
       : {}),
+    ...pickPeerMessagingPatch(patch),
     ...(patch.autoArchiveAfterMerge !== undefined
       ? { autoArchiveAfterMerge: patch.autoArchiveAfterMerge }
       : {}),
@@ -316,6 +322,23 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...(patch.plugins !== undefined ? { plugins: patch.plugins } : {}),
     ...(patch.features !== undefined ? { features: patch.features } : {}),
   };
+}
+
+function pickPeerMessagingPatch(
+  patch: MutableDaemonConfigPatch,
+): Pick<SupportedMutableConfigPatch, "agents"> | undefined {
+  const enforceReachability = patch.agents?.peerMessaging?.enforceReachability;
+  const cwdReachability = patch.agents?.peerMessaging?.cwdReachability;
+  return enforceReachability === undefined && cwdReachability === undefined
+    ? undefined
+    : {
+        agents: {
+          peerMessaging: {
+            ...(enforceReachability !== undefined ? { enforceReachability } : {}),
+            ...(cwdReachability !== undefined ? { cwdReachability } : {}),
+          },
+        },
+      };
 }
 
 export function applyMutableProviderConfigToOverrides(
@@ -705,19 +728,26 @@ function mergeMutablePatchIntoPersistedConfig(params: {
   } as PersistedConfig;
 }
 
+function touchesAgentConfig(
+  patch: Omit<SupportedMutableConfigPatch, "removeProviders">,
+  removeProviders: readonly string[],
+): boolean {
+  return (
+    patch.providers !== undefined ||
+    patch.metadataGeneration !== undefined ||
+    patch.agents?.peerMessaging !== undefined ||
+    patch.skills !== undefined ||
+    patch.idleRuntimeCleanup !== undefined ||
+    removeProviders.length > 0
+  );
+}
+
 function mergeMutableAgentPatch(
   persistedAgents: PersistedConfig["agents"],
   patch: Omit<SupportedMutableConfigPatch, "removeProviders">,
   removeProviders: readonly string[],
 ): PersistedConfig["agents"] {
-  if (
-    patch.providers === undefined &&
-    patch.metadataGeneration === undefined &&
-    patch.skills === undefined &&
-    !hasRestartRecoveryPatch(patch) &&
-    patch.idleRuntimeCleanup === undefined &&
-    removeProviders.length === 0
-  ) {
+  if (!touchesAgentConfig(patch, removeProviders) && !hasRestartRecoveryPatch(patch)) {
     return persistedAgents;
   }
 
@@ -752,8 +782,22 @@ function mergeMutableAgentPatch(
   if (patch.idleRuntimeCleanup !== undefined) {
     next["idleRuntimeCleanup"] = patch.idleRuntimeCleanup;
   }
+  mergePeerMessagingPatch(next, patch.agents?.peerMessaging);
 
   return Object.keys(next).length > 0 ? (next as PersistedConfig["agents"]) : undefined;
+}
+
+function mergePeerMessagingPatch(
+  next: Record<string, unknown>,
+  peerMessaging:
+    | NonNullable<NonNullable<MutableDaemonConfigPatch["agents"]>["peerMessaging"]>
+    | undefined,
+): void {
+  if (peerMessaging === undefined) return;
+  next["peerMessaging"] = {
+    ...(isRecord(next["peerMessaging"]) ? next["peerMessaging"] : {}),
+    ...peerMessaging,
+  };
 }
 
 function mergeMutableDaemonPatch(
