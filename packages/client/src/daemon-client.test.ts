@@ -1143,6 +1143,7 @@ test("advertises client capabilities in hello", async () => {
       terminal_chunked_replay: true,
       timeline_notifications: true,
       artifact_tool_detail: true,
+      notes: true,
       plugin_timeline_items: true,
       plugin_binary_payloads: true,
       workspace_setup_blocked: true,
