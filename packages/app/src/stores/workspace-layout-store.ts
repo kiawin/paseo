@@ -21,6 +21,7 @@ import {
   collectAllPanesIncludingHidden,
   collectAllTabs,
   convertDraftToAgentInLayout,
+  convertNoteDraftToNoteInLayout,
   createTabInLayout,
   createDefaultLayout,
   DEFAULT_PANE_ID,
@@ -199,6 +200,12 @@ interface WorkspaceLayoutStore {
   ) => string | null;
   setTabState: (workspaceKey: string, tabId: string, state: JsonValue | undefined) => void;
   convertDraftToAgent: (workspaceKey: string, tabId: string, agentId: string) => string | null;
+  convertNoteDraftToNote: (
+    workspaceKey: string,
+    tabId: string,
+    serverId: string,
+    noteId: string,
+  ) => string | null;
   reconcileTabs: (workspaceKey: string, snapshot: WorkspaceTabSnapshot) => void;
   reorderTabs: (workspaceKey: string, tabIds: string[]) => void;
   getWorkspaceTabs: (workspaceKey: string) => WorkspaceTab[];
@@ -1724,6 +1731,42 @@ export function createWorkspaceLayoutStore(
             ...withUpdatedWorkspaceLayout(state, normalizedWorkspaceKey, result.layout, renamedTab),
           }));
 
+          return result.tabId;
+        },
+        convertNoteDraftToNote: (workspaceKey, tabId, serverId, noteId) => {
+          const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);
+          const normalizedTabId = trimNonEmpty(tabId);
+          const normalizedServerId = trimNonEmpty(serverId);
+          const normalizedNoteId = trimNonEmpty(noteId);
+          if (
+            !normalizedWorkspaceKey ||
+            !normalizedTabId ||
+            !normalizedServerId ||
+            !normalizedNoteId
+          ) {
+            return null;
+          }
+
+          const layout = getWorkspaceLayout(get().layoutByWorkspace, normalizedWorkspaceKey);
+          const result = convertNoteDraftToNoteInLayout({
+            layout,
+            tabId: normalizedTabId,
+            serverId: normalizedServerId,
+            noteId: normalizedNoteId,
+          });
+          if (!result) {
+            return null;
+          }
+
+          set((state) => ({
+            ...(result.layout.focusedPaneId !== null
+              ? (withoutFocusRestoration(state, normalizedWorkspaceKey) ?? {})
+              : {}),
+            layoutByWorkspace: {
+              ...state.layoutByWorkspace,
+              [normalizedWorkspaceKey]: result.layout,
+            },
+          }));
           return result.tabId;
         },
         reconcileTabs: (workspaceKey, snapshot) => {
