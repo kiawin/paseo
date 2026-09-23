@@ -1,14 +1,10 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { z } from "zod";
 import type { TestInfo } from "@playwright/test";
 import { test as base, expect, type Page } from "../fixtures";
 import { buildHostAgentDetailRoute } from "@/utils/host-routes";
 import { openSessions } from "./archive-tab";
-import { getE2EDaemonPort } from "./daemon-port";
 import { assertComposerIdle } from "./rewind-flow";
 import { getServerId } from "./server-id";
 import { archiveWorkspaceFromSidebar, expectWorkspaceAbsentFromSidebar } from "./sidebar";
@@ -17,30 +13,11 @@ import { waitForSidebarHydration } from "./workspace-ui";
 import type { SeedDaemonClient } from "./seed-client";
 
 const REPLY = "CODEX_WORKTREE_RESTORE_READY";
-const workspaceSchema = z.object({
-  workspaceId: z.string(),
-  projectId: z.string(),
-  cwd: z.string(),
-  isolation: z.literal("worktree"),
-});
 
-async function callPaseoTool(
-  mcp: Client,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<unknown> {
-  const result = await mcp.callTool({ name, arguments: args }, undefined, { timeout: 240_000 });
-  expect(result).not.toMatchObject({ isError: true });
-  return result.structuredContent;
-}
-
-async function defaultCodexModel(mcp: Client): Promise<string> {
-  const result = z
-    .object({ models: z.array(z.object({ id: z.string(), isDefault: z.boolean() })) })
-    .parse(await callPaseoTool(mcp, "list_models", { provider: "codex" }));
-  const model = result.models.find((entry) => entry.isDefault);
-  if (!model) throw new Error("Codex did not advertise a default model");
-  return model.id;
+interface CreatedWorktree {
+  workspaceId: string;
+  projectId: string;
+  cwd: string;
 }
 
 function recordTimelineWire(page: Page): string[] {
@@ -59,9 +36,8 @@ function recordTimelineWire(page: Page): string[] {
 
 async function createCodexRestoreJourney(page: Page, client: SeedDaemonClient, info: TestInfo) {
   const repo = await createTempGitRepo("codex-worktree-restore-");
-  const mcp = new Client({ name: "worktree-codex-restore-playwright", version: "1.0.0" });
   const wire = recordTimelineWire(page);
-  let workspace: z.infer<typeof workspaceSchema> | undefined;
+  let workspace: CreatedWorktree | undefined;
   let agentId: string | undefined;
 
   function created() {
@@ -77,30 +53,30 @@ async function createCodexRestoreJourney(page: Page, client: SeedDaemonClient, i
   }
 
   return {
+    // Created over the daemon WebSocket: the Agent MCP endpoint rejects a caller with no
+    // credentials, and this e2e daemon has no password to authenticate as the user.
     async createWorktreeWithCodex() {
-      await mcp.connect(
-        new StreamableHTTPClientTransport(
-          new URL(`http://127.0.0.1:${getE2EDaemonPort()}/mcp/agents`),
-        ),
-      );
-      workspace = workspaceSchema.parse(
-        await callPaseoTool(mcp, "create_workspace", {
-          isolation: "worktree",
-          path: repo.path,
-          baseBranch: "main",
-          title: "Codex worktree restore reproduction",
-        }),
-      );
-      const agent = z.object({ agentId: z.string() }).parse(
-        await callPaseoTool(mcp, "create_agent", {
-          workspaceId: workspace.workspaceId,
-          provider: `codex/${await defaultCodexModel(mcp)}`,
-          settings: { modeId: "full-access", thinkingOptionId: "low" },
-          title: "Codex worktree restore reproduction",
-          initialPrompt: `Reply with exactly ${REPLY} and nothing else. Do not use tools.`,
-        }),
-      );
-      agentId = agent.agentId;
+      const creation = await client.createWorkspace({
+        source: { kind: "worktree", cwd: repo.path, baseBranch: "main" },
+        title: "Codex worktree restore reproduction",
+      });
+      if (!creation.workspace) throw new Error(creation.error ?? "Worktree creation failed");
+      workspace = {
+        workspaceId: creation.workspace.id,
+        projectId: creation.workspace.projectId,
+        cwd: creation.workspace.workspaceDirectory,
+      };
+      // No model: the daemon resolves Codex's default, as list_models reported it.
+      const agent = await client.createAgent({
+        provider: "codex",
+        cwd: workspace.cwd,
+        workspaceId: workspace.workspaceId,
+        modeId: "full-access",
+        thinkingOptionId: "low",
+        title: "Codex worktree restore reproduction",
+        initialPrompt: `Reply with exactly ${REPLY} and nothing else. Do not use tools.`,
+      });
+      agentId = agent.id;
     },
     async waitForCompletedReply() {
       const target = created();
@@ -234,7 +210,7 @@ async function createCodexRestoreJourney(page: Page, client: SeedDaemonClient, i
       } catch (error) {
         errors.push(error);
       }
-      const cleanup: Array<() => Promise<unknown>> = [() => mcp.close()];
+      const cleanup: Array<() => Promise<unknown>> = [];
       if (!testFailed || process.env.E2E_KEEP_PASEO_HOME !== "1") {
         const projectId = workspace?.projectId;
         if (projectId) cleanup.push(() => client.removeProject(projectId));
