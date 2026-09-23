@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { forkPaseoHomeMetadata, resolvePaseoHomePath } from "./paseo-home-fork";
@@ -174,6 +174,9 @@ export async function startE2EWorker(
   const preserveHome = Boolean(requestedRoot) || process.env.E2E_KEEP_PASEO_HOME === "1";
   const fakeEditorBin = await createFakeEditorBin();
   const editorRecordPath = path.join(paseoHome, "editor-open-records.jsonl");
+  // The Agent MCP endpoint admits only per-agent tokens, so a spec that calls it as an agent
+  // reads that agent's token from here.
+  const mcpTokenDir = path.join(paseoHome, "mcp-tokens");
   const serverId = `srv_e2e_worker_${workerIndex}`;
 
   try {
@@ -189,6 +192,7 @@ export async function startE2EWorker(
     if (options.injectPaseoTools) {
       await enablePaseoTools(paseoHome);
     }
+    await mkdir(mcpTokenDir, { recursive: true });
     const daemon = await startIsolatedHostDaemon(serverId, {
       paseoHome,
       preserveHome,
@@ -196,6 +200,7 @@ export async function startE2EWorker(
         NODE_ENV: "development",
         PATH: `${fakeEditorBin}${path.delimiter}${process.env.PATH ?? ""}`,
         PASEO_E2E_EDITOR_RECORD_PATH: editorRecordPath,
+        PASEO_TEST_MCP_TOKEN_DIR: mcpTokenDir,
         ...options.environment,
       },
     });
@@ -204,6 +209,7 @@ export async function startE2EWorker(
     process.env.E2E_SERVER_ID = daemon.serverId;
     process.env.E2E_PASEO_HOME = daemon.paseoHome;
     process.env.E2E_EDITOR_RECORD_PATH = editorRecordPath;
+    process.env.E2E_MCP_TOKEN_DIR = mcpTokenDir;
     delete process.env.E2E_RELAY_PORT;
     delete process.env.E2E_RELAY_DAEMON_PUBLIC_KEY;
 
