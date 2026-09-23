@@ -624,6 +624,7 @@ function mergeMutableAgentPatch(
   if (
     patch.providers === undefined &&
     patch.metadataGeneration === undefined &&
+    patch.agents?.peerMessaging === undefined &&
     patch.skills === undefined &&
     removeProviders.length === 0
   ) {
@@ -657,7 +658,22 @@ function mergeMutableAgentPatch(
     next["skills"] = { selection: patch.skills.selection };
   }
 
+  mergePeerMessagingPatch(next, patch.agents?.peerMessaging);
+
   return Object.keys(next).length > 0 ? (next as PersistedConfig["agents"]) : undefined;
+}
+
+function mergePeerMessagingPatch(
+  next: Record<string, unknown>,
+  peerMessaging:
+    | NonNullable<NonNullable<MutableDaemonConfigPatch["agents"]>["peerMessaging"]>
+    | undefined,
+): void {
+  if (peerMessaging === undefined) return;
+  next["peerMessaging"] = {
+    ...(isRecord(next["peerMessaging"]) ? next["peerMessaging"] : {}),
+    ...peerMessaging,
+  };
 }
 
 function mergeMutableDaemonPatch(
