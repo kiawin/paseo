@@ -635,6 +635,82 @@ describe("eviction", () => {
   });
 });
 
+describe("archive", () => {
+  test("clears the pin, keeps recency, and survives an agent republish and a restart", async () => {
+    const { record } = await store.publish({
+      projectId: "prj_a",
+      title: "Draft",
+      html: "<p>v1</p>",
+      origin: AGENT,
+    });
+    await store.setPinned(record.artifactId, true);
+
+    const archived = await store.setArchived(record.artifactId, true);
+    expect(archived).toMatchObject({ archived: true, pinned: false, updatedAt: record.updatedAt });
+
+    const republished = await store.publish({
+      projectId: "prj_a",
+      title: "Final",
+      html: "<p>v2</p>",
+      artifactId: record.artifactId,
+      origin: AGENT,
+    });
+    expect(republished.record).toMatchObject({ archived: true, pinned: false });
+    expect(await (await open()).get(record.artifactId)).toMatchObject({ archived: true });
+
+    const restored = await store.setArchived(record.artifactId, false);
+    expect(restored).not.toHaveProperty("archived");
+    expect(restored?.pinned).toBe(false);
+  });
+
+  test("pinning an archived artifact unarchives it", async () => {
+    const { record } = await store.publish({
+      projectId: "prj_a",
+      title: "Doc",
+      html: "<p>x</p>",
+      origin: AGENT,
+    });
+    await store.setArchived(record.artifactId, true);
+
+    const pinned = await store.setPinned(record.artifactId, true);
+    expect(pinned).toMatchObject({ pinned: true });
+    expect(pinned).not.toHaveProperty("archived");
+  });
+
+  test("an archived artifact is evicted like any unpinned one", async () => {
+    const capped = new ArtifactStore(root, createTestLogger(), { maxPerProject: 2 });
+    await capped.initialize();
+
+    const publish = async (title: string) =>
+      (await capped.publish({ projectId: "prj_a", title, html: "<p>x</p>", origin: AGENT })).record;
+    const first = await publish("Archived");
+    await capped.setPinned(first.artifactId, true);
+    await capped.setArchived(first.artifactId, true);
+    await publish("Two");
+    await publish("Three");
+
+    const listed = await capped.listForProject("prj_a");
+    expect(listed.map((record) => record.title).sort()).toEqual(["Three", "Two"]);
+  });
+
+  test("a user publish commits the archive with the document", async () => {
+    const { record } = await store.publish({
+      projectId: "prj_a",
+      title: "Doc",
+      html: "<p>x</p>",
+      pinned: true,
+      archived: true,
+      allowEviction: false,
+      origin: { agentId: null, workspaceId: null, provider: null },
+    });
+    expect(record).toMatchObject({ archived: true, pinned: false });
+  });
+
+  test("refuses an unknown artifact", async () => {
+    expect(await store.setArchived("art_missing", true)).toBeNull();
+  });
+});
+
 describe("link-only artifacts", () => {
   const LINK = "https://claude.ai/code/artifact/abc";
 
