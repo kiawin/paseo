@@ -104,6 +104,7 @@ export async function openWorkspacePanelFromExplorerMenu(
   await expect(menu.getByRole("menuitem")).toHaveText([
     /^Terminal/,
     /^Diff/,
+    "Notes",
     "Other review",
     "Other review summary",
     "Review",
