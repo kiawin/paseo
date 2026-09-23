@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic-file.js";
 import { FileBackedRegistry } from "./file-backed-registry.js";
+import { searchSnippet, searchTerms } from "./search-text.js";
 
 /** Rejected before any write. Comfortably under Claude's own 16 MB artifact ceiling. */
 export const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
@@ -115,12 +116,6 @@ function visibleArtifactText(html: string): string {
   };
   visit(parse(html));
   return pieces.join(" ").replace(/\s+/g, " ").trim();
-}
-
-function searchSnippet(text: string, matchIndex: number): string {
-  const start = Math.max(0, matchIndex - 45);
-  const end = Math.min(text.length, matchIndex + 95);
-  return `${start > 0 ? "…" : ""}${text.slice(start, end).trim()}${end < text.length ? "…" : ""}`;
 }
 
 /**
@@ -351,7 +346,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
   }
 
   async searchForProject(projectId: string, query: string): Promise<ArtifactSearchMatch[]> {
-    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const terms = searchTerms(query);
     if (terms.length === 0) return [];
     const matches: ArtifactSearchMatch[] = [];
     for (const record of await this.listForProject(projectId)) {
