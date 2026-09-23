@@ -63,6 +63,9 @@ $PASEO_HOME/
 ├── artifacts/
 │   ├── index.json                        # Metadata for every project's artifacts
 │   └── {projectId}/{artifactId}.html     # One document per artifact; see artifacts.md
+├── notes/
+│   ├── index.json                        # Metadata for every note
+│   └── {sha256(projectId)}/{noteId}.{contentSha256}.md
 ├── runtime/
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
@@ -71,6 +74,9 @@ $PASEO_HOME/
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
 └── push-tokens.json                     # Expo push notification tokens
 ```
+
+Notes hash the exact `projectId` for the project directory because legacy IDs may be path-shaped
+or remote-shaped; artifacts keep their direct `{projectId}` layout for compatibility.
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
 
