@@ -30,9 +30,11 @@ export function useWorkspaceProjectId(
 export interface ProjectArtifacts extends ArtifactListState {
   supported: boolean;
   renameSupported: boolean;
+  archiveSupported: boolean;
   refresh: () => void;
   remove: (artifactId: string) => Promise<void>;
   setPinned: (artifactId: string, pinned: boolean) => Promise<void>;
+  setArchived: (artifactId: string, archived: boolean) => Promise<void>;
   rename: (artifactId: string, title: string | null) => Promise<void>;
 }
 
@@ -41,6 +43,7 @@ export function useProjectArtifacts(serverId: string, projectId: string | null):
   const supported = useHostFeature(serverId, "artifacts");
   const invalidationSupported = useHostFeature(serverId, "artifactInvalidation");
   const renameSupported = useHostFeature(serverId, "artifactRename");
+  const archiveSupported = useHostFeature(serverId, "artifactArchive");
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const refreshList = useArtifactsStore((state) => state.refreshList);
   const list = useArtifactsStore((state) =>
@@ -99,6 +102,15 @@ export function useProjectArtifacts(serverId: string, projectId: string | null):
     [client, projectId, refreshList, serverId],
   );
 
+  const setArchived = useCallback(
+    async (artifactId: string, archived: boolean) => {
+      if (!client) return;
+      await client.setArtifactArchived(artifactId, archived);
+      if (projectId) await refreshList({ client, serverId, projectId });
+    },
+    [client, projectId, refreshList, serverId],
+  );
+
   const rename = useCallback(
     async (artifactId: string, title: string | null) => {
       if (!client || !renameSupported) throw new Error(t("panels.artifacts.renameFailed"));
@@ -115,12 +127,24 @@ export function useProjectArtifacts(serverId: string, projectId: string | null):
       error: list?.error ?? null,
       supported,
       renameSupported,
+      archiveSupported,
       refresh,
       remove,
       setPinned,
+      setArchived,
       rename,
     }),
-    [list, refresh, remove, setPinned, rename, renameSupported, supported],
+    [
+      list,
+      refresh,
+      remove,
+      setPinned,
+      setArchived,
+      rename,
+      renameSupported,
+      archiveSupported,
+      supported,
+    ],
   );
 }
 

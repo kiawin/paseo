@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  ArtifactArchiveSetRequestSchema,
+  ArtifactArchiveSetResponseSchema,
   ArtifactChangedMessageSchema,
   ArtifactDeleteRequestSchema,
   ArtifactDeleteResponseSchema,
@@ -343,5 +345,55 @@ describe("artifact messages", () => {
       },
     });
     expect(parsed.payload.artifacts[0]?.origin.provider).toBe("claude");
+  });
+
+  test("round-trips archive, registers it in the unions, and gates it on artifactArchive", () => {
+    const request = {
+      type: "artifact.archive.set.request" as const,
+      artifactId: RECORD.artifactId,
+      archived: true,
+      requestId: "r",
+    };
+    expect(ArtifactArchiveSetRequestSchema.parse(request)).toEqual(request);
+    expect(SessionInboundMessageSchema.safeParse(request).success).toBe(true);
+    expect(
+      SessionInboundMessageSchema.safeParse({
+        type: "artifact.publish.request",
+        projectId: RECORD.projectId,
+        title: RECORD.title,
+        html: "<p>Doc</p>",
+        externalUrl: null,
+        archived: true,
+        requestId: "r",
+      }).success,
+    ).toBe(true);
+
+    const response = {
+      type: "artifact.archive.set.response" as const,
+      payload: {
+        artifact: { ...RECORD, archived: true },
+        success: true,
+        error: null,
+        requestId: "r",
+      },
+    };
+    expect(ArtifactArchiveSetResponseSchema.parse(response)).toEqual(response);
+    expect(WSOutboundMessageSchema.safeParse({ type: "session", message: response }).success).toBe(
+      true,
+    );
+    // A record from a daemon before archiving parses as active.
+    expect(
+      ArtifactArchiveSetResponseSchema.parse({
+        ...response,
+        payload: { ...response.payload, artifact: RECORD },
+      }).payload.artifact?.archived,
+    ).toBeUndefined();
+    expect(
+      ServerInfoStatusPayloadSchema.parse({
+        status: "server_info",
+        serverId: "server-1",
+        features: { artifactArchive: true },
+      }).features?.artifactArchive,
+    ).toBe(true);
   });
 });
