@@ -89,6 +89,17 @@ describe("createSidebarWorkspaceEntry workspace directory label", () => {
   });
 });
 
+describe("createSidebarWorkspaceEntry agent tools override", () => {
+  it("preserves the tri-state workspace override for the menu", () => {
+    const descriptor = workspaceWithForge(undefined, "https://github.com/acme/repo/pull/42");
+    descriptor.agentToolsEnabled = false;
+
+    const entry = createSidebarWorkspaceEntry({ serverId: "srv", workspace: descriptor });
+
+    expect(entry.agentToolsEnabled).toBe(false);
+  });
+});
+
 interface OrderedItem {
   key: string;
 }
