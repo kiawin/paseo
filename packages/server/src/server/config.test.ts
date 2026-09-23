@@ -77,6 +77,23 @@ describe("server config", () => {
     expect(config.providerCatalogRefreshTimeoutMs).toBe(180_000);
   });
 
+  test("a settings reload keeps the persisted peer messaging rules", async () => {
+    const paseoHome = await mkdtemp(path.join(os.tmpdir(), "paseo-config-peer-messaging-"));
+    roots.push(paseoHome);
+    const persisted = loadPersistedConfig(paseoHome);
+
+    const reloaded = resolveReloadableConfig(
+      {
+        ...persisted,
+        agents: { peerMessaging: { enforceReachability: true, cwdReachability: false } },
+      },
+      { env: {} },
+    );
+
+    expect(reloaded.peerMessagingEnforceReachability).toBe(true);
+    expect(reloaded.peerMessagingCwdReachability).toBe(false);
+  });
+
   test("resolves reload state from the supplied validated snapshot", async () => {
     const paseoHome = await mkdtemp(path.join(os.tmpdir(), "paseo-config-snapshot-"));
     roots.push(paseoHome);
