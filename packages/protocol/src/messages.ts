@@ -3113,6 +3113,8 @@ export const ArtifactRecordPayloadSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   pinned: z.boolean(),
+  // Absent from a daemon that predates archiving; read as false. An archived row is never pinned.
+  archived: z.boolean().optional(),
   // Companion link to the same document published elsewhere; `http:` / `https:` only, and
   // opened externally rather than loaded into the preview.
   externalUrl: z.string().nullable(),
@@ -3156,6 +3158,14 @@ export const ArtifactPinSetRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Archiving is metadata like pinning, and archiving clears the pin.
+export const ArtifactArchiveSetRequestSchema = z.object({
+  type: z.literal("artifact.archive.set.request"),
+  artifactId: z.string(),
+  archived: z.boolean(),
+  requestId: z.string(),
+});
+
 export const ArtifactRenameRequestSchema = z.object({
   type: z.literal("artifact.rename.request"),
   artifactId: z.string(),
@@ -3176,6 +3186,80 @@ export const ArtifactPublishRequestSchema = z.object({
   html: z.string().nullable(),
   externalUrl: z.string().nullable(),
   pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
+  requestId: z.string(),
+});
+
+// ---------------------------------------------------------------------------
+// Notes — project-scoped markdown documents owned by the daemon.
+// ---------------------------------------------------------------------------
+
+export const NoteRecordPayloadSchema = z.object({
+  noteId: z.string(),
+  projectId: z.string(),
+  displayTitle: z.string(),
+  size: z.number().int().nonnegative(),
+  contentSha256: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  revision: z.number().int().positive(),
+  // Absent from a daemon that predates pinning; read as false.
+  pinned: z.boolean().optional(),
+  // Absent from a daemon that predates archiving; read as false. An archived note is never pinned.
+  archived: z.boolean().optional(),
+});
+
+export const NoteListRequestSchema = z.object({
+  type: z.literal("note.list.request"),
+  projectId: z.string(),
+  requestId: z.string(),
+});
+
+export const NoteReadRequestSchema = z.object({
+  type: z.literal("note.read.request"),
+  noteId: z.string(),
+  projectId: z.string().optional(),
+  requestId: z.string(),
+});
+
+export const NoteSaveRequestSchema = z.object({
+  type: z.literal("note.save.request"),
+  projectId: z.string(),
+  noteId: z.string().nullable().optional(),
+  body: z.string(),
+  requestId: z.string(),
+});
+
+// Pinning is metadata: it changes neither the revision nor `updatedAt`.
+export const NotePinSetRequestSchema = z.object({
+  type: z.literal("note.pin.set.request"),
+  noteId: z.string(),
+  projectId: z.string().optional(),
+  pinned: z.boolean(),
+  requestId: z.string(),
+});
+
+// Like pinning, archiving changes neither the revision nor `updatedAt`. Archiving clears the pin.
+export const NoteArchiveSetRequestSchema = z.object({
+  type: z.literal("note.archive.set.request"),
+  noteId: z.string(),
+  projectId: z.string().optional(),
+  archived: z.boolean(),
+  requestId: z.string(),
+});
+
+export const NoteSearchRequestSchema = z.object({
+  type: z.literal("note.search.request"),
+  projectId: z.string(),
+  query: z.string().max(200),
+  requestId: z.string(),
+});
+
+export const NoteDeleteRequestSchema = z.object({
+  type: z.literal("note.delete.request"),
+  noteId: z.string(),
+  expectedRevision: z.number().int().positive(),
+  projectId: z.string().optional(),
   requestId: z.string(),
 });
 
@@ -3503,6 +3587,7 @@ export const SessionEventSubscriptionSchema = z.enum([
   "hub.execution.agent.update",
   "hub.execution.agent.stream",
   "artifact.changed",
+  "note.changed",
 ]);
 export type SessionEventSubscription = z.infer<typeof SessionEventSubscriptionSchema>;
 export const SessionEventsSetSubscriptionRequestSchema = z.object({
@@ -3717,8 +3802,16 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ArtifactEntryDownloadRequestSchema,
   ArtifactDeleteRequestSchema,
   ArtifactPinSetRequestSchema,
+  ArtifactArchiveSetRequestSchema,
   ArtifactRenameRequestSchema,
   ArtifactPublishRequestSchema,
+  NoteListRequestSchema,
+  NoteReadRequestSchema,
+  NoteSaveRequestSchema,
+  NotePinSetRequestSchema,
+  NoteArchiveSetRequestSchema,
+  NoteSearchRequestSchema,
+  NoteDeleteRequestSchema,
   FileEntryDownloadRequestSchema,
   FileEntryUploadRequestSchema,
   FileTransferAckSchema,
@@ -3981,6 +4074,16 @@ export const ServerInfoStatusPayloadSchema = z
         artifactRename: z.boolean().optional(),
         // COMPAT(artifactPublish): added in v0.11.x, remove after 2028-04-17.
         artifactPublish: z.boolean().optional(),
+        // COMPAT(artifactArchive): added in v0.14.x, remove after 2028-10-29.
+        artifactArchive: z.boolean().optional(),
+        // COMPAT(notes): added in v0.9.0; remove gate after the supported daemon floor includes Notes.
+        notes: z.boolean().optional(),
+        // COMPAT(notePin): added in v0.11.x, remove after 2028-04-18.
+        notePin: z.boolean().optional(),
+        // COMPAT(noteSearch): added in v0.11.x, remove after 2028-04-18.
+        noteSearch: z.boolean().optional(),
+        // COMPAT(noteArchive): added in v0.14.x, remove after 2028-10-29.
+        noteArchive: z.boolean().optional(),
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the
         // feature gate and checkoutGithubSetAutoMerge fallback after 2027-01-17
         // once the supported daemon floor is >= v0.2.0.
@@ -6607,6 +6710,16 @@ export const ArtifactPinSetResponseSchema = z.object({
   }),
 });
 
+export const ArtifactArchiveSetResponseSchema = z.object({
+  type: z.literal("artifact.archive.set.response"),
+  payload: z.object({
+    artifact: ArtifactRecordPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
 export const ArtifactRenameResponseSchema = z.object({
   type: z.literal("artifact.rename.response"),
   payload: z.object({
@@ -6634,6 +6747,98 @@ export const ArtifactChangedMessageSchema = z.object({
   payload: z.object({
     subscriptionId: z.string().optional(),
     projectId: z.string(),
+  }),
+});
+
+export const NoteListResponseSchema = z.object({
+  type: z.literal("note.list.response"),
+  payload: z.object({
+    projectId: z.string(),
+    notes: z.array(NoteRecordPayloadSchema),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteReadResponseSchema = z.object({
+  type: z.literal("note.read.response"),
+  payload: z.object({
+    note: NoteRecordPayloadSchema.nullable(),
+    body: z.string().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteSaveResponseSchema = z.object({
+  type: z.literal("note.save.response"),
+  payload: z.object({
+    note: NoteRecordPayloadSchema.nullable(),
+    replacedRevision: z.number().int().positive().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NotePinSetResponseSchema = z.object({
+  type: z.literal("note.pin.set.response"),
+  payload: z.object({
+    note: NoteRecordPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteArchiveSetResponseSchema = z.object({
+  type: z.literal("note.archive.set.response"),
+  payload: z.object({
+    note: NoteRecordPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteSearchMatchSchema = z.object({
+  noteId: z.string(),
+  /** Null when the title alone matched. */
+  snippet: z.string().nullable(),
+});
+
+export const NoteSearchResponseSchema = z.object({
+  type: z.literal("note.search.response"),
+  payload: z.object({
+    projectId: z.string(),
+    matches: z.array(NoteSearchMatchSchema),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteDeleteResponseSchema = z.object({
+  type: z.literal("note.delete.response"),
+  payload: z.object({
+    noteId: z.string(),
+    currentRevision: z.number().int().positive().nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteChangedMessageSchema = z.object({
+  type: z.literal("note.changed"),
+  payload: z.object({
+    subscriptionId: z.string().optional(),
+    projectId: z.string(),
+    noteId: z.string(),
+    revision: z.number().int().positive().nullable(),
+    kind: z.enum(["create", "update", "delete"]),
   }),
 });
 
@@ -7632,9 +7837,18 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ArtifactEntryDownloadResponseSchema,
   ArtifactDeleteResponseSchema,
   ArtifactPinSetResponseSchema,
+  ArtifactArchiveSetResponseSchema,
   ArtifactRenameResponseSchema,
   ArtifactPublishResponseSchema,
   ArtifactChangedMessageSchema,
+  NoteListResponseSchema,
+  NoteReadResponseSchema,
+  NoteSaveResponseSchema,
+  NotePinSetResponseSchema,
+  NoteArchiveSetResponseSchema,
+  NoteSearchResponseSchema,
+  NoteDeleteResponseSchema,
+  NoteChangedMessageSchema,
   FileEntryDownloadResponseSchema,
   FileEntryUploadResponseSchema,
   FileTransferAckSchema,
@@ -8116,11 +8330,30 @@ export type ArtifactDeleteRequest = z.infer<typeof ArtifactDeleteRequestSchema>;
 export type ArtifactDeleteResponse = z.infer<typeof ArtifactDeleteResponseSchema>;
 export type ArtifactPinSetRequest = z.infer<typeof ArtifactPinSetRequestSchema>;
 export type ArtifactPinSetResponse = z.infer<typeof ArtifactPinSetResponseSchema>;
+export type ArtifactArchiveSetRequest = z.infer<typeof ArtifactArchiveSetRequestSchema>;
+export type ArtifactArchiveSetResponse = z.infer<typeof ArtifactArchiveSetResponseSchema>;
 export type ArtifactRenameRequest = z.infer<typeof ArtifactRenameRequestSchema>;
 export type ArtifactRenameResponse = z.infer<typeof ArtifactRenameResponseSchema>;
 export type ArtifactPublishRequest = z.infer<typeof ArtifactPublishRequestSchema>;
 export type ArtifactPublishResponse = z.infer<typeof ArtifactPublishResponseSchema>;
 export type ArtifactChangedMessage = z.infer<typeof ArtifactChangedMessageSchema>;
+export type NoteRecordPayload = z.infer<typeof NoteRecordPayloadSchema>;
+export type NoteListRequest = z.infer<typeof NoteListRequestSchema>;
+export type NoteListResponse = z.infer<typeof NoteListResponseSchema>;
+export type NoteReadRequest = z.infer<typeof NoteReadRequestSchema>;
+export type NoteReadResponse = z.infer<typeof NoteReadResponseSchema>;
+export type NoteSaveRequest = z.infer<typeof NoteSaveRequestSchema>;
+export type NoteSaveResponse = z.infer<typeof NoteSaveResponseSchema>;
+export type NotePinSetRequest = z.infer<typeof NotePinSetRequestSchema>;
+export type NotePinSetResponse = z.infer<typeof NotePinSetResponseSchema>;
+export type NoteArchiveSetRequest = z.infer<typeof NoteArchiveSetRequestSchema>;
+export type NoteArchiveSetResponse = z.infer<typeof NoteArchiveSetResponseSchema>;
+export type NoteSearchRequest = z.infer<typeof NoteSearchRequestSchema>;
+export type NoteSearchResponse = z.infer<typeof NoteSearchResponseSchema>;
+export type NoteSearchMatch = z.infer<typeof NoteSearchMatchSchema>;
+export type NoteDeleteRequest = z.infer<typeof NoteDeleteRequestSchema>;
+export type NoteDeleteResponse = z.infer<typeof NoteDeleteResponseSchema>;
+export type NoteChangedMessage = z.infer<typeof NoteChangedMessageSchema>;
 export type FileEntryDownloadRequest = z.infer<typeof FileEntryDownloadRequestSchema>;
 export type FileEntryDownloadResponse = z.infer<typeof FileEntryDownloadResponseSchema>;
 export type FileEntryUploadRequest = z.infer<typeof FileEntryUploadRequestSchema>;
@@ -8229,6 +8462,7 @@ export const WSHelloMessageSchema = z.object({
       [CLIENT_CAPS.timelineReplacementInvalidation]: z.boolean().optional(),
       [CLIENT_CAPS.timelineNotifications]: z.boolean().optional(),
       [CLIENT_CAPS.artifactToolDetail]: z.boolean().optional(),
+      [CLIENT_CAPS.notes]: z.boolean().optional(),
       [CLIENT_CAPS.browserHost]: BrowserAutomationHostCapabilitySchema.optional(),
     })
     .passthrough()

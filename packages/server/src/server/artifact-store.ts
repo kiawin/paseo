@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic-file.js";
 import { FileBackedRegistry } from "./file-backed-registry.js";
+import { searchSnippet, searchTerms } from "./search-text.js";
 
 /** Rejected before any write. Comfortably under Claude's own 16 MB artifact ceiling. */
 export const ARTIFACT_MAX_BYTES = 10 * 1024 * 1024;
@@ -41,6 +42,8 @@ export const PersistedArtifactRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   pinned: z.boolean(),
+  /** Absent on records written before archiving existed. Never set together with `pinned`. */
+  archived: z.boolean().optional(),
   /** Companion link to the same document published elsewhere. `http:` / `https:` only. */
   externalUrl: z.string().nullable(),
   origin: z.object({
@@ -82,6 +85,7 @@ export interface PublishArtifactInput {
   externalUrl?: string | null;
   /** Committed with the content, so a pin or label cannot be lost between two writes. */
   pinned?: boolean;
+  archived?: boolean;
   customTitle?: string;
   /**
    * False refuses a publish that would evict another artifact. A person copying artifacts in must
@@ -115,12 +119,6 @@ function visibleArtifactText(html: string): string {
   };
   visit(parse(html));
   return pieces.join(" ").replace(/\s+/g, " ").trim();
-}
-
-function searchSnippet(text: string, matchIndex: number): string {
-  const start = Math.max(0, matchIndex - 45);
-  const end = Math.min(text.length, matchIndex + 95);
-  return `${start > 0 ? "…" : ""}${text.slice(start, end).trim()}${end < text.length ? "…" : ""}`;
 }
 
 /**
@@ -250,14 +248,19 @@ const WINDOWS_RESERVED_SEGMENT = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)
  * Keep the existing POSIX layout, but encode Windows-invalid segments before joining them below
  * the artifact root. The same mapping is used for content and project cleanup paths.
  */
-/** What the publisher asked for wins; otherwise the record being overwritten keeps its own. */
+/**
+ * What the publisher asked for wins; otherwise the record being overwritten keeps its own. An
+ * agent republishing an archived artifact leaves it archived.
+ */
 function userLabels(
-  requested: { customTitle: string | undefined; pinned: boolean | undefined },
+  requested: Pick<PublishArtifactInput, "customTitle" | "pinned" | "archived">,
   target: PersistedArtifactRecord | null,
-): Pick<PersistedArtifactRecord, "customTitle" | "pinned"> {
+): Pick<PersistedArtifactRecord, "customTitle" | "pinned" | "archived"> {
+  const archived = requested.archived ?? target?.archived ?? false;
   return {
     customTitle: requested.customTitle ?? target?.customTitle,
-    pinned: requested.pinned ?? target?.pinned ?? false,
+    pinned: !archived && (requested.pinned ?? target?.pinned ?? false),
+    ...(archived ? { archived: true } : {}),
   };
 }
 
@@ -364,7 +367,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
   }
 
   async searchForProject(projectId: string, query: string): Promise<ArtifactSearchMatch[]> {
-    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const terms = searchTerms(query);
     if (terms.length === 0) return [];
     const matches: ArtifactSearchMatch[] = [];
     for (const record of await this.listForProject(projectId)) {
@@ -493,7 +496,7 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
           artifactId: target?.artifactId ?? generateArtifactId(),
           projectId: input.projectId,
           title,
-          ...userLabels({ customTitle, pinned: input.pinned }, target),
+          ...userLabels({ customTitle, pinned: input.pinned, archived: input.archived }, target),
           mimeType: ARTIFACT_MIME_TYPE,
           size: html ? html.byteLength : (kept?.size ?? null),
           contentSha256: html
@@ -545,9 +548,31 @@ export class ArtifactStore extends FileBackedRegistry<PersistedArtifactRecord> {
     return { record, evictedArtifactIds: evicted.map((victim) => victim.artifactId) };
   }
 
-  /** Leaves `updatedAt` alone: pinning changes list grouping, not publish recency. */
+  /**
+   * Leaves `updatedAt` alone: pinning changes list grouping, not publish recency. Pinning an
+   * archived artifact brings it back, because a pinned row is one the person wants in view.
+   */
   async setPinned(artifactId: string, pinned: boolean): Promise<PersistedArtifactRecord | null> {
-    const record = await this.update(artifactId, (next) => ({ ...next, pinned }));
+    const record = await this.update(artifactId, ({ archived, ...next }) => ({
+      ...next,
+      pinned,
+      ...(archived && !pinned ? { archived } : {}),
+    }));
+    if (record) this.notifyChanged(record.projectId);
+    return record;
+  }
+
+  /**
+   * Hides the artifact from the default list without touching `updatedAt`. Archiving clears the
+   * pin, so an archived artifact is evicted under quota like any other unpinned one.
+   */
+  async setArchived(
+    artifactId: string,
+    archived: boolean,
+  ): Promise<PersistedArtifactRecord | null> {
+    const record = await this.update(artifactId, ({ archived: _previous, ...next }) =>
+      archived ? { ...next, pinned: false, archived: true } : next,
+    );
     if (record) this.notifyChanged(record.projectId);
     return record;
   }
