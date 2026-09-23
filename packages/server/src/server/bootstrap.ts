@@ -1516,6 +1516,22 @@ export async function createPaseoDaemon(
         res.status(404).json({ error: "Agent MCP endpoint disabled" });
         return;
       }
+      // Log before authenticating. A rejected request is the one an operator most needs to see —
+      // an agent that cannot reach MCP produces nothing else to look at — and the fields here are
+      // already safe to emit unauthenticated: the authorization header is replaced wholesale and
+      // the body is reduced to its shape by describeMcpDebugPayload.
+      if (config.mcpDebug) {
+        logger.debug(
+          {
+            method: req.method,
+            url: req.originalUrl,
+            sessionId: req.header("mcp-session-id"),
+            authorization: req.header("authorization") ? MCP_DEBUG_SECRET : undefined,
+            body: describeMcpDebugPayload(req.body),
+          },
+          "Agent MCP request",
+        );
+      }
       // This route is exempt from the global daemon-password middleware, so it
       // authenticates here using the injected capability token (or a valid
       // daemon password). Without this, a password-protected daemon would be
@@ -1530,18 +1546,6 @@ export async function createPaseoDaemon(
         return;
       }
       const callerAgentId = caller.kind === "agent" ? caller.agentId : undefined;
-      if (config.mcpDebug) {
-        logger.debug(
-          {
-            method: req.method,
-            url: req.originalUrl,
-            sessionId: req.header("mcp-session-id"),
-            authorization: req.header("authorization") ? MCP_DEBUG_SECRET : undefined,
-            body: describeMcpDebugPayload(req.body),
-          },
-          "Agent MCP request",
-        );
-      }
       try {
         // Stateless: GET (standalone SSE) and DELETE (session termination) have no
         // meaning without sessions. The MCP client tolerates 405 on the GET stream
