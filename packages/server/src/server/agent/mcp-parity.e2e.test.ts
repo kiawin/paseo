@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { experimental_createMCPClient } from "ai";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -13,6 +13,7 @@ import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
 import type { AgentClient, AgentProvider, AgentSessionConfig } from "./agent-sdk-types.js";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { DaemonClient } from "../test-utils/daemon-client.js";
+import { hashDaemonPassword } from "../auth.js";
 import { parseAgentMessage } from "./agent-messages/index.js";
 
 interface StructuredContent {
@@ -57,13 +58,11 @@ function formatHostForHttpUrl(host: string): string {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
-function buildExpectedAgentMcpUrl(params: { host: string; port: number; agentId: string }): string {
-  const baseUrl = new URL(
+function buildExpectedAgentMcpUrl(params: { host: string; port: number }): string {
+  return new URL(
     "/mcp/agents",
     `http://${formatHostForHttpUrl(params.host)}:${params.port}`,
-  );
-  baseUrl.searchParams.set("callerAgentId", params.agentId);
-  return baseUrl.toString();
+  ).toString();
 }
 
 function getStructuredContent(result: McpToolResult): StructuredContent | null {
@@ -82,8 +81,12 @@ function getStructuredContent(result: McpToolResult): StructuredContent | null {
   return null;
 }
 
-async function createMcpClient(url: string): Promise<McpClient> {
-  const transport = new StreamableHTTPClientTransport(new URL(url));
+// The Agent MCP endpoint rejects uncredentialed callers. A daemon-password bearer is the user;
+// an agent's own token is that agent, and nothing in the URL names a caller.
+async function createMcpClient(url: string, bearer: string): Promise<McpClient> {
+  const transport = new StreamableHTTPClientTransport(new URL(url), {
+    requestInit: { headers: { Authorization: `Bearer ${bearer}` } },
+  });
   const rawClient = await experimental_createMCPClient({ transport });
   const boundCallTool: McpClient["callTool"] = Reflect.get(rawClient, "callTool").bind(rawClient);
   return { callTool: boundCallTool, close: () => rawClient.close() };
@@ -147,6 +150,20 @@ let parentAgentId: string;
 let parentAgentCwd: string;
 let worktreeRepoCwd: string;
 let launchConfigsByProvider: Record<AgentProvider, AgentSessionConfig[]>;
+let mcpTokenDir: string;
+
+const TEST_DAEMON_PASSWORD = "daemon-secret";
+
+async function readAgentMcpToken(agentId: string): Promise<string> {
+  return await readFile(path.join(mcpTokenDir, `${agentId}.token`), "utf8");
+}
+
+async function createAgentMcpClient(port: number, agentId: string): Promise<McpClient> {
+  return await createMcpClient(
+    `http://127.0.0.1:${port}/mcp/agents`,
+    await readAgentMcpToken(agentId),
+  );
+}
 
 const seededAgentProfile = {
   id: "ui-profile",
@@ -272,12 +289,20 @@ beforeAll(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "mcp-parity-e2e-"));
   parentAgentCwd = await makeCwd("parent-agent-cwd");
   worktreeRepoCwd = await makeCwd("worktree-repo");
+  // The daemons run in this process, so the daemon writes each agent's token here.
+  mcpTokenDir = path.join(tempRoot, "mcp-tokens");
+  await mkdir(mcpTokenDir);
+  process.env.PASEO_TEST_MCP_TOKEN_DIR = mcpTokenDir;
 
   daemonHandle = await createTestPaseoDaemon({
     agentClients: createRecordingAgentClients(),
     agentProfiles: [seededAgentProfile],
+    auth: { password: hashDaemonPassword(TEST_DAEMON_PASSWORD) },
   });
-  topLevelClient = await createMcpClient(`http://127.0.0.1:${daemonHandle.port}/mcp/agents`);
+  topLevelClient = await createMcpClient(
+    `http://127.0.0.1:${daemonHandle.port}/mcp/agents`,
+    TEST_DAEMON_PASSWORD,
+  );
 
   const parentPayload = await callToolStructured(topLevelClient, "create_agent", {
     relationship: { kind: "detached" },
@@ -289,9 +314,7 @@ beforeAll(async () => {
   });
   parentAgentId = str(parentPayload.agentId);
 
-  agentScopedClient = await createMcpClient(
-    `http://127.0.0.1:${daemonHandle.port}/mcp/agents?callerAgentId=${parentAgentId}`,
-  );
+  agentScopedClient = await createAgentMcpClient(daemonHandle.port, parentAgentId);
 
   execSync("git init -b main", { cwd: worktreeRepoCwd, stdio: "pipe" });
   execSync("git config user.email 'test@example.com'", { cwd: worktreeRepoCwd, stdio: "pipe" });
@@ -309,6 +332,7 @@ afterAll(async () => {
   await agentScopedClient?.close();
   await topLevelClient?.close();
   await daemonHandle?.close();
+  delete process.env.PASEO_TEST_MCP_TOKEN_DIR;
   await rm(tempRoot, { recursive: true, force: true });
 });
 
@@ -478,9 +502,7 @@ describe("Suite A: Core Fixes", () => {
           title: "Watching parent",
           modeId: "bypassPermissions",
         });
-        mcp = await createMcpClient(
-          buildExpectedAgentMcpUrl({ host: "127.0.0.1", port: daemon.port, agentId: parent.id }),
-        );
+        mcp = await createAgentMcpClient(daemon.port, parent.id);
         const created = await callToolStructured(mcp, "create_agent", {
           relationship: { kind: "subagent" },
           workspace: { kind: "current" },
@@ -642,7 +664,6 @@ describe("Suite A: Core Fixes", () => {
       const expectedUrl = buildExpectedAgentMcpUrl({
         host: listenTarget!.host,
         port: listenTarget!.port,
-        agentId,
       });
 
       const launchConfig = launchConfigsByProvider.claude
@@ -652,6 +673,7 @@ describe("Suite A: Core Fixes", () => {
         paseo: {
           type: "http",
           url: expectedUrl,
+          headers: { Authorization: `Bearer ${await readAgentMcpToken(agentId)}` },
         },
       });
       expect(snapshot.config.mcpServers?.paseo).toBeUndefined();
@@ -1131,9 +1153,7 @@ describe("Suite E: Workspace Tools", () => {
         initialPrompt: "Say done.",
       });
       const agentId = str(child.agentId);
-      const workerClient = await createMcpClient(
-        `http://127.0.0.1:${daemonHandle.port}/mcp/agents?callerAgentId=${agentId}`,
-      );
+      const workerClient = await createAgentMcpClient(daemonHandle.port, agentId);
       let terminalId: string;
       try {
         const terminal = await callToolStructured(workerClient, "create_terminal", {
@@ -1183,9 +1203,7 @@ describe("Suite E: Workspace Tools", () => {
         provider: "claude/claude-test-model",
         initialPrompt: "Say done.",
       });
-      scoped = await createMcpClient(
-        `http://127.0.0.1:${daemonHandle.port}/mcp/agents?callerAgentId=${str(parent.agentId)}`,
-      );
+      scoped = await createAgentMcpClient(daemonHandle.port, str(parent.agentId));
       const inherited = await callToolStructured(scoped, "create_workspace", {
         isolation: "local",
       });

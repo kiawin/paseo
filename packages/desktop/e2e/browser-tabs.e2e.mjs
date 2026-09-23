@@ -13,6 +13,7 @@ import { experimental_createMCPClient } from "ai";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { chromium } from "playwright";
 import { hideDeveloperToasts } from "../../app/e2e/support/developer-ui.mjs";
+import { WebSocket } from "ws";
 import { runAppearanceFontSizeRegression } from "./appearance-font-size.electron.mjs";
 import { runSettingsScrollRegression } from "./settings-scroll.electron.mjs";
 import { runSettingsMemoryRegression } from "./settings-memory.electron.mjs";
@@ -274,37 +275,49 @@ async function waitForGuestActiveElement(client, browserId, elementId) {
   return false;
 }
 
-async function createCallerAgent(daemonPort, workspaceId = workspaceIds[0]) {
-  const transport = new StreamableHTTPClientTransport(
-    new URL(`http://127.0.0.1:${daemonPort}/mcp/agents`),
-  );
-  const client = await experimental_createMCPClient({ transport });
+// The Agent MCP endpoint accepts no uncredentialed caller, so agents are created over the
+// daemon WebSocket the app itself uses.
+async function createCallerAgent(daemonPort, workspaceRoot, workspaceId = workspaceIds[0]) {
+  const { DaemonClient } = await import("@getpaseo/client/internal/daemon-client");
+  const daemonClient = new DaemonClient({
+    url: `ws://127.0.0.1:${daemonPort}/ws`,
+    clientId: `desktop-browser-e2e-${workspaceId}`,
+    webSocketFactory: (url, options) =>
+      new WebSocket(url, options?.protocols, { headers: options?.headers }),
+  });
   try {
-    const response = await client.callTool({
-      name: "create_agent",
-      args: {
-        relationship: { kind: "detached" },
-        workspace: { kind: "existing", workspaceId },
-        title: "Browser desktop browser E2E caller",
-        provider: "mock/ten-second-stream",
-        settings: { modeId: "load-test" },
-        initialPrompt: "Remain available while the browser bridge regression runs.",
-      },
+    await daemonClient.connect();
+    const agent = await daemonClient.createAgent({
+      provider: "mock",
+      model: "ten-second-stream",
+      modeId: "load-test",
+      cwd: path.join(workspaceRoot, `workspace-${workspaceIds.indexOf(workspaceId) + 1}`),
+      workspaceId,
+      title: "Browser desktop browser E2E caller",
+      initialPrompt: "Remain available while the browser bridge regression runs.",
     });
-    const result = response.structuredContent;
     assert(
-      result && typeof result === "object",
-      `create_agent returned no structured payload: ${JSON.stringify(response)}`,
+      agent.workspaceId === workspaceId,
+      `Caller agent attached to unexpected workspace ${agent.workspaceId}`,
     );
-    assert(typeof result.agentId === "string", "create_agent returned no caller agent id");
-    assert(
-      result.workspaceId === workspaceId,
-      `MCP caller attached to unexpected workspace ${result.workspaceId}`,
-    );
-    return result.agentId;
+    return agent.id;
   } finally {
-    await client.close();
+    await daemonClient.close();
   }
+}
+
+// The endpoint identifies an agent by its daemon-minted token alone. The daemon writes that
+// token to PASEO_TEST_MCP_TOKEN_DIR so this out-of-process test can call as the agent.
+async function readAgentMcpToken(tokenDir, agentId) {
+  const tokenPath = path.join(tokenDir, `${agentId}.token`);
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(tokenPath)) {
+      return fs.readFileSync(tokenPath, "utf8");
+    }
+    await delay(50);
+  }
+  throw new Error(`Daemon never wrote agent ${agentId}'s MCP token to ${tokenPath}`);
 }
 
 async function readGuest(page, browserId) {
@@ -1098,7 +1111,9 @@ async function main() {
   const paseoHome = path.join(runtimeDir, "paseo-home");
   const userData = path.join(runtimeDir, "electron-user-data");
   const workspaceRoot = path.join(runtimeDir, "workspaces");
+  const mcpTokenDir = path.join(runtimeDir, "mcp-tokens");
   fs.mkdirSync(paseoHome, { recursive: true });
+  fs.mkdirSync(mcpTokenDir, { recursive: true });
 
   const [daemonPort, expoPort, cdpPort, inspectorPort, remotePort] = await Promise.all([
     reservePort(),
@@ -1146,7 +1161,14 @@ async function main() {
       "daemon",
       process.execPath,
       ["--import", "tsx", path.join(rootDir, "packages/server/scripts/dev-runner.ts")],
-      { cwd: rootDir, env: { ...commonEnv, PASEO_NODE_ENV: "development" } },
+      {
+        cwd: rootDir,
+        env: {
+          ...commonEnv,
+          PASEO_NODE_ENV: "development",
+          PASEO_TEST_MCP_TOKEN_DIR: mcpTokenDir,
+        },
+      },
       artifactDir,
     );
     children.push(daemon.child);
@@ -1243,15 +1265,15 @@ async function main() {
 
     await runAppearanceFontSizeRegression(page);
 
-    const callerAgentId = await createCallerAgent(daemonPort);
+    const callerAgentId = await createCallerAgent(daemonPort, workspaceRoot);
     const typingAgent = {
       workspaceId: workspaceIds.at(-1),
-      agentId: await createCallerAgent(daemonPort, workspaceIds.at(-1)),
+      agentId: await createCallerAgent(daemonPort, workspaceRoot, workspaceIds.at(-1)),
     };
+    const callerToken = await readAgentMcpToken(mcpTokenDir, callerAgentId);
     const transport = new StreamableHTTPClientTransport(
-      new URL(
-        `http://127.0.0.1:${daemonPort}/mcp/agents?callerAgentId=${encodeURIComponent(callerAgentId)}`,
-      ),
+      new URL(`http://127.0.0.1:${daemonPort}/mcp/agents`),
+      { requestInit: { headers: { Authorization: `Bearer ${callerToken}` } } },
     );
     client = await experimental_createMCPClient({ transport });
     const report = await runRegression({
