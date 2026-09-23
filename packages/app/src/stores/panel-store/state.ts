@@ -105,7 +105,7 @@ export function reconcileMobilePanel(
   return sidebarReconciled;
 }
 
-const ExplorerTabSchema = z.enum(["changes", "files", "pr", "artifacts"]);
+const ExplorerTabSchema = z.enum(["changes", "files", "pr", "artifacts", "notes"]);
 // Persisted panel state is validated as one strict object and a failed parse deletes the entry
 // outright — widths, expansion, every panel preference. So a tab value this build does not
 // recognise has to degrade to the default instead of failing the object. Without it, rolling
