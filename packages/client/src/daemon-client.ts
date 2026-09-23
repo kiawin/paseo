@@ -152,6 +152,8 @@ import type {
   AgentConfigApply,
   ArtifactRecordPayload,
   ArtifactSearchMatch,
+  NoteRecordPayload,
+  NoteSearchMatch,
   MutableDaemonConfig,
   MutableDaemonConfigPatch,
 } from "@getpaseo/protocol/messages";
@@ -1064,6 +1066,41 @@ export interface PublishArtifactInput {
   html: string | null;
   externalUrl: string | null;
   pinned?: boolean;
+  /** Older hosts drop it; the copy then lands active. */
+  archived?: boolean;
+}
+
+export interface SaveNoteInput {
+  projectId: string;
+  body: string;
+  noteId?: string | null;
+  requestId?: string;
+}
+
+export interface ReadNoteInput {
+  noteId: string;
+  projectId?: string;
+  requestId?: string;
+}
+
+export interface ReadNoteResult {
+  note: NoteRecordPayload;
+  body: string;
+}
+
+export interface SaveNoteResult {
+  note: NoteRecordPayload;
+  replacedRevision: number | null;
+}
+
+export class NoteDeleteError extends Error {
+  constructor(
+    message: string,
+    readonly currentRevision: number | null,
+  ) {
+    super(message);
+    this.name = "NoteDeleteError";
+  }
 }
 
 export interface UploadEntryInput {
@@ -2759,6 +2796,11 @@ export class DaemonClient {
       },
       options,
     );
+  }
+
+  /** Owns `note.changed` demand across reconnects and releases it with the returned handle. */
+  observeNoteChanges(options?: { signal?: AbortSignal; notifications?: boolean }) {
+    return this.observeEvents(["note.changed"], options);
   }
 
   /** Gate on `server_info.features.artifactInvalidation` before calling. */
@@ -5746,6 +5788,135 @@ export class DaemonClient {
     return payload.matches;
   }
 
+  /** Gate on `server_info.features.notes` before calling. */
+  async listNotes(projectId: string): Promise<NoteRecordPayload[]> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "note.list.request", projectId, requestId },
+      responseType: "note.list.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to list notes.");
+    return payload.notes;
+  }
+
+  /** Gate on `server_info.features.notes` before calling. */
+  async readNote(input: ReadNoteInput | string, projectId?: string): Promise<ReadNoteResult> {
+    const normalized = typeof input === "string" ? { noteId: input, projectId } : input;
+    const requestId = this.createRequestId(normalized.requestId);
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "note.read.request",
+        noteId: normalized.noteId,
+        ...(normalized.projectId ? { projectId: normalized.projectId } : {}),
+        requestId,
+      },
+      responseType: "note.read.response",
+    });
+    if (!payload.success || !payload.note || payload.body === null) {
+      throw new Error(payload.error ?? "Failed to read the note.");
+    }
+    return { note: payload.note, body: payload.body };
+  }
+
+  /** Gate on `server_info.features.notes` before calling. */
+  /** Gate on `server_info.features.notePin` before calling. */
+  async setNotePinned(input: {
+    noteId: string;
+    projectId: string;
+    pinned: boolean;
+  }): Promise<NoteRecordPayload> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "note.pin.set.request", ...input, requestId },
+      responseType: "note.pin.set.response",
+    });
+    if (!payload.success || !payload.note) {
+      throw new Error(payload.error ?? "Failed to pin the note.");
+    }
+    return payload.note;
+  }
+
+  /** Gate on `server_info.features.noteArchive` before calling. */
+  async setNoteArchived(input: {
+    noteId: string;
+    projectId: string;
+    archived: boolean;
+  }): Promise<NoteRecordPayload> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "note.archive.set.request", ...input, requestId },
+      responseType: "note.archive.set.response",
+    });
+    if (!payload.success || !payload.note) {
+      throw new Error(payload.error ?? "Failed to archive the note.");
+    }
+    return payload.note;
+  }
+
+  /** Gate on `server_info.features.noteSearch` before calling. */
+  async searchNotes(projectId: string, query: string): Promise<NoteSearchMatch[]> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "note.search.request", projectId, query, requestId },
+      responseType: "note.search.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to search notes.");
+    return payload.matches;
+  }
+
+  async saveNote(input: SaveNoteInput): Promise<SaveNoteResult> {
+    const requestId = this.createRequestId(input.requestId);
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "note.save.request",
+        projectId: input.projectId,
+        ...(input.noteId !== undefined ? { noteId: input.noteId } : {}),
+        body: input.body,
+        requestId,
+      },
+      responseType: "note.save.response",
+    });
+    if (!payload.success || !payload.note) {
+      throw new Error(payload.error ?? "Failed to save the note.");
+    }
+    return { note: payload.note, replacedRevision: payload.replacedRevision };
+  }
+
+  /** Gate on `server_info.features.notes` before calling. */
+  async deleteNote(
+    input: { noteId: string; expectedRevision: number; projectId?: string } | string,
+    expectedRevision?: number,
+  ): Promise<void> {
+    const normalized =
+      typeof input === "string"
+        ? { noteId: input, expectedRevision: expectedRevision as number }
+        : input;
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "note.delete.request",
+        noteId: normalized.noteId,
+        expectedRevision: normalized.expectedRevision,
+        ...(normalized.projectId ? { projectId: normalized.projectId } : {}),
+        requestId,
+      },
+      responseType: "note.delete.response",
+    });
+    if (!payload.success) {
+      throw new NoteDeleteError(
+        payload.error ?? "Failed to delete the note.",
+        payload.currentRevision,
+      );
+    }
+  }
+
   /**
    * Streams one artifact's HTML over the binary channel.
    *
@@ -5793,6 +5964,20 @@ export class DaemonClient {
       requestId,
       message: { type: "artifact.pin.set.request", artifactId, pinned, requestId },
       responseType: "artifact.pin.set.response",
+    });
+    if (!payload.success || !payload.artifact) {
+      throw new Error(payload.error ?? "Failed to update the artifact.");
+    }
+    return payload.artifact;
+  }
+
+  /** Gate on `server_info.features.artifactArchive` before calling. */
+  async setArtifactArchived(artifactId: string, archived: boolean): Promise<ArtifactRecordPayload> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "artifact.archive.set.request", artifactId, archived, requestId },
+      responseType: "artifact.archive.set.response",
     });
     if (!payload.success || !payload.artifact) {
       throw new Error(payload.error ?? "Failed to update the artifact.");

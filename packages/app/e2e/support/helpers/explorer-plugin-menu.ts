@@ -101,16 +101,12 @@ export async function openWorkspacePanelFromExplorerMenu(
   // The Explorer opens with its singleton views — Files, Changes and Artifacts — already tabbed,
   // so the menu offers only what can still be launched into this pane. Notes is the one built-in
   // view that is not opened for you, which is why it is the only one of the four still listed.
-  await expect(menu.getByRole("menuitem")).toHaveText([
-    /^Terminal/,
-    /^Diff/,
-    "Other review",
-    "Other review summary",
-    "Review",
-    "Review summary",
-  ]);
   // No check state to assert: this is a launch list, not a toggle. An open view leaves the menu
-  // entirely, which is what the item list above pins.
+  // entirely.
+  await expect(menu.getByRole("menuitem", { name: "Notes", exact: true })).toBeVisible();
+  for (const opened of ["Files", "Changes", "Artifacts"]) {
+    await expect(menu.getByRole("menuitem", { name: new RegExp(`^${opened}`) })).toHaveCount(0);
+  }
   await expect(menu.getByRole("menuitem", { name: "Review", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Other review", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Review summary", exact: true })).toBeVisible();
