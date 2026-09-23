@@ -423,14 +423,6 @@ describe("loadAppSettingsFromStorage", () => {
     expect(legacySide.openInSidePane).not.toHaveProperty("pullRequests");
   });
 
-  it("uses the native terminal renderer by default", async () => {
-    const deps = makeDeps();
-
-    const result = await loadAppSettingsFromStorage(deps);
-
-    expect(result.useLegacyTerminalRenderer).toBe(false);
-  });
-
   it("sends forge links to the external browser by default", async () => {
     const result = await loadAppSettingsFromStorage(makeDeps());
 
@@ -447,6 +439,24 @@ describe("loadAppSettingsFromStorage", () => {
     const result = await loadAppSettingsFromStorage(deps);
 
     expect(result.forgeLinkBehavior).toBe("in-app");
+  });
+
+  it("defaults remote note images to tap-to-load", async () => {
+    const result = await loadAppSettingsFromStorage(makeDeps());
+
+    expect(result.noteImageBehavior).toBe("tap-to-load");
+  });
+
+  it("falls back to tap-to-load for an invalid stored image behavior", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ noteImageBehavior: "blocked" }),
+      }),
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.noteImageBehavior).toBe("tap-to-load");
   });
 
   it("falls back to the external browser for an invalid stored forge link behavior", async () => {
@@ -475,19 +485,9 @@ describe("loadAppSettingsFromStorage", () => {
 
     expect(result.forgeLinkBehavior).toBe("in-app");
     expect(result.agentLinkBehavior).toBe("external");
+    expect(result.noteImageBehavior).toBe("tap-to-load");
   });
 
-  it("loads the per-device legacy terminal renderer preference", async () => {
-    const deps = makeDeps({
-      storage: createInMemoryKeyValueStorage({
-        [APP_SETTINGS_KEY]: JSON.stringify({ useLegacyTerminalRenderer: true }),
-      }),
-    });
-
-    const result = await loadAppSettingsFromStorage(deps);
-
-    expect(result.useLegacyTerminalRenderer).toBe(true);
-  });
   it("loads configured terminal scrollback lines from app settings", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({
