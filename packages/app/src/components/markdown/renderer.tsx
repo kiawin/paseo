@@ -18,7 +18,9 @@ import {
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import Markdown, {
   MarkdownIt,
+  renderRules,
   type ASTNode,
+  type RenderImageFunction,
   type RenderRules,
 } from "react-native-markdown-display";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -46,8 +48,14 @@ import {
 import { groupMarkdownParts, type MarkdownPartGroup } from "./part-groups";
 import { colorMarkdownLinkChildren } from "./link-children";
 import { MarkdownLinkText } from "./link-text";
+import {
+  getAllowedImageHandlers,
+  isRemoteImageUrl,
+  type RemoteImageBehavior,
+} from "./image-policy";
 
 export type MarkdownStyles = Record<string, TextStyle & ViewStyle & { [key: string]: unknown }>;
+export type { RemoteImageBehavior } from "./image-policy";
 
 interface MarkdownWithStableRendererProps {
   children: ReactNode;
@@ -84,6 +92,8 @@ export interface MarkdownRendererProps {
   allowedImageHandlers?: readonly string[];
   topLevelMaxExceededItem?: ReactNode;
   enableHtmlish?: boolean;
+  remoteImageBehavior?: RemoteImageBehavior;
+  remoteImageLoadLabel?: string;
 }
 
 export function MarkdownRenderer({
@@ -95,8 +105,20 @@ export function MarkdownRenderer({
   allowedImageHandlers,
   topLevelMaxExceededItem,
   enableHtmlish = true,
+  remoteImageBehavior = "auto",
+  remoteImageLoadLabel,
 }: MarkdownRendererProps) {
-  const markdownRules = useMemo(() => rules ?? createSharedMarkdownRules(), [rules]);
+  const effectiveAllowedImageHandlers = useMemo(() => {
+    return getAllowedImageHandlers(allowedImageHandlers, remoteImageBehavior);
+  }, [allowedImageHandlers, remoteImageBehavior]);
+  const markdownRules = useMemo(() => {
+    const baseRules = rules ?? createSharedMarkdownRules();
+    if (remoteImageBehavior === "auto") return baseRules;
+    return {
+      ...baseRules,
+      image: createPolicyImageRule(remoteImageBehavior, remoteImageLoadLabel),
+    };
+  }, [remoteImageBehavior, remoteImageLoadLabel, rules]);
   const parts = useMemo(
     () => (enableHtmlish ? splitHtmlishMarkdown(text) : [{ kind: "markdown" as const, text }]),
     [enableHtmlish, text],
@@ -107,16 +129,20 @@ export function MarkdownRenderer({
       rules: markdownRules,
       markdownit,
       onLinkPress,
-      allowedImageHandlers,
+      allowedImageHandlers: effectiveAllowedImageHandlers,
       topLevelMaxExceededItem,
+      remoteImageBehavior,
+      remoteImageLoadLabel,
     }),
     [
-      allowedImageHandlers,
+      effectiveAllowedImageHandlers,
       compact,
       markdownRules,
       markdownit,
       onLinkPress,
       topLevelMaxExceededItem,
+      remoteImageBehavior,
+      remoteImageLoadLabel,
     ],
   );
 
@@ -154,6 +180,58 @@ function keyMarkdownGroups(
   return groups.map((group, index) => ({ key: `${group.kind}:${index}`, group }));
 }
 
+function createPolicyImageRule(
+  behavior: Exclude<RemoteImageBehavior, "auto">,
+  loadLabel: string | undefined,
+): RenderImageFunction {
+  return (node, children, parent, styles, allowedImageHandlers, defaultImageHandler) => {
+    const src = typeof node.attributes?.src === "string" ? node.attributes.src : "";
+    const defaultImageRule = renderRules.image;
+    if (!defaultImageRule || !isRemoteImageUrl(src)) {
+      return defaultImageRule?.(
+        node,
+        children,
+        parent,
+        styles,
+        allowedImageHandlers,
+        defaultImageHandler,
+      );
+    }
+    if (behavior === "disabled") {
+      return null;
+    }
+    const allowedAfterTap = [...allowedImageHandlers];
+    for (const handler of ["https://", "http://"]) {
+      if (!allowedAfterTap.includes(handler)) allowedAfterTap.push(handler);
+    }
+    const image = defaultImageRule(
+      node,
+      children,
+      parent,
+      styles,
+      allowedAfterTap,
+      defaultImageHandler,
+    );
+    return <TapToLoadMarkdownImage key={node.key} label={loadLabel} image={image} />;
+  };
+}
+
+function TapToLoadMarkdownImage({ label, image }: { label?: string; image: ReactNode }) {
+  const [loaded, setLoaded] = useState(false);
+  const handleLoad = useCallback(() => setLoaded(true), []);
+  if (loaded) return image;
+  return (
+    <Pressable
+      style={detailsStyles.remoteImagePlaceholder}
+      onPress={handleLoad}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {label ? <Text style={detailsStyles.remoteImagePlaceholderText}>{label}</Text> : null}
+    </Pressable>
+  );
+}
+
 function MarkdownPart({
   part,
   rendererProps,
@@ -166,7 +244,14 @@ function MarkdownPart({
   }
 
   if (part.kind === "inlineImage") {
-    return <MarkdownInlineImage part={part} onLinkPress={rendererProps.onLinkPress} />;
+    return (
+      <MarkdownInlineImage
+        part={part}
+        onLinkPress={rendererProps.onLinkPress}
+        remoteImageBehavior={rendererProps.remoteImageBehavior}
+        remoteImageLoadLabel={rendererProps.remoteImageLoadLabel}
+      />
+    );
   }
 
   if (part.text.length === 0) {
@@ -200,7 +285,10 @@ function MarkdownFragment({
   );
 }
 
-function useNaturalImageDimensions(part: MarkdownInlineImagePart): {
+function useNaturalImageDimensions(
+  part: MarkdownInlineImagePart,
+  enabled = true,
+): {
   natural: InlineImageDimensions | null;
   failed: boolean;
   setFailed: (failed: boolean) => void;
@@ -214,7 +302,7 @@ function useNaturalImageDimensions(part: MarkdownInlineImagePart): {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if ((part.width && part.height) || cached) {
+    if (!enabled || (part.width && part.height) || cached) {
       return;
     }
 
@@ -237,7 +325,7 @@ function useNaturalImageDimensions(part: MarkdownInlineImagePart): {
     return () => {
       cancelled = true;
     };
-  }, [cached, part.height, part.src, part.width]);
+  }, [cached, enabled, part.height, part.src, part.width]);
 
   return { natural, failed, setFailed };
 }
@@ -245,20 +333,31 @@ function useNaturalImageDimensions(part: MarkdownInlineImagePart): {
 function MarkdownInlineImage({
   part,
   onLinkPress,
+  remoteImageBehavior = "auto",
+  remoteImageLoadLabel,
 }: {
   part: Extract<MarkdownDisplayPart, { kind: "inlineImage" }>;
   onLinkPress?: (url: string) => boolean;
+  remoteImageBehavior?: RemoteImageBehavior;
+  remoteImageLoadLabel?: string;
 }) {
-  const { natural: naturalDimensions } = useNaturalImageDimensions(part);
+  const isRemote = isRemoteImageUrl(part.src);
+  const [loadRequested, setLoadRequested] = useState(false);
+  const shouldLoad = !isRemote || remoteImageBehavior === "auto" || loadRequested;
+  const { natural: naturalDimensions } = useNaturalImageDimensions(part, shouldLoad);
   const explicitDimensions = useMemo(
     () => ({ width: part.width, height: part.height }),
     [part.height, part.width],
   );
   const handlePress = useCallback(() => {
+    if (isRemote && remoteImageBehavior === "tap-to-load" && !loadRequested) {
+      setLoadRequested(true);
+      return;
+    }
     if (!part.href) return;
     if (onLinkPress?.(part.href) === false) return;
     void openExternalUrl(part.href);
-  }, [onLinkPress, part.href]);
+  }, [isRemote, loadRequested, onLinkPress, part.href, remoteImageBehavior]);
   const source = useMemo(() => ({ uri: part.src }), [part.src]);
   const imageSize = useMemo(
     () => resolveInlineImageSize({ explicit: explicitDimensions, natural: naturalDimensions }),
@@ -274,6 +373,25 @@ function MarkdownInlineImage({
       accessibilityLabel={part.alt || undefined}
     />
   );
+
+  if (isRemote && remoteImageBehavior === "disabled") {
+    return null;
+  }
+
+  if (isRemote && remoteImageBehavior === "tap-to-load" && !loadRequested) {
+    return (
+      <Pressable
+        style={detailsStyles.remoteImagePlaceholder}
+        onPress={handlePress}
+        accessibilityRole="button"
+        accessibilityLabel={remoteImageLoadLabel}
+      >
+        {remoteImageLoadLabel ? (
+          <Text style={detailsStyles.remoteImagePlaceholderText}>{remoteImageLoadLabel}</Text>
+        ) : null}
+      </Pressable>
+    );
+  }
 
   if (!part.href) {
     return <View style={detailsStyles.inlineImageWrap}>{image}</View>;
@@ -291,16 +409,27 @@ const FLOW_IMAGE_MAX_HEIGHT = 18;
 function MarkdownFlowImage({
   part,
   onLinkPress,
+  remoteImageBehavior = "auto",
+  remoteImageLoadLabel,
 }: {
   part: MarkdownInlineImagePart;
   onLinkPress?: (url: string) => boolean;
+  remoteImageBehavior?: RemoteImageBehavior;
+  remoteImageLoadLabel?: string;
 }) {
-  const { natural, failed, setFailed } = useNaturalImageDimensions(part);
+  const isRemote = isRemoteImageUrl(part.src);
+  const [loadRequested, setLoadRequested] = useState(false);
+  const shouldLoad = !isRemote || remoteImageBehavior === "auto" || loadRequested;
+  const { natural, failed, setFailed } = useNaturalImageDimensions(part, shouldLoad);
   const handlePress = useCallback(() => {
+    if (isRemote && remoteImageBehavior === "tap-to-load" && !loadRequested) {
+      setLoadRequested(true);
+      return;
+    }
     if (!part.href) return;
     if (onLinkPress?.(part.href) === false) return;
     void openExternalUrl(part.href);
-  }, [onLinkPress, part.href]);
+  }, [isRemote, loadRequested, onLinkPress, part.href, remoteImageBehavior]);
   const handleError = useCallback(() => setFailed(true), [setFailed]);
   const source = useMemo(() => ({ uri: part.src }), [part.src]);
   const imageSize = useMemo(() => {
@@ -312,6 +441,24 @@ function MarkdownFlowImage({
     return { width: Math.round(size.width * scale), height: Math.round(size.height * scale) };
   }, [natural, part.height, part.width]);
   const imageStyle = useMemo(() => [detailsStyles.flowImage, imageSize], [imageSize]);
+
+  if (isRemote && remoteImageBehavior === "disabled") {
+    return null;
+  }
+  if (isRemote && remoteImageBehavior === "tap-to-load" && !loadRequested) {
+    return (
+      <Pressable
+        style={detailsStyles.remoteImagePlaceholder}
+        onPress={handlePress}
+        accessibilityRole="button"
+        accessibilityLabel={remoteImageLoadLabel}
+      >
+        {remoteImageLoadLabel ? (
+          <Text style={detailsStyles.remoteImagePlaceholderText}>{remoteImageLoadLabel}</Text>
+        ) : null}
+      </Pressable>
+    );
+  }
 
   if (failed) {
     if (!part.alt) {
@@ -356,7 +503,13 @@ function MarkdownImageTextGroup({
     <>
       <View style={detailsStyles.imageTextRow}>
         {group.images.map((image) => (
-          <MarkdownFlowImage key={image.src} part={image} onLinkPress={rendererProps.onLinkPress} />
+          <MarkdownFlowImage
+            key={image.src}
+            part={image}
+            onLinkPress={rendererProps.onLinkPress}
+            remoteImageBehavior={rendererProps.remoteImageBehavior}
+            remoteImageLoadLabel={rendererProps.remoteImageLoadLabel}
+          />
         ))}
         <View style={detailsStyles.imageTextRowContent}>
           <MarkdownFragment text={group.lead} {...rendererProps} />
@@ -763,6 +916,19 @@ const detailsStyles = StyleSheet.create((theme) => ({
     marginBottom: theme.spacing[1],
   },
   inlineImage: {},
+  remoteImagePlaceholder: {
+    minHeight: 64,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: theme.spacing[1],
+    borderRadius: theme.borderRadius.sm,
+    backgroundColor: theme.colors.surface2,
+  },
+  remoteImagePlaceholderText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
   imageTextRow: {
     flexDirection: "row",
     alignItems: "flex-start",
