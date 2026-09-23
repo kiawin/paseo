@@ -8291,6 +8291,64 @@ test("workspace.pin.set.request stores the pin timestamp and emits an updated de
   });
 });
 
+test("workspace.agentTools.set.request stores the opt-out and restores inheritance", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const session = asTestSession(
+    createSessionForWorkspaceTests({ onMessage: (message) => emitted.push(message) }),
+  );
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: "ws-1",
+    projectId: "proj-1",
+    cwd: REPO_CWD,
+    kind: "local_checkout",
+    displayName: "main",
+    createdAt: "2026-03-01T12:00:00.000Z",
+    updatedAt: "2026-03-01T12:00:00.000Z",
+  });
+  const workspaces = new Map([[workspace.workspaceId, workspace]]);
+  session.workspaceRegistry.list = async () => Array.from(workspaces.values());
+  session.workspaceRegistry.update = async (id, updater) => {
+    const existing = workspaces.get(id);
+    if (!existing) return null;
+    const updated = updater(existing);
+    workspaces.set(id, updated);
+    return updated;
+  };
+
+  await session.handleMessage({
+    type: "workspace.agentTools.set.request",
+    workspaceId: "ws-1",
+    enabled: false,
+    requestId: "req-agent-tools-1",
+  });
+
+  expect(findByType(emitted, "workspace.agentTools.set.response")?.payload).toEqual({
+    requestId: "req-agent-tools-1",
+    workspaceId: "ws-1",
+    accepted: true,
+    agentToolsEnabled: false,
+    error: null,
+  });
+  expect(workspaces.get("ws-1")?.agentToolsEnabled).toBe(false);
+
+  emitted.length = 0;
+  await session.handleMessage({
+    type: "workspace.agentTools.set.request",
+    workspaceId: "ws-1",
+    enabled: true,
+    requestId: "req-agent-tools-2",
+  });
+
+  expect(findByType(emitted, "workspace.agentTools.set.response")?.payload).toEqual({
+    requestId: "req-agent-tools-2",
+    workspaceId: "ws-1",
+    accepted: true,
+    agentToolsEnabled: null,
+    error: null,
+  });
+  expect(workspaces.get("ws-1")?.agentToolsEnabled).toBeUndefined();
+});
+
 test("workspace.title.set.request with whitespace-only title clears the title", async () => {
   const emitted: SessionOutboundMessage[] = [];
   const session = asTestSession(
