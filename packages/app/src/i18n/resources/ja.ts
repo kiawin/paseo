@@ -1260,6 +1260,8 @@ export const ja: TranslationResources = {
         rename: "ワークスペースの名前を変更",
         pin: "上部に固定",
         unpin: "固定解除",
+        enableAgentTools: "Enable Paseo tools (next launch)",
+        disableAgentTools: "Disable Paseo tools (next launch)",
         archive: "アーカイブ",
         archiveWorkspace: "ワークスペースをアーカイブ",
         hideFromSidebar: "サイドバーから非表示",
@@ -2552,6 +2554,12 @@ export const ja: TranslationResources = {
           title: "Paseoツールを有効にする",
           hint: "エージェントがワークツリー、エージェント、スケジュールを管理できるようになります",
           accessibilityLabel: "Paseoツールを有効にする",
+        },
+        enforceReachability: en.settings.host.orchestration.enforceReachability,
+        cwdReachability: {
+          title: "Allow messages to agents in nested folders",
+          hint: "Lets an agent message any agent working in a folder inside its own. Turn this off so agents can only message agents they created, agents that created them, or agents with the same creator.",
+          accessibilityLabel: "Allow messages to agents in nested folders",
         },
         systemPrompt: {
           title: "システムプロンプト",

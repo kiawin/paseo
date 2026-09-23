@@ -24,6 +24,9 @@ function reloadableConfig(
     browserTools: { enabled: daemon.browserTools?.enabled ?? false },
     providers: (agents.providers ?? {}) as MutableDaemonConfig["providers"],
     metadataGeneration: { providers: agents.metadataGeneration?.providers ?? [] },
+    agents: {
+      peerMessaging: agents.peerMessaging,
+    },
     autoArchiveAfterMerge: daemon.autoArchiveAfterMerge ?? false,
     enableTerminalAgentHooks: daemon.enableTerminalAgentHooks ?? false,
     appendSystemPrompt: daemon.appendSystemPrompt ?? "",
@@ -830,6 +833,52 @@ describe("DaemonConfigStore", () => {
         { provider: "codex", model: "gpt-5.4-mini", thinkingOptionId: "low" },
       ],
     });
+  });
+
+  test.each([
+    {
+      name: "enforceReachability alone",
+      patch: { enforceReachability: true },
+      expected: { enforceReachability: true },
+      initial: undefined,
+    },
+    {
+      name: "cwdReachability alone",
+      patch: { cwdReachability: false },
+      expected: { cwdReachability: false },
+      initial: undefined,
+    },
+    {
+      name: "both peer messaging fields together",
+      patch: { enforceReachability: true, cwdReachability: false },
+      expected: { enforceReachability: true, cwdReachability: false },
+      initial: undefined,
+    },
+    {
+      name: "one field preserves the other",
+      patch: { enforceReachability: true },
+      expected: { enforceReachability: true, cwdReachability: false },
+      initial: { cwdReachability: false },
+    },
+  ])("round-trips $name through persisted config", ({ patch, expected, initial }) => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+    writeFileSync(
+      path.join(paseoHome, "config.json"),
+      `${JSON.stringify({ version: 1, ...(initial ? { agents: { peerMessaging: initial } } : {}) }, null, 2)}\n`,
+    );
+
+    const store = new DaemonConfigStore(
+      paseoHome,
+      reloadableConfig(loadPersistedConfig(paseoHome)),
+    );
+    store.patch({ agents: { peerMessaging: patch } });
+
+    const reloadedPersisted = loadPersistedConfig(paseoHome);
+    expect(reloadedPersisted.agents?.peerMessaging).toEqual(expected);
+
+    const reloadedStore = new DaemonConfigStore(paseoHome, reloadableConfig(reloadedPersisted));
+    expect(reloadedStore.get().agents?.peerMessaging).toMatchObject(expected);
   });
 
   test("patch persists clearing metadata generation providers into config.json", () => {
