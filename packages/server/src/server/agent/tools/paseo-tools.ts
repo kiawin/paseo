@@ -96,6 +96,12 @@ import type {
   ProjectRegistry,
   WorkspaceRegistry,
 } from "../../workspace-registry.js";
+import {
+  NOTE_MAX_BYTES,
+  NoteError,
+  PersistedNoteRecordSchema,
+  type NoteStore,
+} from "../../note-store.js";
 import { resolveWorktreeSourceCwd } from "../../workspace-source.js";
 import type { WorkspaceScriptsService } from "../../session/workspace-scripts/workspace-scripts-service.js";
 import {
@@ -142,6 +148,10 @@ export interface PaseoToolHostDependencies {
   emitWorkspaceUpdatesForWorkspaceIds?: ArchiveDependencies["emitWorkspaceUpdatesForWorkspaceIds"];
   workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "list" | "upsert">;
   artifactStore?: Pick<ArtifactStore, "publish">;
+  noteStore?: Pick<
+    NoteStore,
+    "get" | "listForProject" | "readContent" | "save" | "searchForProject" | "setPinned"
+  >;
   projectRegistry?: Pick<ProjectRegistry, "get" | "list">;
   createDirectoryWorkspace?: (
     cwd: string,
@@ -2762,13 +2772,15 @@ function createToolCatalog(
     },
   );
 
-  const resolveArtifactTarget = async (): Promise<{
+  const resolveCallerProjectTarget = async (
+    toolName: string,
+  ): Promise<{
     projectId: string;
     workspaceId: string | null;
     provider: string | null;
   }> => {
     const caller = resolveCallerAgent();
-    if (!caller) throw new Error("publish_artifact must be called by an agent");
+    if (!caller) throw new Error(`${toolName} must be called by an agent`);
     if (!caller.workspaceId) {
       throw new Error(`Caller agent ${callerAgentId} has no current workspace`);
     }
@@ -2781,6 +2793,164 @@ function createToolCatalog(
       provider: caller.provider ?? null,
     };
   };
+
+  const resolveArtifactTarget = async () => resolveCallerProjectTarget("publish_artifact");
+
+  const requireNoteStore = (): NonNullable<PaseoToolHostDependencies["noteStore"]> => {
+    if (!options.noteStore) throw new Error("Notes are not configured on this daemon");
+    return options.noteStore;
+  };
+
+  registerTool(
+    "list_notes",
+    {
+      title: "List notes",
+      description:
+        "List notes in the caller agent's project as metadata, pinned notes first, then most recently updated.",
+      inputSchema: {
+        limit: z.number().int().positive().max(200).optional().default(50),
+      },
+      outputSchema: {
+        notes: z.array(PersistedNoteRecordSchema),
+      },
+    },
+    async ({ limit = 50 }) => {
+      const target = await resolveCallerProjectTarget("list_notes");
+      const records = await requireNoteStore().listForProject(target.projectId);
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ notes: records.slice(0, limit) }),
+      };
+    },
+  );
+
+  registerTool(
+    "read_note",
+    {
+      title: "Read note",
+      description: "Read the complete body of a note in the caller agent's project.",
+      inputSchema: {
+        noteId: z.string(),
+      },
+      outputSchema: {
+        note: PersistedNoteRecordSchema,
+        body: z.string(),
+      },
+    },
+    async ({ noteId }) => {
+      const target = await resolveCallerProjectTarget("read_note");
+      const store = requireNoteStore();
+      const record = await store.get(noteId);
+      if (!record || record.projectId !== target.projectId) {
+        throw new NoteError("note_not_found", `No note ${noteId} in project ${target.projectId}`);
+      }
+      const body = (await store.readContent(record)).toString("utf8");
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ note: record, body }),
+      };
+    },
+  );
+
+  registerTool(
+    "search_notes",
+    {
+      title: "Search notes",
+      description:
+        "Search the caller agent's project notes. A note matches when every whitespace-separated term appears in its title or body, case-insensitively. A body match carries a snippet of the text around it; a title match carries none.",
+      inputSchema: {
+        query: z.string().trim().min(1).max(200),
+        limit: z.number().int().positive().max(200).optional().default(50),
+      },
+      outputSchema: {
+        matches: z.array(
+          z.object({ note: PersistedNoteRecordSchema, snippet: z.string().nullable() }),
+        ),
+      },
+    },
+    async ({ query, limit = 50 }) => {
+      const target = await resolveCallerProjectTarget("search_notes");
+      const store = requireNoteStore();
+      const records = new Map(
+        (await store.listForProject(target.projectId)).map((record) => [record.noteId, record]),
+      );
+      const matches = (await store.searchForProject(target.projectId, query)).flatMap((match) => {
+        const note = records.get(match.noteId);
+        return note ? [{ note, snippet: match.snippet }] : [];
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ matches: matches.slice(0, limit) }),
+      };
+    },
+  );
+
+  registerTool(
+    "pin_note",
+    {
+      title: "Pin note",
+      description:
+        "Pin a note in the caller agent's project so it lists first, or unpin it. Pinning does not change the note's revision or updated time.",
+      inputSchema: {
+        noteId: z.string(),
+        pinned: z.boolean().optional().default(true),
+      },
+      outputSchema: {
+        note: PersistedNoteRecordSchema,
+      },
+    },
+    async ({ noteId, pinned = true }) => {
+      const target = await resolveCallerProjectTarget("pin_note");
+      const store = requireNoteStore();
+      const record = await store.get(noteId);
+      if (!record || record.projectId !== target.projectId) {
+        throw new NoteError("note_not_found", `No note ${noteId} in project ${target.projectId}`);
+      }
+      const note = await store.setPinned(noteId, pinned);
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ note }),
+      };
+    },
+  );
+
+  registerTool(
+    "write_note",
+    {
+      title: "Write note",
+      description: "Create or update a markdown note in the caller agent's project.",
+      inputSchema: {
+        noteId: z.string().nullable().optional(),
+        body: z.string(),
+      },
+      outputSchema: {
+        note: PersistedNoteRecordSchema,
+        replacedRevision: z.number().int().positive().nullable(),
+      },
+    },
+    async ({ noteId, body }) => {
+      const target = await resolveCallerProjectTarget("write_note");
+      const bodyBytes = Buffer.byteLength(body, "utf8");
+      if (bodyBytes > NOTE_MAX_BYTES) {
+        throw new NoteError(
+          "note_too_large",
+          `write_note body is ${bodyBytes} bytes; the 64 KiB note cap is ${NOTE_MAX_BYTES} bytes`,
+        );
+      }
+      const result = await requireNoteStore().save({
+        projectId: target.projectId,
+        noteId: noteId ?? null,
+        body,
+      });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          note: result.record,
+          replacedRevision: result.replaced?.revision ?? null,
+        }),
+      };
+    },
+  );
 
   registerTool(
     "publish_artifact",

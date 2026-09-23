@@ -326,6 +326,25 @@ export const PASEO_TOOL_CATALOG = {
     },
   },
 
+  // Notes
+  list_notes: { label: "List notes", detail: { inputOrder: ["limit"] } },
+  read_note: { label: "Read note", context: field("noteId"), detail: { inputOrder: ["noteId"] } },
+  search_notes: {
+    label: "Search notes",
+    context: field("query"),
+    detail: { inputOrder: ["query", "limit"] },
+  },
+  pin_note: {
+    label: "Pin note",
+    context: field("noteId"),
+    detail: { inputOrder: ["noteId", "pinned"] },
+  },
+  write_note: {
+    label: "Write note",
+    context: field("noteId"),
+    detail: { inputOrder: ["noteId", "body"] },
+  },
+
   // Browser
   browser_list_tabs: browser("List browser tabs"),
   browser_new_tab: browser("Open browser tab", field("url")),
