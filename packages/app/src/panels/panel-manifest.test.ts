@@ -10,6 +10,8 @@ describe("panel manifest", () => {
     expect(panelSupportsHost("new_tab", "explorer")).toBe(true);
     expect(panelSupportsHost("files", "explorer")).toBe(true);
     expect(panelSupportsHost("files", "main")).toBe(false);
+    expect(panelSupportsHost("notes", "explorer")).toBe(true);
+    expect(panelSupportsHost("notes", "main")).toBe(false);
     expect(panelSupportsHost("setup", "explorer")).toBe(false);
   });
 
@@ -19,6 +21,12 @@ describe("panel manifest", () => {
     ).toBe(panelResourceKey({ kind: "working_diff", focusPath: "src/b.ts", focusRequestId: 2 }));
     expect(panelResourceKey({ kind: "file", path: "src/a.ts" })).not.toBe(
       panelResourceKey({ kind: "file", path: "src/b.ts" }),
+    );
+  });
+
+  it("includes the note host in its resource identity", () => {
+    expect(panelResourceKey({ kind: "note", serverId: "host-a", noteId: "note-1" })).not.toBe(
+      panelResourceKey({ kind: "note", serverId: "host-b", noteId: "note-1" }),
     );
   });
 });
