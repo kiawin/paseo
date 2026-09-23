@@ -12,6 +12,16 @@ import type { AgentStorage } from "./agent-storage.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
+import { randomBytes } from "node:crypto";
+import { isSystemInjectedEnvelope } from "./agent-messages/envelope.js";
+
+export { isSystemInjectedEnvelope };
+
+export function formatPeerPrompt(agentId: string, prompt: string, initialNonce?: string): string {
+  let nonce = initialNonce ?? randomBytes(4).toString("hex");
+  while (prompt.includes(nonce)) nonce = randomBytes(4).toString("hex");
+  return `<paseo-peer-${nonce} from="${agentId}">\n${prompt}\n</paseo-peer-${nonce}>`;
+}
 
 export type AgentUnarchiveController = Pick<AgentManager, "notifyAgentState" | "unarchiveSnapshot">;
 

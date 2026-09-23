@@ -568,6 +568,13 @@ function resolveStaticLoadConfigSettings(
   };
 }
 
+function resolvePeerMessagingConfig(persisted: PersistedConfig) {
+  return {
+    peerMessagingEnforceReachability: persisted.agents?.peerMessaging?.enforceReachability ?? false,
+    peerMessagingCwdReachability: persisted.agents?.peerMessaging?.cwdReachability ?? true,
+  };
+}
+
 interface ResolveConfigFromPersistedOptions {
   env?: NodeJS.ProcessEnv;
   cli?: CliConfigOverrides;
@@ -601,6 +608,8 @@ export type ResolvedDaemonSettings = Pick<
   | "resumePrompt"
   | "providerCatalogRefreshTimeoutMs"
   | "metadataGeneration"
+  | "peerMessagingEnforceReachability"
+  | "peerMessagingCwdReachability"
   | "providerOverrides"
 >;
 
@@ -650,6 +659,9 @@ export function resolveConfigFromPersisted(
     voiceLlmProviderExplicit: voiceLlm.providerExplicit,
     voiceLlmModel: voiceLlm.model,
     agentProviderSettings: extractAgentProviderSettings(settings.providerOverrides),
+    providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
+    metadataGeneration: persisted.agents?.metadataGeneration,
+    providerOverrides: settings.providerOverrides,
     log: resolveLogConfigFromEnv(env, persisted),
     configReload: {
       env: { ...env },
@@ -689,6 +701,7 @@ export function resolveReloadableConfig(
     ...resolveRestartRecoveryConfig(persisted.agents),
     providerCatalogRefreshTimeoutMs: persisted.agents?.catalogRefreshTimeoutMs,
     metadataGeneration: persisted.agents?.metadataGeneration,
+    ...resolvePeerMessagingConfig(persisted),
     providerOverrides: extractProviderOverrides(
       persisted.agents?.providers as Record<string, unknown> | undefined,
     ),
