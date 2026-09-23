@@ -57,6 +57,7 @@ export type AgentLinkBehavior = "in-app" | "external";
  * these itself, so there is no per-link menu to carry an `ask` state the way agent links do.
  */
 export type ForgeLinkBehavior = "in-app" | "external";
+export type NoteImageBehavior = "auto" | "tap-to-load" | "disabled";
 export type WorkspaceTitleSource = "title" | "branch";
 export type PullRequestOpenLocation = "main" | "side" | "explorer";
 /** What a sidebar workspace row shows in the space to the right of its title. */
@@ -110,6 +111,7 @@ export interface AppSettings {
   serviceUrlBehavior: ServiceUrlBehavior;
   agentLinkBehavior: AgentLinkBehavior;
   forgeLinkBehavior: ForgeLinkBehavior;
+  noteImageBehavior: NoteImageBehavior;
   terminalScrollbackLines: number;
   uiFontFamily: string; // "" = platform default UI stack
   monoFontFamily: string; // "" = platform default mono stack
@@ -178,6 +180,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   serviceUrlBehavior: "ask",
   agentLinkBehavior: "external",
   forgeLinkBehavior: "external",
+  noteImageBehavior: "tap-to-load",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
   uiFontFamily: "",
   monoFontFamily: "",
@@ -264,6 +267,7 @@ const StoredAppSettingsSchema = z
     serviceUrlBehavior: z.enum(["ask", "in-app", "external"]).catch("ask"),
     agentLinkBehavior: z.enum(["in-app", "external"]).catch("external"),
     forgeLinkBehavior: z.enum(["in-app", "external"]).catch("external"),
+    noteImageBehavior: z.enum(["auto", "tap-to-load", "disabled"]).catch("tap-to-load"),
     terminalScrollbackLines: clampedNumber(
       MIN_TERMINAL_SCROLLBACK_LINES,
       MAX_TERMINAL_SCROLLBACK_LINES,
