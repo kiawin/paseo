@@ -51,6 +51,7 @@ import { ProviderList } from "@/provider-settings";
 import { openProviderSettings } from "@/navigation/settings-navigation";
 import { HostUsageSection } from "@/usage";
 import { MetadataGenerationPage } from "@/screens/settings/metadata-generation-page";
+import { PeerMessagingCards } from "@/screens/settings/peer-messaging-card";
 import { useSessionStore } from "@/stores/session-store";
 import { settingsStyles } from "@/styles/settings";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
@@ -263,6 +264,7 @@ export function HostToolsPage({ serverId }: { serverId: string }) {
             <SettingsCard testID="host-page-inject-mcp-card">
               <HostPaseoToolsRow serverId={serverId} />
               <BrowserToolsRow serverId={serverId} />
+              <PeerMessagingCards serverId={serverId} />
             </SettingsCard>
           </SettingsSection>
         </>

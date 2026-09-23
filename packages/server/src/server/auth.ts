@@ -125,31 +125,62 @@ export function shouldBypassBearerAuth(method: string, path: string): boolean {
   return isBearerFreeRoute(path);
 }
 
+export function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  const normalized = address.toLowerCase();
+  if (normalized === "::1") return true;
+  const ipv4 = normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized;
+  const octets = ipv4.split(".");
+  if (octets.length !== 4 || !octets.every((octet) => /^\d+$/.test(octet))) return false;
+  const numbers = octets.map(Number);
+  return numbers[0] === 127 && numbers.every((octet) => octet >= 0 && octet <= 255);
+}
+
 /**
- * Authorizes a request to the Agent MCP endpoint (/mcp/agents), which is exempt
- * from the global daemon-password middleware. Accepts either the per-daemon-run
- * capability token the daemon injects into its own agents' configs and MCP
- * client, or a valid daemon-password bearer (so existing password-authenticated
- * callers keep working). When no daemon password is configured the endpoint is
- * open, matching the global middleware's behavior.
+ * Authenticates a request to the Agent MCP endpoint (/mcp/agents), which is
+ * exempt from the global daemon-password middleware. A per-agent token resolves
+ * to that agent; a valid daemon-password bearer resolves to the human user.
+ * An uncredentialed loopback request is a user when no daemon password is
+ * configured, matching the daemon's local trust boundary. Unknown credentials
+ * and uncredentialed non-loopback requests are rejected.
  */
-export async function isAgentMcpRequestAuthorized(input: {
+export type AgentMcpPrincipal =
+  | { kind: "agent"; agentId: string }
+  | { kind: "user" }
+  | { kind: "reject" };
+
+export async function resolveAgentMcpCaller(input: {
   password: string | undefined;
-  capabilityToken: string | null;
   authorizationHeader: string | undefined;
-}): Promise<boolean> {
-  if (!input.password) {
-    return true;
-  }
+  daemonCapabilityToken?: string;
+  resolveAgentId: (token: string) => string | undefined;
+  allowAnonymousLoopback?: boolean;
+}): Promise<AgentMcpPrincipal> {
   const token = extractHttpBearerToken(input.authorizationHeader);
-  if (input.capabilityToken !== null && token !== null) {
-    // Constant-time compare; length-guard first because timingSafeEqual throws
-    // on differing buffer lengths.
-    const provided = Buffer.from(token);
-    const expected = Buffer.from(input.capabilityToken);
-    if (provided.length === expected.length && timingSafeEqual(provided, expected)) {
-      return true;
+  if (token !== null) {
+    const agentId = input.resolveAgentId(token);
+    if (agentId !== undefined) {
+      return { kind: "agent", agentId };
     }
   }
-  return isBearerTokenValidAsync({ password: input.password, token });
+  if (
+    token !== null &&
+    input.daemonCapabilityToken !== undefined &&
+    tokensMatch(token, input.daemonCapabilityToken)
+  ) {
+    return { kind: "user" };
+  }
+  if (input.password && (await isBearerTokenValidAsync({ password: input.password, token }))) {
+    return { kind: "user" };
+  }
+  if (!input.password && token === null && input.allowAnonymousLoopback) {
+    return { kind: "user" };
+  }
+  return { kind: "reject" };
+}
+
+export function tokensMatch(providedToken: string, expectedToken: string): boolean {
+  const provided = Buffer.from(providedToken);
+  const expected = Buffer.from(expectedToken);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
 }

@@ -1417,6 +1417,8 @@ export const ar: TranslationResources = {
         pin: "تثبيت في الأعلى",
         unpin: "إلغاء التثبيت",
         select: "تحديد",
+        enableAgentTools: "Enable Paseo tools (next launch)",
+        disableAgentTools: "Disable Paseo tools (next launch)",
         archive: "أرشيف",
         archiveWorkspace: "أرشفة مساحة العمل",
         hideFromSidebar: "إخفاء من الشريط الجانبي",
@@ -3267,6 +3269,12 @@ export const ar: TranslationResources = {
           hint: "سيتمكن الوكلاء من إدارة أشجار العمل والوكلاء والجداول الزمنية",
           accessibilityLabel: "حقن أدوات Paseo",
           updateFailed: "تعذر تحديث أدوات Paseo.",
+        },
+        enforceReachability: en.settings.host.orchestration.enforceReachability,
+        cwdReachability: {
+          title: "Allow messages to agents in nested folders",
+          hint: "Lets an agent message any agent working in a folder inside its own. Turn this off so agents can only message agents they created, agents that created them, or agents with the same creator.",
+          accessibilityLabel: "Allow messages to agents in nested folders",
         },
         systemPrompt: {
           title: "موجه النظام",
