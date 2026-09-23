@@ -1,12 +1,17 @@
 import { z } from "zod";
 import pino from "pino";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import os, { tmpdir, userInfo } from "node:os";
+import path, { basename, dirname, join } from "node:path";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { afterEach, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
 import { createPaseoApi } from "@getpaseo/client";
 import { createHostClient, createHostChannelTransport } from "@getpaseo/client/node";
 import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
+import { hashDaemonPassword } from "../auth.js";
+import { resolveDaemonVersion } from "../daemon-version.js";
 import type { HostDirectory } from "@getpaseo/protocol/hosts";
 
 const cleanup: (() => Promise<unknown>)[] = [];
@@ -51,6 +56,17 @@ function completionLogger() {
     },
   );
 }
+let mcpTokenDir: string;
+const previousMcpTokenDir = process.env.PASEO_TEST_MCP_TOKEN_DIR;
+beforeAll(async () => {
+  mcpTokenDir = await mkdtemp(path.join(os.tmpdir(), "connected-hosts-mcp-tokens-"));
+  process.env.PASEO_TEST_MCP_TOKEN_DIR = mcpTokenDir;
+});
+afterAll(async () => {
+  if (previousMcpTokenDir === undefined) delete process.env.PASEO_TEST_MCP_TOKEN_DIR;
+  else process.env.PASEO_TEST_MCP_TOKEN_DIR = previousMcpTokenDir;
+  await rm(mcpTokenDir, { recursive: true, force: true });
+});
 afterEach(async () => {
   for (const close of cleanup.splice(0).toReversed()) await close();
 });
@@ -61,10 +77,11 @@ async function daemon(
   cleanup.push(() => instance.close());
   return instance;
 }
-async function api(instance: TestPaseoDaemon) {
+async function api(instance: TestPaseoDaemon, password?: string) {
   const client = createHostClient(`127.0.0.1:${instance.port}`, {
     clientId: crypto.randomUUID(),
     reconnect: { enabled: false },
+    ...(password ? { password } : {}),
   });
   await client.connect();
   expect(client.getLastServerInfoMessage()).toMatchObject({ sourceId: "owner" });
@@ -75,6 +92,21 @@ async function api(instance: TestPaseoDaemon) {
     await client.close();
   });
   return { paseo, client };
+}
+async function agentMcpClient(
+  host: TestPaseoDaemon,
+  agentId: string,
+  name: string,
+): Promise<Client> {
+  const token = await readFile(path.join(mcpTokenDir, `${agentId}.token`), "utf8");
+  const mcp = new Client({ name, version: "1" });
+  cleanup.push(() => mcp.close());
+  await mcp.connect(
+    new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${host.port}/mcp/agents`), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    }),
+  );
+  return mcp;
 }
 async function online(paseo: ReturnType<typeof createPaseoApi>): Promise<HostDirectory> {
   let directory!: HostDirectory;
@@ -458,11 +490,6 @@ class RoutePeer {
     this.origin.closeHostRoute(this.routeId);
   }
 }
-
-import { mkdir, writeFile, readFile, chmod, stat, mkdtemp, rm, readdir } from "node:fs/promises";
-import { join, dirname, basename } from "node:path";
-import { tmpdir, userInfo } from "node:os";
-import { resolveDaemonVersion } from "../daemon-version.js";
 
 test("identity discovery failures remain inspectable and changing a pinned destination requires explicit replacement", async () => {
   const a = await daemon();
@@ -1571,13 +1598,7 @@ test(
       config: { provider: "claude/claude-test" },
       title: "Fleet parent",
     });
-    const mcp = new Client({ name: "fleet-delegation", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = await agentMcpClient(a, parent.id, "fleet-delegation");
     const result = await mcp.callTool({ name: "list_hosts", arguments: {} });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
@@ -1756,13 +1777,7 @@ test(
       title: "Background parent",
       background: true,
     });
-    const mcp = new Client({ name: "background-delegation", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = await agentMcpClient(a, parent.id, "background-delegation");
     const call = async (name: string, args: Record<string, unknown>) => {
       const response = await mcp.callTool({ name, arguments: args });
       expect(response.isError, JSON.stringify(response)).not.toBe(true);
@@ -1859,14 +1874,7 @@ test(
       labels: { "paseo.parent-agent-id": parent.id, "paseo.parent-server-id": aId },
     });
     const caller = async (host: TestPaseoDaemon, agentId: string) => {
-      const mcp = new Client({ name: "batching-agent", version: "1" });
-      await mcp.connect(
-        new StreamableHTTPClientTransport(
-          new URL(`http://127.0.0.1:${host.port}/mcp/agents?callerAgentId=${agentId}`),
-        ),
-      );
-      cleanup.push(() => mcp.close());
-      return mcp;
+      return await agentMcpClient(host, agentId, "batching-agent");
     };
     const parentMcp = await caller(a, parent.id);
     const childMcp = await caller(b, child.id);
@@ -1983,10 +1991,11 @@ test(
   "remote top-level sends set the mode through the existing RPC before sending",
   { timeout: 15000 },
   async () => {
-    const a = await daemon();
+    const password = "connected-hosts-human-mcp-password";
+    const a = await daemon({ auth: { password: hashDaemonPassword(password) } });
     const b = await daemon();
     const wire = await hostWire(b);
-    const origin = await api(a);
+    const origin = await api(a, password);
     const destination = await api(b);
     await origin.paseo.hosts.add({ connection: wire.connection });
     const serverId = (await online(origin.paseo)).hosts[0]!.serverId!;
@@ -2000,7 +2009,9 @@ test(
     const mcp = new Client({ name: "human-mode-send", version: "1" });
     cleanup.push(() => mcp.close());
     await mcp.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${a.port}/mcp/agents`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${a.port}/mcp/agents`), {
+        requestInit: { headers: { Authorization: `Bearer ${password}` } },
+      }),
     );
     const response = await mcp.callTool({
       name: "send_agent_prompt",
@@ -2074,12 +2085,7 @@ test(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Remote parent",
     });
-    const mcp = new Client({ name: "durable-remote-parent", version: "1" });
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = await agentMcpClient(a, parent.id, "durable-remote-parent");
     cleanup.push(() => mcp.close());
     const response = await mcp.callTool({
       name: "create_agent",
@@ -2147,13 +2153,7 @@ test(
       config: { provider: "claude/claude-test", modeId: "bypassPermissions" },
       title: "Mode parent",
     });
-    const mcp = new Client({ name: "mode-parent", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = await agentMcpClient(a, parent.id, "mode-parent");
     const remoteMode = async (provider: string, settings?: { modeId: string }) => {
       const response = await mcp.callTool({
         name: "create_agent",
@@ -2214,13 +2214,7 @@ test(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Permission parent",
     });
-    const mcp = new Client({ name: "permission-parent", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = await agentMcpClient(a, parent.id, "permission-parent");
     const response = await mcp.callTool({
       name: "create_agent",
       arguments: {
@@ -2298,13 +2292,7 @@ test(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Idle child",
     });
-    const mcp = new Client({ name: "offline-parent", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = await agentMcpClient(a, parent.id, "offline-parent");
     await origin.paseo.hosts.update(saved.registrationId, { enabled: false });
     const response = await mcp.callTool({
       name: "send_agent_prompt",
@@ -2357,13 +2345,7 @@ test.each(["removed", "disabled"] as const)(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Parent",
     });
-    const mcp = new Client({ name: "removed-host-parent", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = await agentMcpClient(a, parent.id, "removed-host-parent");
     const response = await mcp.callTool({
       name: "create_agent",
       arguments: {
@@ -2690,13 +2672,7 @@ test.each([false, true])(
     if (archived) await child.archive();
     else await b.daemon.agentManager.closeAgent(child.id);
     expect((await destination.client.fetchAgent(child.id))?.agent.status).toBe("closed");
-    const mcp = new Client({ name: "closed-target-caller", version: "1" });
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
-    cleanup.push(() => mcp.close());
+    const mcp = await agentMcpClient(a, parent.id, "closed-target-caller");
     const result = await mcp.callTool({
       name: "send_agent_prompt",
       arguments: { serverId: remoteId, agentId: child.id, prompt: "Finish the new task" },
