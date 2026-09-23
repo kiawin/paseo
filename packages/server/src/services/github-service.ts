@@ -1712,7 +1712,8 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         );
         continue;
       }
-      if (repository.data.isFork && repository.data.parent) {
+      const node = selectBatchPollNode(entry, repository.data);
+      if (repository.data.isFork && repository.data.parent && !node) {
         const forkOwner = repository.data.owner?.login ?? entry.owner;
         pollRepositoryRedirects.set(batchRepositoryRedirectKey(entry), {
           owner: repository.data.parent.owner.login,
@@ -1722,7 +1723,6 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         distribution.redirected.push(entry);
         continue;
       }
-      const node = selectBatchPollNode(entry, repository.data);
       if (!node) {
         // Legacy fallback covers the two ways "no match" can be wrong: a fork
         // whose PR lives in the parent repository, and a full candidate page —
