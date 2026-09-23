@@ -34,6 +34,8 @@ import { useMountedTabSet } from "@/screens/workspace/use-mounted-tab-set";
 import { usePullRequestPanelAvailability } from "@/panels/pull-request-availability";
 import { PullRequestContent } from "@/panels/pull-request";
 import { ArtifactsPane } from "@/artifacts/pane";
+import { NotesPane } from "@/notes/pane";
+import type { NoteTarget } from "@/notes/federation";
 import { useAddFileToChat } from "@/panels/use-add-file-to-chat";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import {
@@ -60,6 +62,7 @@ interface ExplorerSidebarProps {
   isGit: boolean;
   onOpenFile?: (filePath: string) => void;
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenNote?: (target: NoteTarget) => void;
 }
 
 interface ExplorerSidebarSharedState {
@@ -91,6 +94,7 @@ export function CompactExplorerSidebar({
   isGit,
   onOpenFile,
   onOpenArtifact,
+  onOpenNote,
 }: ExplorerSidebarProps) {
   const { theme } = useUnistyles();
   const insets = useSafeAreaInsets();
@@ -157,6 +161,7 @@ export function CompactExplorerSidebar({
           isOpen={isActive}
           onOpenFile={onOpenFile}
           onOpenArtifact={onOpenArtifact}
+          onOpenNote={onOpenNote}
         />
       </MobilePanelOverlay>
     </RetainedPanelActivity>
@@ -175,6 +180,7 @@ export function NativeExplorerSidebarDock({
   isGit,
   onOpenFile,
   onOpenArtifact,
+  onOpenNote,
   persistenceKey,
   containerWidth,
 }: NativeExplorerSidebarDockProps) {
@@ -270,6 +276,7 @@ export function NativeExplorerSidebarDock({
             isOpen={isOpen}
             onOpenFile={onOpenFile}
             onOpenArtifact={onOpenArtifact}
+            onOpenNote={onOpenNote}
           />
         </View>
       </Animated.View>
@@ -310,6 +317,7 @@ function ExplorerTabButton({
 }
 
 const noopOpenArtifact = () => {};
+const noopOpenNote = (_target: NoteTarget) => {};
 
 interface SidebarContentProps {
   activeTab: ExplorerTab;
@@ -322,6 +330,7 @@ interface SidebarContentProps {
   isOpen: boolean;
   onOpenFile?: (filePath: string) => void;
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenNote?: (target: NoteTarget) => void;
 }
 
 function ExplorerSidebarContent({
@@ -335,6 +344,7 @@ function ExplorerSidebarContent({
   isOpen,
   onOpenFile,
   onOpenArtifact,
+  onOpenNote,
 }: SidebarContentProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
@@ -367,6 +377,8 @@ function ExplorerSidebarContent({
     // Outside the isGit guard on purpose: artifacts are project-scoped, and a non-git
     // directory workspace belongs to a project that can hold them.
     tabs.push("artifacts");
+    // Notes are project-scoped for the same reason as artifacts.
+    tabs.push("notes");
     return tabs;
   }, [isGit, showPrTab]);
   const { mountedTabIds } = useMountedTabSet({
@@ -432,6 +444,13 @@ function ExplorerSidebarContent({
             onTabPress={onTabPress}
             testID="explorer-tab-artifacts"
           />
+          <ExplorerTabButton
+            tab="notes"
+            active={resolvedTab === "notes"}
+            label={t("panels.notes.label")}
+            onTabPress={onTabPress}
+            testID="explorer-tab-notes"
+          />
         </ScrollView>
         <View style={headerRightSectionStyle}>
           <ToolbarButton
@@ -477,6 +496,15 @@ function ExplorerSidebarContent({
               serverId={serverId}
               workspaceId={workspaceId ?? null}
               onOpenArtifact={onOpenArtifact ?? noopOpenArtifact}
+            />
+          </RetainedPanel>
+        ) : null}
+        {mountedTabIds.has("notes") ? (
+          <RetainedPanel active={resolvedTab === "notes"}>
+            <NotesPane
+              serverId={serverId}
+              workspaceId={workspaceId ?? null}
+              onOpenNote={onOpenNote ?? noopOpenNote}
             />
           </RetainedPanel>
         ) : null}
