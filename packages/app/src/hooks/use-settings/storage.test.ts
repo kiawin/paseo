@@ -276,6 +276,24 @@ describe("loadAppSettingsFromStorage", () => {
     expect(result.useLegacyTerminalRenderer).toBe(false);
   });
 
+  it("defaults remote note images to tap-to-load", async () => {
+    const result = await loadAppSettingsFromStorage(makeDeps());
+
+    expect(result.noteImageBehavior).toBe("tap-to-load");
+  });
+
+  it("falls back to tap-to-load for an invalid stored image behavior", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ noteImageBehavior: "blocked" }),
+      }),
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.noteImageBehavior).toBe("tap-to-load");
+  });
+
   it("loads the per-device legacy terminal renderer preference", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({
