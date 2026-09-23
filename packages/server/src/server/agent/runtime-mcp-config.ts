@@ -28,7 +28,6 @@ export function stripInternalPaseoMcpServer(config: AgentSessionConfig): AgentSe
 
 export function withRuntimePaseoMcpServer(params: {
   config: AgentSessionConfig;
-  agentId: string;
   mcpBaseUrl: string | null;
   /**
    * Capability token authenticating the injected connection to the daemon's
@@ -47,7 +46,7 @@ export function withRuntimePaseoMcpServer(params: {
     mcpServers: {
       [PASEO_MCP_SERVER_NAME]: {
         type: "http",
-        url: `${params.mcpBaseUrl}?callerAgentId=${params.agentId}`,
+        url: params.mcpBaseUrl,
         ...(params.mcpAuthToken
           ? { headers: { Authorization: `Bearer ${params.mcpAuthToken}` } }
           : {}),

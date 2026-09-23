@@ -20,6 +20,7 @@ import { projectTimelineRows } from "./timeline-projection.js";
 import { getOpenAgentTabLabel, PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { formatSystemNotificationPrompt, startAgentRun } from "./agent-prompt.js";
 import { StaleProviderSessionError } from "./stale-provider-session-error.js";
+import { DAEMON_APPROVAL_REQUEST_PREFIX, requestDaemonApproval } from "./daemon-approvals.js";
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent-loading.js";
 import type { StoredAgentRecord } from "./agent-storage.js";
 import type {
@@ -269,8 +270,10 @@ class HeldAgentCreationClient extends TestAgentClient {
   private readonly creationStarted = deferred<void>();
   private readonly creationAllowed = deferred<void>();
   createdSessionClosed = false;
+  launchConfig: AgentSessionConfig | null = null;
 
   override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    this.launchConfig = config;
     const recordSessionClosed = () => {
       this.createdSessionClosed = true;
     };
@@ -1226,6 +1229,32 @@ class McpCapableTestAgentClient extends TestAgentClient {
   }
 }
 
+class FailingMcpLaunchClient extends McpCapableTestAgentClient {
+  launchConfigs: AgentSessionConfig[] = [];
+
+  override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    this.launchConfigs.push(config);
+    throw new Error("create failed");
+  }
+
+  override async resumeSession(
+    _handle: AgentPersistenceHandle,
+    config?: Partial<AgentSessionConfig>,
+  ): Promise<AgentSession> {
+    this.resumeOverrides.push(config);
+    this.launchConfigs.push(config as AgentSessionConfig);
+    throw new Error("resume failed");
+  }
+
+  async importSession(
+    _input: ImportProviderSessionInput,
+    context: ImportProviderSessionContext,
+  ): Promise<never> {
+    this.launchConfigs.push(context.config);
+    throw new Error("import failed");
+  }
+}
+
 class ControlledInterruptSession extends TestAgentSession {
   interruptCalled = false;
 
@@ -1511,11 +1540,116 @@ function fakeCodexEmitting(args: FakeCodexEmitterArgs): AgentClient {
 
 const logger = createTestLogger();
 
+test("daemon approvals resolve without reaching the provider and deny on timeout or close", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-daemon-approval-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const session = manager.getAgent(snapshot.id)?.session;
+  if (!session) throw new Error("Expected agent session");
+  const respondToPermission = vi.spyOn(session, "respondToPermission");
+
+  const allow = requestDaemonApproval({
+    agentManager: manager,
+    agentId: snapshot.id,
+    kind: "other",
+    title: "Allow the operation?",
+    description: "The daemon needs approval.",
+    timeoutMs: 1000,
+  });
+  const request = manager.getPendingPermissions(snapshot.id)[0];
+  expect(request.id).toMatch(new RegExp(`^${DAEMON_APPROVAL_REQUEST_PREFIX}`));
+  expect(request.actions?.map((action) => action.behavior)).toEqual(["allow", "deny"]);
+
+  await manager.respondToPermission(snapshot.id, request.id, { behavior: "allow" });
+  await expect(allow).resolves.toBe(true);
+  expect(respondToPermission).not.toHaveBeenCalled();
+  expect(manager.getPendingPermissions(snapshot.id)).toEqual([]);
+
+  const timeout = requestDaemonApproval({
+    agentManager: manager,
+    agentId: snapshot.id,
+    kind: "mode",
+    title: "Timed out",
+    description: "This must deny.",
+    timeoutMs: 1,
+  });
+  await expect(timeout).resolves.toBe(false);
+  expect(manager.getPendingPermissions(snapshot.id)).toEqual([]);
+
+  const close = requestDaemonApproval({
+    agentManager: manager,
+    agentId: snapshot.id,
+    kind: "other",
+    title: "Close cleanup",
+    description: "This must deny when the agent closes.",
+    timeoutMs: 1000,
+  });
+  const closeRequest = manager.getPendingPermissions(snapshot.id)[0];
+  await expect(
+    manager.respondToPermission(
+      snapshot.id,
+      closeRequest.id,
+      { behavior: "allow" },
+      "caller-agent",
+    ),
+  ).rejects.toThrow("Only the user");
+  await manager.closeAgent(snapshot.id);
+  await expect(close).resolves.toBe(false);
+  expect(respondToPermission).not.toHaveBeenCalled();
+
+  rmSync(workdir, { recursive: true, force: true });
+});
+
+test("provider permissions with the daemon approval prefix still reach the provider", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-provider-permission-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const session = manager.getAgent(snapshot.id)?.session;
+  if (!session) throw new Error("Expected agent session");
+  const respondToPermission = vi.spyOn(session, "respondToPermission");
+  const request = {
+    id: `${DAEMON_APPROVAL_REQUEST_PREFIX}provider-owned`,
+    provider: "codex" as const,
+    name: "shell",
+    kind: "command" as const,
+    title: "Run the command?",
+    description: "The provider owns this permission.",
+    actions: [{ id: "allow", label: "Allow", behavior: "allow" as const }],
+  };
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  session.pushEvent({ type: "permission_requested", provider: "codex", request });
+  await vi.waitFor(() => expect(manager.getPendingPermissions(snapshot.id)).toEqual([request]));
+
+  await manager.respondToPermission(snapshot.id, request.id, { behavior: "allow" });
+
+  expect(respondToPermission).toHaveBeenCalledWith(request.id, { behavior: "allow" });
+  expect(manager.getPendingPermissions(snapshot.id)).toEqual([]);
+
+  await manager.closeAgent(snapshot.id);
+  rmSync(workdir, { recursive: true, force: true });
+});
+
 test("does not register a session that finishes starting after shutdown begins", async () => {
   const client = new HeldAgentCreationClient();
   const manager = new AgentManager({
     clients: { codex: client },
     logger,
+    mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
     idFactory: () => "00000000-0000-4000-8000-000000000100",
   });
 
@@ -1537,6 +1671,109 @@ test("does not register a session that finishes starting after shutdown begins",
     agents: [],
     sessionClosed: true,
   });
+  const token = client.launchConfig?.mcpServers?.paseo?.headers?.Authorization?.replace(
+    "Bearer ",
+    "",
+  );
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(manager.getMcpAgentId(token!)).toBeUndefined();
+});
+
+test("revokes the MCP token when registration fails after insertion", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-mcp-registration-test-"));
+
+  class CaptureClient extends TestAgentClient {
+    launchConfig: AgentSessionConfig | null = null;
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.launchConfig = config;
+      return new McpCapableTestAgentSession(config);
+    }
+  }
+
+  try {
+    const client = new CaptureClient();
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const manager = new AgentManager({
+      clients: { codex: client },
+      registry: storage,
+      logger,
+      mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
+      idFactory: () => "00000000-0000-4000-8000-000000000101",
+    });
+    vi.spyOn(storage, "applySnapshot").mockRejectedValueOnce(
+      new Error("post-insertion registration failure"),
+    );
+
+    await expect(
+      manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+        workspaceId: undefined,
+      }),
+    ).rejects.toThrow("post-insertion registration failure");
+
+    const token = client.launchConfig?.mcpServers?.paseo?.headers?.Authorization?.replace(
+      "Bearer ",
+      "",
+    );
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(manager.getMcpAgentId(token!)).toBeUndefined();
+    expect(manager.listAgents()).toEqual([]);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("revokes injected MCP tokens when create, resume, and import fail", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-mcp-failure-test-"));
+  const handle: AgentPersistenceHandle = {
+    provider: "codex",
+    sessionId: "failed-session",
+    metadata: { cwd: workdir },
+  };
+  const makeManager = (client: FailingMcpLaunchClient, id: string) =>
+    new AgentManager({
+      clients: { codex: client },
+      logger,
+      mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
+      idFactory: () => id,
+    });
+  const expectRevoked = (manager: AgentManager, config: AgentSessionConfig | undefined) => {
+    const token = config?.mcpServers?.paseo?.headers?.Authorization?.replace("Bearer ", "");
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(manager.getMcpAgentId(token!)).toBeUndefined();
+  };
+
+  try {
+    const createClient = new FailingMcpLaunchClient();
+    const createManager = makeManager(createClient, "00000000-0000-4000-8000-000000000201");
+    await expect(
+      createManager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+        workspaceId: undefined,
+      }),
+    ).rejects.toThrow("create failed");
+    expectRevoked(createManager, createClient.launchConfigs[0]);
+
+    const resumeClient = new FailingMcpLaunchClient();
+    const resumeManager = makeManager(resumeClient, "00000000-0000-4000-8000-000000000202");
+    await expect(
+      resumeManager.resumeAgentFromPersistence(handle, { cwd: workdir }),
+    ).rejects.toThrow("resume failed");
+    expectRevoked(resumeManager, resumeClient.launchConfigs[0]);
+
+    const importClient = new FailingMcpLaunchClient();
+    const importManager = makeManager(importClient, "00000000-0000-4000-8000-000000000203");
+    await expect(
+      importManager.importProviderSession({
+        provider: "codex",
+        providerHandleId: "failed-import",
+        cwd: workdir,
+        workspaceId: "workspace",
+      }),
+    ).rejects.toThrow("import failed");
+    expectRevoked(importManager, importClient.launchConfigs[0]);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
 });
 
 test("flush waits for rejected session cleanup that starts after shutdown", async () => {
@@ -2853,10 +3090,17 @@ test("createAgent injects paseo MCP server only into provider launch config", as
       command: "custom-mcp",
     },
   });
+  const paseoMcp = client.lastConfig?.mcpServers?.paseo;
+  const token = paseoMcp?.headers?.Authorization?.replace("Bearer ", "");
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(manager.getMcpAgentId(token!)).toBe(snapshot.id);
+  expect(paseoMcp?.url).toBe("http://127.0.0.1:6767/mcp/agents");
+  expect(paseoMcp?.url).not.toContain("callerAgentId");
   expect(client.lastConfig?.mcpServers).toEqual({
     paseo: {
       type: "http",
-      url: `http://127.0.0.1:6767/mcp/agents?callerAgentId=${snapshot.id}`,
+      url: "http://127.0.0.1:6767/mcp/agents",
+      headers: { Authorization: `Bearer ${token}` },
     },
     custom: {
       type: "stdio",
@@ -3141,7 +3385,6 @@ test("createAgent allows best-effort internal MCP when the provider session repo
     registry: storage,
     logger,
     mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
-    mcpAuthToken: "cap-token",
     idFactory: () => "00000000-0000-4000-8000-000000000104",
   });
 
@@ -3154,12 +3397,20 @@ test("createAgent allows best-effort internal MCP when the provider session repo
     { workspaceId: undefined },
   );
 
-  expect(manager.getMcpAuthToken()).toBe("cap-token");
+  const token = client.lastConfig?.mcpServers?.paseo?.headers?.Authorization?.replace(
+    "Bearer ",
+    "",
+  );
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(manager.getMcpAgentId(token!)).toBe(snapshot.id);
   expect(client.lastConfig?.mcpServers?.paseo).toEqual({
     type: "http",
-    url: `http://127.0.0.1:6767/mcp/agents?callerAgentId=${snapshot.id}`,
-    headers: { Authorization: "Bearer cap-token" },
+    url: "http://127.0.0.1:6767/mcp/agents",
+    headers: { Authorization: `Bearer ${token}` },
   });
+
+  await manager.closeAgent(snapshot.id);
+  expect(manager.getMcpAgentId(token!)).toBeUndefined();
 
   rmSync(workdir, { recursive: true, force: true });
 });
@@ -3294,9 +3545,16 @@ test("keeps the global Paseo-tools gate outside provider policy and MCP injectio
     { workspaceId: undefined },
   );
 
-  expect(enabledClient.lastConfig?.mcpServers?.paseo).toEqual({
+  const paseoMcp = enabledClient.lastConfig?.mcpServers?.paseo;
+  const token = paseoMcp?.headers?.Authorization?.replace("Bearer ", "");
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(enabledManager.getMcpAgentId(token!)).toBe(enabledAgent.id);
+  expect(paseoMcp?.url).toBe("http://127.0.0.1:6767/mcp/agents");
+  expect(paseoMcp?.url).not.toContain("callerAgentId");
+  expect(paseoMcp).toEqual({
     type: "http",
-    url: `http://127.0.0.1:6767/mcp/agents?callerAgentId=${enabledAgent.id}`,
+    url: "http://127.0.0.1:6767/mcp/agents",
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   const disabledClient = new McpClient();
@@ -3324,6 +3582,109 @@ test("keeps the global Paseo-tools gate outside provider policy and MCP injectio
   expect(disabledManager.getPaseoToolPolicy(disabledAgent.id)).toEqual({ enabled: false });
 
   rmSync(workdir, { recursive: true, force: true });
+});
+
+test("workspace agent tools gate disables native and MCP catalogs with host precedence", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-workspace-tools-test-"));
+  const paseoTools: PaseoToolCatalog = {
+    tools: new Map(),
+    getTool: () => undefined,
+    executeTool: async () => {
+      throw new Error("No tools registered in test catalog");
+    },
+  };
+
+  class CaptureClient extends TestAgentClient {
+    override readonly capabilities = {
+      ...TEST_CAPABILITIES,
+      supportsMcpServers: true,
+      supportsNativePaseoTools: true,
+    };
+    lastConfig: AgentSessionConfig | null = null;
+    lastLaunchContext: AgentLaunchContext | undefined;
+
+    override async createSession(
+      config: AgentSessionConfig,
+      launchContext?: AgentLaunchContext,
+    ): Promise<AgentSession> {
+      this.lastConfig = config;
+      this.lastLaunchContext = launchContext;
+      return new TestAgentSession(config);
+    }
+  }
+
+  const createManager = (options: {
+    paseoToolsEnabled?: boolean;
+    workspaceAgentToolsEnabled?: boolean;
+    supportsNativePaseoTools?: boolean;
+  }) => {
+    const client = new CaptureClient();
+    if (!options.supportsNativePaseoTools) {
+      (client.capabilities as { supportsNativePaseoTools?: boolean }).supportsNativePaseoTools =
+        false;
+    }
+    const manager = new AgentManager({
+      clients: { codex: client },
+      registry: new AgentStorage(join(workdir, "agents"), logger),
+      mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
+      paseoToolsEnabled: options.paseoToolsEnabled,
+      resolvePaseoToolPolicy: () => ({ enabled: true }),
+      resolveWorkspaceAgentToolsEnabled: async () => options.workspaceAgentToolsEnabled,
+      paseoToolCatalogFactory: async () => paseoTools,
+      logger,
+    });
+    return { client, manager };
+  };
+
+  try {
+    const inheritedMcp = createManager({});
+    await inheritedMcp.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-inherit",
+    });
+    expect(inheritedMcp.client.lastConfig?.mcpServers?.paseo).toBeDefined();
+
+    const inheritedNative = createManager({ supportsNativePaseoTools: true });
+    await inheritedNative.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-inherit-native",
+    });
+    expect(inheritedNative.client.lastLaunchContext?.paseoTools).toBe(paseoTools);
+
+    const optedOutMcp = createManager({ workspaceAgentToolsEnabled: false });
+    await optedOutMcp.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-opted-out",
+    });
+    expect(optedOutMcp.client.lastConfig?.mcpServers?.paseo).toBeUndefined();
+
+    const optedOutNative = createManager({
+      workspaceAgentToolsEnabled: false,
+      supportsNativePaseoTools: true,
+    });
+    await optedOutNative.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-opted-out-native",
+    });
+    expect(optedOutNative.client.lastLaunchContext?.paseoTools).toBeUndefined();
+
+    const hostOffMcp = createManager({
+      paseoToolsEnabled: false,
+      workspaceAgentToolsEnabled: true,
+    });
+    await hostOffMcp.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-host-off",
+    });
+    expect(hostOffMcp.client.lastConfig?.mcpServers?.paseo).toBeUndefined();
+
+    const hostOffNative = createManager({
+      paseoToolsEnabled: false,
+      workspaceAgentToolsEnabled: true,
+      supportsNativePaseoTools: true,
+    });
+    await hostOffNative.manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-host-off-native",
+    });
+    expect(hostOffNative.client.lastLaunchContext?.paseoTools).toBeUndefined();
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
 });
 
 test("resumeAgentFromPersistence replaces stored internal paseo MCP with current runtime URL", async () => {
@@ -3362,10 +3723,17 @@ test("resumeAgentFromPersistence replaces stored internal paseo MCP with current
     },
   });
 
+  const paseoMcp = client.resumeOverrides[0]?.mcpServers?.paseo;
+  const token = paseoMcp?.headers?.Authorization?.replace("Bearer ", "");
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(manager.getMcpAgentId(token!)).toBe(snapshot.id);
+  expect(paseoMcp?.url).toBe("http://127.0.0.1:6768/mcp/agents");
+  expect(paseoMcp?.url).not.toContain("callerAgentId");
   expect(client.resumeOverrides[0]?.mcpServers).toEqual({
     paseo: {
       type: "http",
-      url: `http://127.0.0.1:6768/mcp/agents?callerAgentId=${snapshot.id}`,
+      url: "http://127.0.0.1:6768/mcp/agents",
+      headers: { Authorization: `Bearer ${token}` },
     },
     custom: {
       type: "stdio",

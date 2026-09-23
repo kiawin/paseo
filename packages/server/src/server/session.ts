@@ -2980,6 +2980,12 @@ export class Session {
         return this.handleWorkspaceTitleSetRequest(msg.workspaceId, msg.title, msg.requestId);
       case "workspace.pin.set.request":
         return this.handleWorkspacePinSetRequest(msg.workspaceId, msg.pinned, msg.requestId);
+      case "workspace.agentTools.set.request":
+        return this.handleWorkspaceAgentToolsSetRequest(
+          msg.workspaceId,
+          msg.enabled,
+          msg.requestId,
+        );
       default:
         return undefined;
     }
@@ -4137,6 +4143,46 @@ export class Session {
         },
       });
       emitResponse(false, null, getErrorMessageOr(error, "Failed to pin workspace"));
+    }
+  }
+
+  private async handleWorkspaceAgentToolsSetRequest(
+    workspaceId: string,
+    enabled: boolean,
+    requestId: string,
+  ): Promise<void> {
+    const logContext = { workspaceId, enabled, requestId };
+    this.sessionLogger.info(logContext, "session: workspace.agentTools.set.request");
+    const emitResponse = (
+      accepted: boolean,
+      agentToolsEnabled: boolean | null,
+      error: string | null,
+    ) => {
+      this.emit({
+        type: "workspace.agentTools.set.response",
+        payload: { requestId, workspaceId, accepted, agentToolsEnabled, error },
+      });
+    };
+
+    try {
+      const updatedAt = new Date().toISOString();
+      const updated = await this.workspaceRegistry.update(workspaceId, (existing) => ({
+        ...existing,
+        ...(enabled ? { agentToolsEnabled: undefined } : { agentToolsEnabled: false }),
+        updatedAt,
+      }));
+      if (!updated) {
+        emitResponse(false, null, "Workspace not found");
+        return;
+      }
+      emitResponse(true, updated.agentToolsEnabled ?? null, null);
+      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId]);
+    } catch (error) {
+      this.sessionLogger.error(
+        { ...logContext, err: error },
+        "session: workspace.agentTools.set.request error",
+      );
+      emitResponse(false, null, getErrorMessageOr(error, "Failed to set workspace Paseo tools"));
     }
   }
 
@@ -5898,6 +5944,9 @@ export class Session {
       name: resolveWorkspaceDisplayName(workspace),
       title: workspace.title,
       pinnedAt: workspace.pinnedAt,
+      ...(workspace.agentToolsEnabled !== undefined
+        ? { agentToolsEnabled: workspace.agentToolsEnabled }
+        : {}),
       ...(workspace.labels && workspace.labels.length > 0 ? { labels: workspace.labels } : {}),
       archivingAt: null,
       status: "done",
@@ -5990,6 +6039,9 @@ export class Session {
       }),
       title: result.workspace.title,
       pinnedAt: result.workspace.pinnedAt,
+      ...(result.workspace.agentToolsEnabled !== undefined
+        ? { agentToolsEnabled: result.workspace.agentToolsEnabled }
+        : {}),
       ...(result.workspace.labels && result.workspace.labels.length > 0
         ? { labels: result.workspace.labels }
         : {}),

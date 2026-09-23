@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { Logger } from "pino";
 
 import type {
@@ -209,10 +210,35 @@ export async function unarchiveAgentState(
 /**
  * Wrap a body in <paseo-system>…</paseo-system> so the receiving agent
  * recognizes the prompt as system-injected context — not a user turn.
- * Used by chat mentions, schedule fires, and notify-on-finish.
+ * Used by schedule fires and notify-on-finish.
  */
 export function formatSystemNotificationPrompt(reason: string): string {
   return `<paseo-system>\n${reason}\n</paseo-system>`;
+}
+
+function escapeEnvelopeAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+const MAX_PEER_PROMPT_NONCE_ATTEMPTS = 32;
+
+/**
+ * The `from` value is advisory routing metadata, never an authorization decision.
+ */
+export function formatPeerPrompt(senderAgentId: string, prompt: string, nonce?: string): string {
+  let peerNonce = nonce ?? randomBytes(4).toString("hex");
+  for (let attempt = 0; attempt < MAX_PEER_PROMPT_NONCE_ATTEMPTS; attempt += 1) {
+    if (!prompt.includes(peerNonce)) {
+      return `<paseo-peer-${peerNonce} from="${escapeEnvelopeAttribute(senderAgentId)}">\n${prompt}\n</paseo-peer-${peerNonce}>`;
+    }
+    peerNonce = randomBytes(4).toString("hex");
+  }
+
+  throw new Error("Unable to generate a collision-free peer prompt nonce");
 }
 
 const SYSTEM_ENVELOPE_PATTERN = /^<paseo-system>\n[\s\S]*\n<\/paseo-system>$/;
