@@ -314,6 +314,7 @@ function getFallbackTabOptionLabel(
     files: string;
     pullRequest: string;
     artifacts: string;
+    notes: string;
   },
 ): string {
   if (tab.target.kind === "new_tab") {
@@ -346,6 +347,9 @@ function getFallbackTabOptionLabel(
   if (tab.target.kind === "artifacts" || tab.target.kind === "artifact") {
     return labels.artifacts;
   }
+  if (tab.target.kind === "notes" || tab.target.kind === "note") {
+    return labels.notes;
+  }
   if (tab.target.kind === "commit_diff") {
     return tab.target.sha.slice(0, 7);
   }
@@ -365,6 +369,7 @@ function getFallbackTabOptionDescription(
     files: string;
     pullRequest: string;
     artifacts: string;
+    notes: string;
   },
 ): string {
   if (tab.target.kind === "new_tab") {
@@ -403,8 +408,14 @@ function getFallbackTabOptionDescription(
   if (tab.target.kind === "artifacts" || tab.target.kind === "artifact") {
     return labels.artifacts;
   }
+  if (tab.target.kind === "notes" || tab.target.kind === "note") {
+    return labels.notes;
+  }
   if (tab.target.kind === "plugin") {
     return tab.target.panelId;
+  }
+  if (tab.target.kind === "note_draft") {
+    return labels.notes;
   }
   return tab.target.path;
 }
@@ -606,6 +617,7 @@ function MobileWorkspaceTabOption({
       files: t("panels.files.label"),
       pullRequest: t("panels.pullRequest.label"),
       artifacts: t("panels.artifacts.label"),
+      notes: t("panels.notes.label"),
     }),
     [t],
   );
@@ -1546,6 +1558,9 @@ function WorkspaceScreenContent({
   );
   const openTab = useWorkspaceLayoutStore((state) => state.openTab);
   const replaceWorkspaceTabTarget = useWorkspaceLayoutStore((state) => state.replaceTab);
+  const convertWorkspaceNoteDraft = useWorkspaceLayoutStore(
+    (state) => state.convertNoteDraftToNote,
+  );
   const openWorkspaceTabFocused = useCallback(
     (workspaceKey: string, target: WorkspaceTabTarget, placement?: WorkspaceTabPlacement) =>
       openTab({ workspaceKey, target, intent: "reveal", placement }),
@@ -2295,6 +2310,7 @@ function WorkspaceScreenContent({
       files: t("panels.files.label"),
       pullRequest: t("panels.pullRequest.label"),
       artifacts: t("panels.artifacts.label"),
+      notes: t("panels.notes.label"),
     }),
     [t],
   );
@@ -3503,6 +3519,12 @@ function WorkspaceScreenContent({
           }
           replaceWorkspaceTabTarget(persistenceKey, input.tab.tabId, target);
         },
+        onConvertCurrentTabToNote: (noteId) => {
+          if (!persistenceKey) {
+            return;
+          }
+          convertWorkspaceNoteDraft(persistenceKey, input.tab.tabId, normalizedServerId, noteId);
+        },
         onSetCurrentTabState: (state) => {
           if (persistenceKey) {
             setWorkspaceTabState(persistenceKey, input.tab.tabId, state);
@@ -3532,6 +3554,7 @@ function WorkspaceScreenContent({
       revealWorkspaceChildTab,
       persistenceKey,
       replaceWorkspaceTabTarget,
+      convertWorkspaceNoteDraft,
       setWorkspaceTabState,
       explorerSidebarPaneId,
       lastMainPaneId,

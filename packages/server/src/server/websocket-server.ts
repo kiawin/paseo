@@ -105,6 +105,7 @@ import { DirectorySyncService } from "./directory-sync/index.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
 import type { ArtifactStore } from "./artifact-store.js";
+import type { NoteStore } from "./note-store.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -547,6 +548,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly workspaceLabelService: WorkspaceLabelService | null;
   private readonly artifactStore: ArtifactStore | undefined;
+  private readonly noteStore: NoteStore | undefined;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -666,6 +668,7 @@ export class VoiceAssistantWebSocketServer {
     orchestrationSkills?: SessionOptions["orchestrationSkills"],
     workspaceLabelService?: WorkspaceLabelService,
     artifactStore?: ArtifactStore,
+    noteStore?: NoteStore,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -696,7 +699,9 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     this.workspaceLabelService = workspaceLabelService ?? null;
     this.artifactStore = artifactStore;
+    this.noteStore = noteStore;
     this.subscribeToArtifactChanges();
+    this.subscribeToNoteChanges();
     const requiredServices = requireWebSocketServices({
       scheduleService,
       checkoutDiffManager,
@@ -972,6 +977,18 @@ export class VoiceAssistantWebSocketServer {
       // have listed artifacts, which is both the compatibility proof and the audience.
       for (const connection of new Set(this.sessions.values())) {
         connection.session.publishArtifactChanged(projectId);
+      }
+    });
+  }
+
+  /**
+   * Note writes can come from an agent without a WebSocket session, so the store owns the change
+   * boundary and this server fans each change into the sessions that own client subscriptions.
+   */
+  private subscribeToNoteChanges(): void {
+    this.noteStore?.subscribeToDetailedChanges((change) => {
+      for (const connection of new Set(this.sessions.values())) {
+        connection.session.publishNoteChanged(change);
       }
     });
   }
@@ -1510,6 +1527,7 @@ export class VoiceAssistantWebSocketServer {
       workspaceRegistry: this.workspaceRegistry,
       workspaceLabelService: this.workspaceLabelService ?? undefined,
       artifactStore: this.artifactStore,
+      noteStore: this.noteStore,
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -1830,6 +1848,9 @@ export class VoiceAssistantWebSocketServer {
         workspaceFileTransfer: true,
         // COMPAT(artifacts): added in v0.7.x, remove gate after 2028-03-01.
         ...(this.artifactStore ? { artifacts: true } : {}),
+        // COMPAT(notes): added in v0.9.0; remove the feature gate after the supported daemon floor
+        // includes Notes.
+        ...(this.noteStore ? { notes: true } : {}),
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
         providersSnapshot: true,
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.

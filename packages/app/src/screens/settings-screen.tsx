@@ -59,6 +59,7 @@ import {
   useSettings,
   type AgentLinkBehavior,
   type AppSettings,
+  type NoteImageBehavior,
   type Settings as EffectiveSettings,
 } from "@/hooks/use-settings";
 import { useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
@@ -302,6 +303,17 @@ function getAgentLinkBehaviorLabel(t: TFunction, value: AgentLinkBehavior): stri
 
 const AGENT_LINK_BEHAVIOR_VALUES: AgentLinkBehavior[] = ["external", "in-app"];
 
+function getNoteImageBehaviorLabel(t: TFunction, value: NoteImageBehavior): string {
+  const labels: Record<NoteImageBehavior, string> = {
+    auto: t("settings.general.noteImages.options.auto"),
+    "tap-to-load": t("settings.general.noteImages.options.tapToLoad"),
+    disabled: t("settings.general.noteImages.options.disabled"),
+  };
+  return labels[value];
+}
+
+const NOTE_IMAGE_BEHAVIOR_VALUES: NoteImageBehavior[] = ["tap-to-load", "disabled", "auto"];
+
 // ---------------------------------------------------------------------------
 // Section components
 // ---------------------------------------------------------------------------
@@ -310,6 +322,7 @@ interface GeneralSectionProps {
   settings: AppSettings;
   isDesktopApp: boolean;
   handleAgentLinkBehaviorChange: (behavior: AgentLinkBehavior) => void;
+  handleNoteImageBehaviorChange: (behavior: NoteImageBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
 }
 
@@ -326,6 +339,29 @@ function AgentLinkBehaviorMenuItem({
   selected,
   onChange,
 }: AgentLinkBehaviorMenuItemProps) {
+  const handleSelect = useCallback(() => {
+    onChange(value);
+  }, [onChange, value]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect}>
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
+interface NoteImageBehaviorMenuItemProps {
+  value: NoteImageBehavior;
+  label: string;
+  selected: boolean;
+  onChange: (value: NoteImageBehavior) => void;
+}
+
+function NoteImageBehaviorMenuItem({
+  value,
+  label,
+  selected,
+  onChange,
+}: NoteImageBehaviorMenuItemProps) {
   const handleSelect = useCallback(() => {
     onChange(value);
   }, [onChange, value]);
@@ -364,6 +400,7 @@ function GeneralSection({
   settings,
   isDesktopApp,
   handleAgentLinkBehaviorChange,
+  handleNoteImageBehaviorChange,
   handleLanguageChange,
 }: GeneralSectionProps) {
   const { t, i18n } = useTranslation();
@@ -434,6 +471,35 @@ function GeneralSection({
             </DropdownMenu>
           </View>
         ) : null}
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>{t("settings.general.noteImages.label")}</Text>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.general.noteImages.description")}
+            </Text>
+          </View>
+          <DropdownMenu>
+            <DropdownTrigger
+              accessibilityRole="button"
+              accessibilityLabel={t("settings.general.noteImages.accessibilityLabel", {
+                value: getNoteImageBehaviorLabel(t, settings.noteImageBehavior),
+              })}
+            >
+              {getNoteImageBehaviorLabel(t, settings.noteImageBehavior)}
+            </DropdownTrigger>
+            <DropdownMenuContent side="bottom" align="end" width={220}>
+              {NOTE_IMAGE_BEHAVIOR_VALUES.map((value) => (
+                <NoteImageBehaviorMenuItem
+                  key={value}
+                  value={value}
+                  label={getNoteImageBehaviorLabel(t, value)}
+                  selected={settings.noteImageBehavior === value}
+                  onChange={handleNoteImageBehaviorChange}
+                />
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </View>
       </View>
     </SettingsSection>
   );
@@ -1214,6 +1280,13 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleNoteImageBehaviorChange = useCallback(
+    (behavior: NoteImageBehavior) => {
+      void updateSettings({ noteImageBehavior: behavior });
+    },
+    [updateSettings],
+  );
+
   const handleUseLegacyTerminalRendererChange = useCallback(
     (useLegacyTerminalRenderer: boolean) => {
       void updateSettings({ useLegacyTerminalRenderer });
@@ -1440,6 +1513,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
                 settings={settings}
                 isDesktopApp={isDesktopApp}
                 handleAgentLinkBehaviorChange={handleAgentLinkBehaviorChange}
+                handleNoteImageBehaviorChange={handleNoteImageBehaviorChange}
                 handleLanguageChange={handleLanguageChange}
               />
               <SendingSection />

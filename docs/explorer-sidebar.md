@@ -5,7 +5,7 @@ contracts.
 
 | Surface          | Purpose                      | Lifecycle                                  |
 | ---------------- | ---------------------------- | ------------------------------------------ |
-| Explorer sidebar | Files and Changes navigation | Cmd+E shows or hides the dedicated dock    |
+| Explorer sidebar | Files, Changes, and [Notes](notes.md) navigation | Cmd+E shows or hides the dedicated dock    |
 | Side pane        | Ordinary workspace content   | Created and closed like any workspace pane |
 | Workspace sheet  | Compact look-ups             | Stacks tabs; each closes or becomes a tab  |
 
@@ -16,8 +16,8 @@ fixed-target labels and icons from that registration, filter by host, and never 
 panel type for another. Tab moves reject unsupported destinations, and placement resolves only to
 a compatible pane.
 
-Files, Changes, and [Artifacts](artifacts.md) are the Explorer's singleton navigation views; Files
-and Changes are its defaults. Their panel manifests mark them as singletons, so a pane’s + menu
+Files, Changes, [Artifacts](artifacts.md), and [Notes](notes.md) are the Explorer's singleton
+navigation views; Files and Changes are its defaults. Their panel manifests mark them as singletons, so a pane’s + menu
 omits each while that pane already contains it. Closing one makes its menu item available again.
 Other compatible tabs, including agents, terminals, files, and diffs, can move between Explorer and
 main panes.
