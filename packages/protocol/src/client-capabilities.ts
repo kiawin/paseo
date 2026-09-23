@@ -54,6 +54,9 @@ export const CLIENT_CAPS = {
   // COMPAT(pluginBinaryPayloads): added in v0.15.0, remove after 2027-05-02 once client floor >= v0.15.0.
   // The daemon sends plugin RPC outputs as binary opcode 0x21 only to clients that decode it.
   pluginBinaryPayloads: "plugin_binary_payloads",
+  // COMPAT(notes): added in v0.9.0; remove the note.changed delivery gate after the supported
+  // client floor understands the Notes protocol.
+  notes: "notes",
   // COMPAT(workspaceSetupBlocked): added in v0.8.0, remove after 2027-03-07 once client floor >= v0.8.0.
   workspaceSetupBlocked: "workspace_setup_blocked",
   // COMPAT(backgroundAgents): added in v0.15.0, remove after 2027-05-03 once client floor >= v0.15.0.
