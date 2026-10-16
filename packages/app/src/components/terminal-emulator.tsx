@@ -44,6 +44,7 @@ import {
   prepareDroppedPathsForTerminal,
 } from "../terminal/drop/terminal-file-drop";
 import { getDesktopHost } from "@/desktop/host";
+import { takeNativeWorkspaceFileDrop } from "@/attachments/native-workspace-file-drag";
 
 export interface TerminalEmulatorHandle {
   find?: TerminalFindHandle;
@@ -642,7 +643,8 @@ export default function TerminalEmulator({
 
       const bridge = getDesktopHost();
       const paths = extractTerminalDropPaths(event.dataTransfer, bridge);
-      if (paths.length === 0) {
+      // A remote workspace file arrives as a local temp copy; its path means nothing to the shell.
+      if (paths.length === 0 || takeNativeWorkspaceFileDrop(paths)?.staged) {
         return;
       }
 
