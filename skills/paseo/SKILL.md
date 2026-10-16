@@ -48,6 +48,8 @@ For a local daemon, `project create` defaults to the current directory and resol
 
 Choose `baseBranch` explicitly: `origin/main` selects the remote-tracking branch; `refs/heads/main` selects local main. Bare `main` prefers local main when it exists, otherwise origin/main. Paseo retains the resolved ref for workspace comparisons, even after rebasing the branch or changing its PR target.
 
+**`move_to_worktree`** — `{ branchName, task, carryChanges?, title? }`, agent-scoped. Use it instead of switching branches or running `git worktree add` in a local checkout, which other workspaces share. Paseo branches off your checkout's current branch into a new worktree workspace, copies uncommitted changes when `carryChanges` is true (the checkout keeps its copy), and starts a new agent there with your conversation and `task`. Stop working in the old checkout once it returns.
+
 **`list_workspaces`** — list active workspaces, excluding background workspaces unless `includeBackground: true`.
 
 **`archive_workspace`** — `{ workspaceId }`. Archives the workspace, its agents, and its terminals. Local directories remain; Paseo removes an owned worktree only after its final active workspace reference is archived.
