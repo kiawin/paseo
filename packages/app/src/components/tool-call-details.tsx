@@ -338,7 +338,7 @@ function ShellStreamRow({
           visible={isHovered || isNative}
         />
       </View>
-      <Text selectable style={wrap ? wrapScrollTextStyle : styles.scrollText}>
+      <Text selectable style={wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}>
         {stream.shown}
       </Text>
     </View>
@@ -390,7 +390,7 @@ function ShellStreamsView({
     // The gutter costs width a phone does not have, so compact goes back to the shell prompt to
     // tell command from output — and with no gutter there is nowhere to hang a copy button.
     return (
-      <Text selectable style={wrap ? wrapScrollTextStyle : styles.scrollText}>
+      <Text selectable style={wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}>
         <Text style={styles.shellPrompt}>$ </Text>
         {command.shown}
         {output === null ? "" : `\n\n${output.shown}`}
@@ -444,7 +444,10 @@ function WorktreeSetupDetailSection({
         >
           <HorizontalScroll wrap={ds.wrap} contentContainerStyle={styles.codeHorizontalContent}>
             <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
-              <Text selectable style={ds.wrap ? wrapScrollTextStyle : styles.scrollText}>
+              <Text
+                selectable
+                style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
+              >
                 {hasLog ? setupLog : `Preparing worktree ${branchName} at ${worktreePath}`}
               </Text>
             </View>
@@ -562,7 +565,7 @@ function SubAgentLogText({
   hasActions: boolean;
   wrap: boolean;
 }) {
-  const textStyle = wrap ? wrapScrollTextStyle : styles.scrollText;
+  const textStyle = wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText;
   if (activityLog.length > 0) {
     return (
       <Text selectable style={textStyle}>
@@ -694,7 +697,7 @@ function ScrollableTextSection({
         ) : (
           <Text
             selectable
-            style={ds.wrap ? wrapScrollTextStyle : styles.scrollText}
+            style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
             dataSet={CODE_SURFACE_DATASET}
           >
             {content}
@@ -725,7 +728,7 @@ function FetchDetailSection({ url, result, ds }: FetchDetailProps) {
         <HorizontalScroll wrap={ds.wrap}>
           <Text
             selectable
-            style={ds.wrap ? wrapScrollTextStyle : styles.scrollText}
+            style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
             dataSet={CODE_SURFACE_DATASET}
           >
             {result ? `${url}\n\n${result}` : url}
@@ -804,7 +807,7 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
           <HorizontalScroll wrap={ds.wrap}>
             <Text
               selectable
-              style={ds.wrap ? wrapScrollTextStyle : styles.scrollText}
+              style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
               dataSet={CODE_SURFACE_DATASET}
             >
               {detail.content}
@@ -819,7 +822,7 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
       <View key="search-files" style={styles.section}>
         <Text
           selectable
-          style={ds.wrap ? wrapScrollTextStyle : styles.scrollText}
+          style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
           dataSet={CODE_SURFACE_DATASET}
         >
           {detail.filePaths.join("\n")}
@@ -832,7 +835,7 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
       <View key="search-web-results" style={styles.section}>
         <Text
           selectable
-          style={ds.wrap ? wrapScrollTextStyle : styles.scrollText}
+          style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
           dataSet={CODE_SURFACE_DATASET}
         >
           {detail.webResults.map((entry) => `${entry.title}\n${entry.url}`).join("\n\n")}
@@ -845,7 +848,7 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
       <View key="search-annotations" style={styles.section}>
         <Text
           selectable
-          style={ds.wrap ? wrapScrollTextStyle : styles.scrollText}
+          style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
           dataSet={CODE_SURFACE_DATASET}
         >
           {detail.annotations.join("\n\n")}
@@ -908,7 +911,7 @@ function buildUnknownSections(detail: UnknownDetail, ds: DetailStyles, t: TFunct
         >
           <Text
             selectable
-            style={ds.wrap ? wrapScrollTextStyle : styles.scrollText}
+            style={ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText}
             dataSet={CODE_SURFACE_DATASET}
           >
             {value}
@@ -1084,7 +1087,10 @@ function ErrorSection({ errorText, ds }: { errorText: string; ds: DetailStyles }
       >
         <Text
           selectable
-          style={[ds.wrap ? wrapScrollTextStyle : styles.scrollText, styles.errorText]}
+          style={[
+            ds.wrap ? [styles.scrollText, styles.wrapText] : styles.scrollText,
+            styles.errorText,
+          ]}
           dataSet={CODE_SURFACE_DATASET}
         >
           {errorText}
@@ -1452,5 +1458,3 @@ const styles = StyleSheet.create((theme) => {
     },
   };
 });
-
-const wrapScrollTextStyle = [styles.scrollText, styles.wrapText];

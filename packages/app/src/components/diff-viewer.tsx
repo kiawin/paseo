@@ -51,17 +51,14 @@ function DiffLineRow({ line, wrap }: { line: DiffLine; wrap: boolean }) {
 }
 
 function DiffLineBody({ line, wrap }: { line: DiffLine; wrap: boolean }) {
-  const baseTextStyle = wrap ? wrapLineTextStyle : styles.lineText;
-  const plainLineTextStyle = React.useMemo(
-    () => [
-      baseTextStyle,
-      line.type === "header" && styles.headerText,
-      line.type === "add" && styles.addText,
-      line.type === "remove" && styles.removeText,
-      line.type === "context" && styles.contextText,
-    ],
-    [baseTextStyle, line.type],
-  );
+  const baseTextStyle = wrap ? [styles.lineText, styles.wrapText] : styles.lineText;
+  const plainLineTextStyle = [
+    baseTextStyle,
+    line.type === "header" && styles.headerText,
+    line.type === "add" && styles.addText,
+    line.type === "remove" && styles.removeText,
+    line.type === "context" && styles.contextText,
+  ];
   const prefixStyle = React.useMemo(
     () => [
       line.type === "add" && styles.addText,
@@ -391,5 +388,3 @@ const styles = StyleSheet.create((theme) => {
     },
   };
 });
-
-const wrapLineTextStyle = [styles.lineText, styles.wrapText];

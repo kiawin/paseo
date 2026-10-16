@@ -23,7 +23,7 @@ interface HighlightedLinesProps {
 
 function ContentLine({ line, wrap }: { line: KeyedLine; wrap: boolean }) {
   return (
-    <Text selectable style={wrap ? wrapLineTextStyle : styles.lineText}>
+    <Text selectable style={wrap ? [styles.lineText, styles.wrapText] : styles.lineText}>
       {line.tokens.length === 0
         ? ZERO_WIDTH
         : line.tokens.map(({ key, token }: KeyedToken) => (
@@ -122,5 +122,3 @@ const styles = StyleSheet.create((theme) => ({
       : null),
   },
 }));
-
-const wrapLineTextStyle = [styles.lineText, styles.wrapText];
