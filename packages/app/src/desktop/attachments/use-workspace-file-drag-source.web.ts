@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type RefCallback } from "react";
 import type { View } from "react-native";
-import { createWorkspaceFileAttachment } from "./workspace-file";
-import { serializeWorkspaceFileDragPayload, WORKSPACE_FILE_DRAG_MIME } from "./workspace-file-drag";
-import type { WorkspaceFileDragSourceInput } from "./workspace-file-drag-source.types";
+import { createWorkspaceFileAttachment } from "@/attachments/workspace-file";
+import { setWorkspaceFileDragData } from "@/attachments/workspace-file-drag";
+import type { WorkspaceFileDragSourceInput } from "@/attachments/workspace-file-drag-source.types";
 
 export function useWorkspaceFileDragSource({
   enabled,
@@ -32,16 +32,12 @@ export function useWorkspaceFileDragSource({
       if (!event.dataTransfer) {
         return;
       }
-      event.dataTransfer.effectAllowed = "copy";
-      event.dataTransfer.setData(
-        WORKSPACE_FILE_DRAG_MIME,
-        serializeWorkspaceFileDragPayload({
-          version: 1,
-          serverId: sourceServerId,
-          workspaceId: sourceWorkspaceId,
-          attachment: createWorkspaceFileAttachment({ path, selection }),
-        }),
-      );
+      setWorkspaceFileDragData(event.dataTransfer, {
+        version: 1,
+        serverId: sourceServerId,
+        workspaceId: sourceWorkspaceId,
+        attachment: createWorkspaceFileAttachment({ path, selection }),
+      });
     }
     element.addEventListener("dragstart", handleDragStart);
     return () => {
