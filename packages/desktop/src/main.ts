@@ -56,6 +56,7 @@ import {
 import { createExternalUrlOpener } from "./features/opener.js";
 import { createBrowserCaptureService } from "./features/browser-capture.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
+import { registerFileDragHandlers } from "./features/file-drag/ipc.js";
 import { resolveAppIconPath } from "./features/stamped-icon.js";
 import { setupApplicationMenu } from "./features/menu.js";
 import {
@@ -972,6 +973,10 @@ async function bootstrap(): Promise<void> {
   const openExternalUrl = createExternalUrlOpener({ open: shell.openExternal });
   ipcMain.handle("paseo:opener:openUrl", (_event, value: unknown) => openExternalUrl(value));
   registerEditorTargetHandlers();
+  registerFileDragHandlers({
+    stagingRoot: path.join(app.getPath("userData"), "file-drag-staging"),
+    getFallbackIconPath: getEffectiveAppIconPath,
+  });
   registerBrowserAutomationIpc();
 
   // In-app "Open in new window": opens a window that lands on the given project
