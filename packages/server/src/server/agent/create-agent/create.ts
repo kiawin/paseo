@@ -119,6 +119,12 @@ export interface CreateAgentFromMcpInput {
     action?: "branch-off" | "checkout";
     githubPrNumber?: number;
   };
+  /**
+   * Setup for a worktree the caller created with
+   * buildAgentWorktreeSetupContinuationInput. Started once the agent exists, before
+   * its first prompt, the same as a worktree this command creates.
+   */
+  worktreeSetupContinuation?: AgentWorktreeSetupContinuation;
 }
 
 export type CreateAgentCommandInput = CreateAgentFromSessionInput | CreateAgentFromMcpInput;
@@ -383,7 +389,7 @@ async function resolveMcpCreateAgent(
     source: input.callerAgentId
       ? { kind: "agent-message", agentId: input.callerAgentId }
       : undefined,
-    setupContinuation,
+    setupContinuation: setupContinuation ?? input.worktreeSetupContinuation,
     createdWorktree,
     promptFailure: input.promptFailure ?? "log",
   };
@@ -583,29 +589,36 @@ async function resolveMcpCwd(params: {
     },
     createPaseoWorktree: dependencies.createPaseoWorktree,
     resolveDefaultBranch: baseBranch ? async () => baseBranch : undefined,
-    setupContinuation: {
-      kind: "agent",
-      terminalManager: dependencies.terminalManager ?? null,
-      appendTimelineItem: ({ agentId, item }) =>
-        appendTimelineItemIfAgentKnown({
-          agentManager: dependencies.agentManager,
-          agentId,
-          item,
-        }),
-      emitLiveTimelineItem: ({ agentId, item }) =>
-        emitLiveTimelineItemIfAgentKnown({
-          agentManager: dependencies.agentManager,
-          agentId,
-          item,
-        }),
-      logger: dependencies.logger,
-    },
+    setupContinuation: buildAgentWorktreeSetupContinuationInput(dependencies),
   });
   return {
     resolvedCwd: createdWorktree.workspace.cwd,
     setupContinuation: createdWorktree.setupContinuation,
     createdWorkspaceId: createdWorktree.workspace.workspaceId,
     createdWorktree,
+  };
+}
+
+/** Worktree setup that waits for the agent, so its bootstrap and terminals attach to it. */
+export function buildAgentWorktreeSetupContinuationInput(
+  dependencies: Pick<CreateAgentCommandDependencies, "agentManager" | "terminalManager" | "logger">,
+): CreatePaseoWorktreeSetupContinuationInput {
+  return {
+    kind: "agent",
+    terminalManager: dependencies.terminalManager ?? null,
+    appendTimelineItem: ({ agentId, item }) =>
+      appendTimelineItemIfAgentKnown({
+        agentManager: dependencies.agentManager,
+        agentId,
+        item,
+      }),
+    emitLiveTimelineItem: ({ agentId, item }) =>
+      emitLiveTimelineItemIfAgentKnown({
+        agentManager: dependencies.agentManager,
+        agentId,
+        item,
+      }),
+    logger: dependencies.logger,
   };
 }
 
