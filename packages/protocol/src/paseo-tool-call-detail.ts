@@ -139,6 +139,8 @@ const TOOL_SPECS: Readonly<Record<string, ToolDetailSpec>> = {
     outputFields: ["id", "status", "nextRunAt", "expiresAt"],
   },
   delete_heartbeat: { inputOrder: ["id"] },
+  watch_pull_request: { outputFields: ["prNumber", "prUrl", "state", "attemptsForHead"] },
+  unwatch_pull_request: { outputFields: ["stopped"] },
   list_schedules: {},
   inspect_schedule: { inputOrder: ["id"] },
   pause_schedule: { inputOrder: ["id"] },
