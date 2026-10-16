@@ -16,6 +16,7 @@ interface AgentRow {
   cwd: string;
   workspaceId?: string;
   archivedAt?: string | null;
+  labels?: Record<string, string>;
 }
 
 function pullRequest(overrides: Partial<PrWatchPullRequest> = {}): PrWatchPullRequest {
@@ -70,6 +71,9 @@ class Harness {
   readonly listeners = new Map<string, (snapshot: WorkspaceGitRuntimeSnapshot) => void>();
   readonly agents = new Map<string, AgentRow>();
   readonly untrustedWorkspaces = new Set<string>();
+  /** Workspace kind by id; agents default to a Paseo worktree. */
+  readonly workspaceKinds = new Map<string, string>();
+  autoFixAgentPullRequests = false;
   readonly busy = new Set<string>();
   readonly sent: PrWatchSendPromptParams[] = [];
   readonly paused: PrWatchRecord[] = [];
@@ -141,16 +145,24 @@ class Harness {
       },
       workspaceRegistry: {
         get: async (workspaceId) =>
-          (this.untrustedWorkspaces.has(workspaceId)
-            ? {
-                untrustedSource: {
-                  kind: "change_request",
-                  forge: "github",
-                  number: 1,
-                  headRepository: "fork/x",
-                },
-              }
-            : { untrustedSource: undefined }) as never,
+          ({
+            projectId: "project-1",
+            kind: this.workspaceKinds.get(workspaceId) ?? "worktree",
+            untrustedSource: this.untrustedWorkspaces.has(workspaceId)
+              ? { kind: "change_request", forge: "github", number: 1, headRepository: "fork/x" }
+              : undefined,
+          }) as never,
+      },
+      projectRegistry: {
+        get: async () =>
+          ({
+            prAutomation: {
+              autoReview: false,
+              reviewProvider: null,
+              postReviews: false,
+              autoFixAgentPullRequests: this.autoFixAgentPullRequests,
+            },
+          }) as never,
       },
       sendPrompt: async (params) => {
         if (this.failNextSend) {
@@ -525,6 +537,71 @@ describe("PrWatchService review comments and conflicts", () => {
     await harness.poll("a1", { headSha: "head-2", mergeable: "CONFLICTING" });
     expect(harness.sent).toHaveLength(2);
     expect((await harness.store.get("a1"))?.conflict.notifiedHeadSha).toBe("head-2");
+  });
+});
+
+describe("PrWatchService watches for PRs agents open", () => {
+  let paseoHome: string;
+
+  beforeEach(async () => {
+    paseoHome = await mkdtemp(path.join(tmpdir(), "paseo-pr-watch-auto-"));
+  });
+
+  afterEach(async () => {
+    await rm(paseoHome, { recursive: true, force: true });
+  });
+
+  async function settled(harness: Harness, agentId: string): Promise<void> {
+    await harness.finishTurn(agentId);
+    // The check runs outside the per-watch lock; let it finish.
+    for (let tick = 0; tick < 20; tick += 1) await new Promise((resolve) => setImmediate(resolve));
+    await harness.service.whenIdle();
+  }
+
+  test("watches the PR when the agent's turn ends and the project opts in", async () => {
+    const harness = new Harness(paseoHome);
+    await harness.service.start();
+    harness.autoFixAgentPullRequests = true;
+    harness.addAgent("a1");
+
+    await settled(harness, "a1");
+
+    expect((await harness.store.get("a1"))?.state).toEqual({ kind: "active" });
+    expect(harness.listeners.has("/repo/a1")).toBe(true);
+  });
+
+  test("leaves PRs alone when the setting is off, outside a worktree, or for reviewers", async () => {
+    const harness = new Harness(paseoHome);
+    await harness.service.start();
+    harness.addAgent("off");
+    await settled(harness, "off");
+    harness.autoFixAgentPullRequests = true;
+    harness.addAgent("main-checkout");
+    harness.workspaceKinds.set("ws-main-checkout", "local_checkout");
+    harness.addAgent("reviewer");
+    harness.agents.get("reviewer")!.labels = { "paseo.pr-review": "https://github.com/x/y/pull/1" };
+    harness.addAgent("no-pr");
+    harness.pullRequests.set("/repo/no-pr", null);
+
+    for (const id of ["main-checkout", "reviewer", "no-pr"]) await settled(harness, id);
+
+    expect(await harness.store.list()).toEqual([]);
+  });
+
+  test("doesn't restart a watch the user turned off", async () => {
+    const harness = new Harness(paseoHome);
+    await harness.service.start();
+    harness.autoFixAgentPullRequests = true;
+    harness.addAgent("a1");
+    await harness.service.setWatch({ agentId: "a1", enabled: true });
+    await harness.service.setWatch({ agentId: "a1", enabled: false });
+
+    await settled(harness, "a1");
+
+    expect((await harness.store.get("a1"))?.state).toMatchObject({
+      kind: "stopped",
+      reason: "user_disabled",
+    });
   });
 });
 

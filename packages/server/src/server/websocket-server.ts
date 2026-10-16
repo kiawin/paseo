@@ -107,6 +107,7 @@ import type { WorkspaceLabelService } from "./workspace-labels/index.js";
 import type { ArtifactStore } from "./artifact-store.js";
 import type { NoteStore } from "./note-store.js";
 import type { PrWatchService } from "./pr-watch/service.js";
+import type { PrReviewService } from "./pr-review/service.js";
 import type { PrWatchRecord } from "./pr-watch/store.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
@@ -329,6 +330,7 @@ function createNoopProjectRegistry(): ProjectRegistry {
       customName: null,
       worktreeLocation: null,
       customIconRevision: null,
+      prAutomation: null,
       createdAt: input.timestamp,
       updatedAt: input.timestamp,
       archivedAt: null,
@@ -552,6 +554,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly artifactStore: ArtifactStore | undefined;
   private readonly noteStore: NoteStore | undefined;
   private readonly prWatchService: PrWatchService | undefined;
+  private readonly prReviewService: PrReviewService | undefined;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -673,6 +676,7 @@ export class VoiceAssistantWebSocketServer {
     artifactStore?: ArtifactStore,
     noteStore?: NoteStore,
     prWatchService?: PrWatchService,
+    prReviewService?: PrReviewService,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -705,6 +709,7 @@ export class VoiceAssistantWebSocketServer {
     this.artifactStore = artifactStore;
     this.noteStore = noteStore;
     this.prWatchService = prWatchService;
+    this.prReviewService = prReviewService;
     this.subscribeToArtifactChanges();
     this.subscribeToNoteChanges();
     const requiredServices = requireWebSocketServices({
@@ -1534,6 +1539,7 @@ export class VoiceAssistantWebSocketServer {
       artifactStore: this.artifactStore,
       noteStore: this.noteStore,
       prWatchService: this.prWatchService,
+      prReviewService: this.prReviewService,
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,

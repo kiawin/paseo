@@ -9,7 +9,8 @@ import type {
   WorkspaceGitService,
   WorkspaceGitSubscription,
 } from "../workspace-git-service.js";
-import type { WorkspaceRegistry } from "../workspace-registry.js";
+import type { ProjectRegistry, WorkspaceRegistry } from "../workspace-registry.js";
+import { PR_REVIEW_AGENT_LABEL } from "../pr-review/labels.js";
 import {
   observePullRequest,
   selectNewReviewComments,
@@ -26,12 +27,15 @@ import {
   type PrWatchState,
   type PrWatchStore,
 } from "./store.js";
+import { AutomationTurnBudget } from "./turn-budget.js";
 
 export const PR_WATCH_MAX_CONCURRENT_TURNS = 3;
 export const PR_WATCH_MAX_ATTEMPTS_PER_HEAD = 3;
 export const PR_WATCH_MAX_CONSECUTIVE_FAILED_HEADS = 3;
 /** How long to wait for a head's other checks to finish after its first failure. */
 export const PR_WATCH_SETTLE_TIMEOUT_MS = 10 * 60_000;
+/** Least time between checks for a PR an agent opened, per agent; each forces a forge read. */
+export const PR_WATCH_AUTO_WATCH_INTERVAL_MS = 60_000;
 
 export interface PrWatchSendPromptParams {
   agentId: string;
@@ -48,6 +52,9 @@ export interface PrWatchServiceOptions {
   agentManager: Pick<AgentManager, "subscribe" | "hasInFlightRun" | "getAgent">;
   agentStorage: Pick<AgentStorage, "get">;
   workspaceRegistry: Pick<WorkspaceRegistry, "get">;
+  projectRegistry: Pick<ProjectRegistry, "get">;
+  /** Shared with automatic reviews; defaults to a budget of maxConcurrentTurns. */
+  turnBudget?: AutomationTurnBudget;
   /** Must never replace a running turn; a busy agent makes it reject. */
   sendPrompt: (params: PrWatchSendPromptParams) => Promise<void>;
   onWatchPaused?: (record: PrWatchRecord) => void;
@@ -90,7 +97,7 @@ export class PrWatchService {
   private readonly options: PrWatchServiceOptions;
   private readonly logger: Logger;
   private readonly now: () => number;
-  private readonly maxConcurrentTurns: number;
+  private readonly turnBudget: AutomationTurnBudget;
   private readonly maxAttemptsPerHead: number;
   private readonly maxConsecutiveFailedHeads: number;
   private readonly settleTimeoutMs: number;
@@ -98,16 +105,21 @@ export class PrWatchService {
   private readonly cwdSubscriptions = new Map<string, CwdSubscription>();
   private readonly locks = new Map<string, Promise<void>>();
   private readonly readyQueue: string[] = [];
+  /** Agents with an auto-fix turn holding a budget slot. */
   private readonly activeTurns = new Set<string>();
+  private readonly lastAutoWatchCheck = new Map<string, number>();
   /** Agents whose send was refused; retried on their next state change, not in a loop. */
   private readonly deferred = new Set<string>();
   private unsubscribeAgents: (() => void) | null = null;
+  private unsubscribeBudget: (() => void) | null = null;
 
   constructor(options: PrWatchServiceOptions) {
     this.options = options;
     this.logger = options.logger.child({ module: "pr-watch" });
     this.now = options.now ?? Date.now;
-    this.maxConcurrentTurns = options.maxConcurrentTurns ?? PR_WATCH_MAX_CONCURRENT_TURNS;
+    this.turnBudget =
+      options.turnBudget ??
+      new AutomationTurnBudget(options.maxConcurrentTurns ?? PR_WATCH_MAX_CONCURRENT_TURNS);
     this.maxAttemptsPerHead = options.maxAttemptsPerHead ?? PR_WATCH_MAX_ATTEMPTS_PER_HEAD;
     this.maxConsecutiveFailedHeads =
       options.maxConsecutiveFailedHeads ?? PR_WATCH_MAX_CONSECUTIVE_FAILED_HEADS;
@@ -118,6 +130,7 @@ export class PrWatchService {
     this.unsubscribeAgents = this.options.agentManager.subscribe((event) =>
       this.handleAgentEvent(event),
     );
+    this.unsubscribeBudget = this.turnBudget.onRelease(() => this.pump());
     for (const record of await this.options.store.listActive()) {
       const agent = await this.options.agentStorage.get(record.agentId);
       if (!agent) {
@@ -133,6 +146,9 @@ export class PrWatchService {
   stop(): void {
     this.unsubscribeAgents?.();
     this.unsubscribeAgents = null;
+    this.unsubscribeBudget?.();
+    this.unsubscribeBudget = null;
+    for (const agentId of this.activeTurns) this.turnBudget.release(turnKey(agentId));
     for (const { subscription } of this.cwdSubscriptions.values()) subscription.unsubscribe();
     this.cwdSubscriptions.clear();
     for (const runtime of this.runtimes.values()) {
@@ -142,6 +158,7 @@ export class PrWatchService {
     this.readyQueue.length = 0;
     this.activeTurns.clear();
     this.deferred.clear();
+    this.lastAutoWatchCheck.clear();
   }
 
   /** Resolves once queued work for every watch has finished. */
@@ -361,8 +378,8 @@ export class PrWatchService {
   private pump(): void {
     // Iterate a copy: dispatching removes the agent from the queue.
     for (const agentId of this.readyQueue.slice()) {
-      if (this.activeTurns.size >= this.maxConcurrentTurns) return;
       if (this.options.agentManager.hasInFlightRun(agentId)) continue;
+      if (!this.turnBudget.tryAcquire(turnKey(agentId))) return;
       this.readyQueue.splice(this.readyQueue.indexOf(agentId), 1);
       this.activeTurns.add(agentId);
       void this.withLock(agentId, () => this.dispatch(agentId));
@@ -515,10 +532,45 @@ export class PrWatchService {
     }
     if (this.deferred.delete(agentId)) this.markReady(agentId);
     if (this.readyQueue.length > 0) this.pump();
+    if (!this.options.agentManager.hasInFlightRun(agentId)) void this.maybeAutoWatch(agentId);
+  }
+
+  /**
+   * Starts a watch for a PR an agent opened, when its project turns on
+   * "Auto-fix PRs opened by agents". Runs when the agent's turn ends: the agent
+   * runs `gh pr create` in a turn, so the PR exists by then. Only agents in a
+   * Paseo worktree count; a user's own branch in the main checkout is theirs.
+   */
+  private async maybeAutoWatch(agentId: string): Promise<void> {
+    const last = this.lastAutoWatchCheck.get(agentId);
+    if (last !== undefined && this.now() - last < PR_WATCH_AUTO_WATCH_INTERVAL_MS) return;
+    this.lastAutoWatchCheck.set(agentId, this.now());
+    try {
+      // Any record, stopped ones included: turning auto-fix off for a PR sticks.
+      if (await this.options.store.get(agentId)) return;
+      const agent = await this.options.agentStorage.get(agentId);
+      if (!agent || agent.archivedAt || !agent.workspaceId) return;
+      if (agent.labels?.[PR_REVIEW_AGENT_LABEL]) return;
+      const workspace = await this.options.workspaceRegistry.get(agent.workspaceId);
+      if (!workspace || workspace.kind !== "worktree" || workspace.untrustedSource) return;
+      const project = await this.options.projectRegistry.get(workspace.projectId);
+      if (!project?.prAutomation?.autoFixAgentPullRequests) return;
+      const snapshot = await this.options.workspaceGitService.getSnapshot(agent.cwd, {
+        force: true,
+        reason: "pr-watch-auto",
+      });
+      const pullRequest = snapshot.forge.pullRequest;
+      if (!pullRequest || pullRequest.isMerged || pullRequest.state !== "open") return;
+      if (await this.options.store.get(agentId)) return;
+      await this.setWatch({ agentId, enabled: true });
+      this.logger.info({ agentId, prNumber: pullRequest.number }, "pr-watch.auto-watch.started");
+    } catch (error) {
+      this.logger.info({ err: error, agentId }, "pr-watch.auto-watch.skipped");
+    }
   }
 
   private releaseTurn(agentId: string): void {
-    this.activeTurns.delete(agentId);
+    if (this.activeTurns.delete(agentId)) this.turnBudget.release(turnKey(agentId));
   }
 
   private async setState(agentId: string, state: StateChange): Promise<void> {
@@ -590,6 +642,10 @@ export class PrWatchService {
     });
     return next;
   }
+}
+
+function turnKey(agentId: string): string {
+  return `pr-watch:${agentId}`;
 }
 
 /** Something is ready to send: settled CI failures, review comments, or a conflict. */

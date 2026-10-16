@@ -28,6 +28,11 @@ export interface PullRequestSummary {
   headRefName: string;
   labels: string[];
   updatedAt: string;
+  /** Adapters that report it: the author's login, head commit, fork origin and draft state. */
+  author?: string;
+  headSha?: string;
+  isCrossRepository?: boolean;
+  isDraft?: boolean;
 }
 
 export interface PullRequestCheckoutTarget {

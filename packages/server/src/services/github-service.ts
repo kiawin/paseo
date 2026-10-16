@@ -160,6 +160,10 @@ const GitHubPullRequestSummarySchema = z.object({
   headRefName: z.string().catch(""),
   labels: z.array(LabelSchema).catch([]),
   updatedAt: z.string().catch(""),
+  author: z.object({ login: z.string().optional() }).nullable().optional().catch(null),
+  headRefOid: z.string().optional().catch(undefined),
+  isCrossRepository: z.boolean().optional().catch(undefined),
+  isDraft: z.boolean().optional().catch(undefined),
 });
 
 const GitHubRepositoryListItemSchema = z.object({
@@ -2050,7 +2054,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
               "--search",
               input.query ?? "",
               "--json",
-              "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+              "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
               "--limit",
               String(input.limit ?? 20),
             ],
@@ -2103,7 +2107,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
               "view",
               String(input.number),
               "--json",
-              "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+              "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
             ],
             { cwd: input.cwd },
             GitHubPullRequestSummarySchema,
@@ -3552,6 +3556,10 @@ function toPullRequestSummary(
     headRefName: item.headRefName,
     labels: item.labels.map((label) => label.name ?? "").filter((name) => name.length > 0),
     updatedAt: item.updatedAt,
+    ...(item.author?.login ? { author: item.author.login } : {}),
+    ...(item.headRefOid ? { headSha: item.headRefOid } : {}),
+    ...(item.isCrossRepository !== undefined ? { isCrossRepository: item.isCrossRepository } : {}),
+    ...(item.isDraft !== undefined ? { isDraft: item.isDraft } : {}),
   };
 }
 

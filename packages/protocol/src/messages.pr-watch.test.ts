@@ -77,3 +77,94 @@ describe("PR watch messages", () => {
     expect(WSOutboundMessageSchema.parse(response)).toEqual(response);
   });
 });
+
+const SETTINGS = {
+  autoReview: true,
+  reviewProvider: "codex/gpt-5",
+  postReviews: false,
+  autoFixAgentPullRequests: true,
+};
+
+const REVIEW = {
+  projectId: "prj_1",
+  prNumber: 7,
+  prUrl: "https://github.com/acme/widgets/pull/7",
+  agentId: "agent-2",
+  workspaceId: "ws-2",
+  reviewedHeadSha: "abc",
+  state: "active",
+  createdAt: "2026-10-17T00:00:00.000Z",
+  updatedAt: "2026-10-17T00:00:00.000Z",
+};
+
+describe("PR review and project automation messages", () => {
+  test("accepts settings, list and review requests through the inbound union", () => {
+    const requests = [
+      {
+        type: "project.pr_automation.set.request",
+        projectId: "prj_1",
+        settings: SETTINGS,
+        requestId: "req-1",
+      },
+      { type: "project.review_requests.list.request", requestId: "req-2" },
+      {
+        type: "project.review_requests.review.request",
+        projectId: "prj_1",
+        prNumber: 7,
+        provider: "claude",
+        requestId: "req-3",
+      },
+    ];
+    for (const request of requests) {
+      expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+    }
+  });
+
+  test("delivers their responses through the outbound union", () => {
+    const messages = [
+      {
+        type: "project.pr_automation.set.response",
+        payload: {
+          requestId: "req-1",
+          projectId: "prj_1",
+          accepted: true,
+          settings: SETTINGS,
+          error: null,
+        },
+      },
+      {
+        type: "project.review_requests.list.response",
+        payload: {
+          requestId: "req-2",
+          reviewRequests: [
+            {
+              projectId: "prj_1",
+              number: 7,
+              title: "Add retry",
+              url: REVIEW.prUrl,
+              author: "teammate",
+              baseRefName: "main",
+              headRefName: "feature/retry",
+              headSha: "abc",
+              isDraft: false,
+              isCrossRepository: false,
+              updatedAt: "2026-10-17T00:00:00.000Z",
+              review: REVIEW,
+            },
+          ],
+          errors: [{ projectId: "prj_2", message: "gh not authenticated" }],
+          success: true,
+          error: null,
+        },
+      },
+      {
+        type: "project.review_requests.review.response",
+        payload: { requestId: "req-3", review: REVIEW, success: true, error: null },
+      },
+    ];
+    for (const message of messages) {
+      const envelope = { type: "session", message };
+      expect(WSOutboundMessageSchema.parse(envelope)).toEqual(envelope);
+    }
+  });
+});
