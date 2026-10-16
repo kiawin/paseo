@@ -1470,10 +1470,15 @@ export async function createPaseoDaemon(
     agentManager,
     agentStorage,
     turnBudget: prAutomationTurnBudget,
-    createReviewer: async ({ cwd, prNumber, checkout, provider, title, prompt, labels }) => {
+    getAgentProfile: (profileId) =>
+      daemonConfigStore.get().agentProfiles?.find((profile) => profile.id === profileId) ?? null,
+    createReviewer: async ({ cwd, prNumber, checkout, reviewer, title, prompt, labels }) => {
       const result = await createAgent({
         kind: "mcp",
-        provider,
+        provider: reviewer.provider,
+        ...(reviewer.modeId ? { mode: reviewer.modeId } : {}),
+        ...(reviewer.thinkingOptionId ? { thinking: reviewer.thinkingOptionId } : {}),
+        ...(reviewer.featureValues ? { features: reviewer.featureValues } : {}),
         title,
         initialPrompt: prompt,
         cwd,

@@ -1,5 +1,7 @@
 import type { Logger } from "pino";
 
+import type { AgentProfile } from "@getpaseo/protocol/messages";
+
 import type { ForgeService, PullRequestSummary } from "../../services/forge-service.js";
 import type { AgentManager, AgentManagerEvent } from "../agent/agent-manager.js";
 import type { AgentPromptSource } from "../agent/agent-messages/index.js";
@@ -24,7 +26,8 @@ type ReviewTrigger = "request" | "push";
 interface ReviewParams {
   project: PersistedProjectRecord;
   pullRequest: PullRequestSummary;
-  provider: string | null;
+  /** Null when only an existing reviewer may be prompted. */
+  reviewer: ReviewerSettings | null;
   trigger?: ReviewTrigger;
 }
 
@@ -45,10 +48,18 @@ export interface CreateReviewerParams {
   prNumber: number;
   /** Cut a new worktree of the PR for the reviewer; false runs it in `cwd`. */
   checkout: boolean;
-  provider: string;
+  reviewer: ReviewerSettings;
   title: string;
   prompt: string;
   labels: Record<string, string>;
+}
+
+/** How to start a reviewer: a provider (optionally `provider/model`), or a whole agent profile. */
+export interface ReviewerSettings {
+  provider: string;
+  modeId?: string;
+  thinkingOptionId?: string;
+  featureValues?: Record<string, unknown>;
 }
 
 export interface CreatedReviewer {
@@ -65,6 +76,8 @@ export interface PrReviewServiceOptions {
   agentManager: Pick<AgentManager, "subscribe" | "hasInFlightRun">;
   agentStorage: Pick<AgentStorage, "get">;
   createReviewer: (params: CreateReviewerParams) => Promise<CreatedReviewer>;
+  /** The host's agent profiles, read when a reviewer starts so edits apply to the next one. */
+  getAgentProfile: (profileId: string) => AgentProfile | null;
   /** Must never replace a running turn; a busy agent makes it reject. */
   sendPrompt: (params: {
     agentId: string;
@@ -188,12 +201,9 @@ export class PrReviewService {
     if (pullRequest.state.toLowerCase() !== "open") {
       throw new Error(`PR #${params.prNumber} is not open`);
     }
-    const record = await this.review({
-      project,
-      pullRequest,
-      provider: params.provider?.trim() || project.prAutomation?.reviewProvider || null,
-    });
-    return record;
+    const override = params.provider?.trim();
+    const reviewer = override ? { provider: override } : this.resolveReviewer(project);
+    return this.review({ project, pullRequest, reviewer });
   }
 
   /** One round: start automatic reviews, then archive reviews whose PR has ended. */
@@ -210,16 +220,25 @@ export class PrReviewService {
   private async runPoll(): Promise<void> {
     const stillRequested = new Set<string>();
     for (const project of await this.reviewableProjects()) {
-      const settings = project.prAutomation;
-      if (!settings?.autoReview || !settings.reviewProvider) continue;
-      await this.autoReviewProject(project, settings.reviewProvider, stillRequested);
+      if (!project.prAutomation?.autoReview) continue;
+      let reviewer: ReviewerSettings | null;
+      try {
+        reviewer = this.resolveReviewer(project);
+      } catch (error) {
+        this.logger.warn(
+          { err: error, projectId: project.projectId },
+          "pr-review.reviewer.missing",
+        );
+        continue;
+      }
+      if (reviewer) await this.autoReviewProject(project, reviewer, stillRequested);
     }
     await this.settleReviews(stillRequested);
   }
 
   private async autoReviewProject(
     project: PersistedProjectRecord,
-    provider: string,
+    reviewer: ReviewerSettings,
     stillRequested: Set<string>,
   ): Promise<void> {
     let pullRequests: PullRequestSummary[];
@@ -255,7 +274,7 @@ export class PrReviewService {
       const slot = `pr-review:${id}`;
       if (!this.options.turnBudget.tryAcquire(slot)) return;
       try {
-        const record = await this.review({ project, pullRequest, provider });
+        const record = await this.review({ project, pullRequest, reviewer });
         this.holdSlotUntilIdle(slot, record.agentId);
       } catch (error) {
         this.options.turnBudget.release(slot);
@@ -342,7 +361,7 @@ export class PrReviewService {
     const slot = `pr-review:${record.id}`;
     if (!this.options.turnBudget.tryAcquire(slot)) return;
     try {
-      const updated = await this.review({ project, pullRequest, provider: null, trigger: "push" });
+      const updated = await this.review({ project, pullRequest, reviewer: null, trigger: "push" });
       this.holdSlotUntilIdle(slot, updated.agentId);
     } catch (error) {
       this.options.turnBudget.release(slot);
@@ -376,14 +395,14 @@ export class PrReviewService {
       return this.promptReviewer(existing, promptInput, params.trigger ?? "request");
     }
 
-    if (!params.provider) {
+    if (!params.reviewer) {
       throw new Error("Choose a reviewer provider in the project's settings first");
     }
     const created = await this.options.createReviewer({
       cwd: project.rootPath,
       prNumber: pullRequest.number,
       checkout: !promptInput.isCrossRepository,
-      provider: params.provider,
+      reviewer: params.reviewer,
       title: `Review PR #${pullRequest.number}: ${pullRequest.title}`,
       prompt: buildReviewPrompt(promptInput),
       labels: { [PR_REVIEW_AGENT_LABEL]: pullRequest.url },
@@ -410,6 +429,25 @@ export class PrReviewService {
       throw new Error("The reviewer was created, but its first prompt didn't start. Try again.");
     }
     return record;
+  }
+
+  /**
+   * The project's reviewer: its agent profile when one is set, else its
+   * provider. Throws when the profile was deleted, so nobody reviews with
+   * settings the user didn't pick.
+   */
+  private resolveReviewer(project: PersistedProjectRecord): ReviewerSettings | null {
+    const settings = project.prAutomation;
+    if (settings?.reviewProfileId) {
+      const profile = this.options.getAgentProfile(settings.reviewProfileId);
+      if (!profile) {
+        throw new Error(
+          "The reviewer's agent profile no longer exists. Choose another reviewer in the project's settings",
+        );
+      }
+      return reviewerFromProfile(profile);
+    }
+    return settings?.reviewProvider ? { provider: settings.reviewProvider } : null;
   }
 
   /** Asks a reviewer that already exists to review, or to review again. */
@@ -479,6 +517,18 @@ export class PrReviewService {
   private timestamp(): string {
     return new Date(this.now()).toISOString();
   }
+}
+
+function reviewerFromProfile(profile: AgentProfile): ReviewerSettings {
+  const model = profile.model?.trim();
+  return {
+    provider: model ? `${profile.provider}/${model}` : profile.provider,
+    ...(profile.modeId ? { modeId: profile.modeId } : {}),
+    ...(profile.thinkingOptionId ? { thinkingOptionId: profile.thinkingOptionId } : {}),
+    ...(profile.featureValues && Object.keys(profile.featureValues).length > 0
+      ? { featureValues: profile.featureValues }
+      : {}),
+  };
 }
 
 function toReviewPromptInput(

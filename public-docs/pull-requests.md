@@ -39,7 +39,9 @@ In a project's settings, **Auto-fix PRs opened by agents** turns auto-fix on by 
 
 The **Review requested** group lists open GitHub PRs where your review is requested, for each project added to Paseo on a host. Select **Review** to check the PR out in a new worktree and start a reviewer agent on it. Each review gets its own worktree, so reviews run side by side.
 
-To review automatically, open the project's settings, choose a **Reviewer** provider, and turn on **Review automatically when my review is requested**. The host checks every 3 minutes. It reviews each request once.
+To review automatically, open the project's settings, choose a **Reviewer**, and turn on **Review automatically when my review is requested**. The host checks every 3 minutes. It reviews each request once.
+
+The **Reviewer** is a provider and model, or one of your [agent profiles](/docs/agent-profiles), which also sets the mode, thinking level, and features. Reviewers start with the profile as it is when the review begins, so editing the profile changes later reviews. If you delete the profile, reviews stop until you choose another reviewer. Reviewer agents load the same skills and instructions as any agent of that provider.
 
 **Review again** sets when a reviewer looks at a PR it already reviewed:
 
@@ -66,6 +68,7 @@ paseo agent autofix <agent-id> on       # Watch the PR on the agent's branch
 paseo agent autofix <agent-id> off
 
 paseo project autoreview <project-id> on --provider codex
+paseo project autoreview <project-id> on --profile Review   # An agent profile, by name or id
 paseo project autoreview <project-id> on --post-reviews
 paseo project autoreview <project-id> on --rereview push   # Review every new commit
 paseo project autoreview <project-id> off

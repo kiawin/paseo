@@ -190,6 +190,7 @@ import { ArtifactsSession } from "./session/artifacts/artifacts-session.js";
 import type { ArtifactStore } from "./artifact-store.js";
 import { NotesSession } from "./session/notes/notes-session.js";
 import { PrWatchSession } from "./session/pr-watch/pr-watch-session.js";
+import { normalizePrAutomation } from "./pr-review/settings.js";
 import { PrReviewSession } from "./session/pr-review/pr-review-session.js";
 import type { PrReviewService } from "./pr-review/service.js";
 import type { PrWatchService } from "./pr-watch/service.js";
@@ -3870,17 +3871,15 @@ export class Session {
       });
 
     try {
-      const reviewProvider = request.settings.reviewProvider?.trim() || null;
-      if (request.settings.autoReview && !reviewProvider) {
-        respond("Choose a reviewer provider to review automatically");
+      const normalized = normalizePrAutomation(
+        request.settings,
+        this.daemonConfigStore.get().agentProfiles ?? [],
+      );
+      if (!normalized.ok) {
+        respond(normalized.error);
         return;
       }
-      const { reReviewOn } = request.settings;
-      if (reReviewOn !== undefined && reReviewOn !== "request" && reReviewOn !== "push") {
-        respond(`Unknown re-review option: ${reReviewOn}`);
-        return;
-      }
-      const settings = { ...request.settings, reviewProvider };
+      const { settings } = normalized;
       const updated = await this.projectRegistry.update(request.projectId, (existing) => ({
         ...existing,
         prAutomation: settings,

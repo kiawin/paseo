@@ -20,6 +20,11 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/contexts/toast-context";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import {
+  useAgentProfilePicker,
+  useAgentProfiles,
+  type AgentProfileApplyTarget,
+} from "@/agent-profiles";
+import {
   DEFAULT_PR_AUTOMATION,
   formatReviewProvider,
   parseReviewProvider,
@@ -193,7 +198,14 @@ export function PrAutomationSection({
     () => buildSelectableProviderSelectorProviders(snapshot.entries),
     [snapshot.entries],
   );
-  const reviewer = parseReviewProvider(current.reviewProvider);
+  const { profiles: agentProfiles } = useAgentProfiles(serverId);
+  const reviewerProfile = current.reviewProfileId
+    ? (agentProfiles?.find((profile) => profile.id === current.reviewProfileId) ?? null)
+    : null;
+  // A chosen profile decides the reviewer; the selector shows its provider and model.
+  const reviewer = reviewerProfile
+    ? { provider: reviewerProfile.provider, model: reviewerProfile.model?.trim() ?? "" }
+    : parseReviewProvider(current.reviewProvider);
 
   const mutation = useMutation({
     mutationFn: (next: ProjectPrAutomation) => client.setProjectPrAutomation(projectId, next),
@@ -215,6 +227,20 @@ export function PrAutomationSection({
     },
   });
   const { mutate, isPending } = mutation;
+  const profileProviders = useMemo(() => providers.map((entry) => entry.id), [providers]);
+  const handleSelectProfile = useCallback(
+    (profileId: string) => mutate({ ...current, reviewProfileId: profileId }),
+    [current, mutate],
+  );
+  const profileTarget = useMemo<AgentProfileApplyTarget>(
+    () => ({ kind: "select", onSelect: handleSelectProfile }),
+    [handleSelectProfile],
+  );
+  const profilePicker = useAgentProfilePicker({
+    serverId,
+    availableProviders: profileProviders,
+    target: profileTarget,
+  });
 
   const handleSwitch = useCallback(
     (field: SwitchField, value: boolean) => mutate({ ...current, [field]: value }),
@@ -222,7 +248,11 @@ export function PrAutomationSection({
   );
   const handleSelectReviewer = useCallback(
     (provider: AgentProvider, model: string) =>
-      mutate({ ...current, reviewProvider: formatReviewProvider({ provider, model }) }),
+      mutate({
+        ...current,
+        reviewProvider: formatReviewProvider({ provider, model }),
+        reviewProfileId: null,
+      }),
     [current, mutate],
   );
   const handleReReviewChange = useCallback(
@@ -264,7 +294,11 @@ export function PrAutomationSection({
               {t("settings.project.prAutomation.reviewer")}
             </Text>
             <Text style={settingsStyles.rowHint}>
-              {t("settings.project.prAutomation.reviewerHint")}
+              {reviewerProfile
+                ? t("settings.project.prAutomation.reviewerProfileHint", {
+                    name: reviewerProfile.name,
+                  })
+                : t("settings.project.prAutomation.reviewerHint")}
             </Text>
           </View>
           <CombinedModelSelector
@@ -272,6 +306,8 @@ export function PrAutomationSection({
             selectedProvider={reviewer?.provider ?? ""}
             selectedModel={reviewer?.model ?? ""}
             onSelect={handleSelectReviewer}
+            profiles={profilePicker}
+            onApplyProfile={profilePicker?.applyProfile}
             isLoading={snapshot.isLoading || snapshot.isFetching}
             onOpen={handleSelectorOpen}
             onRetryProvider={handleRetryProvider}

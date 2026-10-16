@@ -2989,6 +2989,7 @@ export const zhCN: TranslationResources = {
         autoReviewHint:
           "仅限 GitHub。Paseo 会审阅同一仓库 PR 上的直接请求；来自 fork 的 PR 和草稿会列出供你审阅。",
         reviewer: "审阅者",
+        reviewerProfileHint: "使用智能体配置文件 {{name}}",
         reviewerHint: "负责审阅拉取请求的提供方和模型",
         postReviews: "将审阅发布到 GitHub",
         postReviewsHint:

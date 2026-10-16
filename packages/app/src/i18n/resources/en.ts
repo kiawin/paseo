@@ -3163,6 +3163,7 @@ export const en = {
         autoReviewHint:
           "GitHub only. Paseo reviews direct requests on same-repo PRs; fork PRs and drafts are listed for you to review.",
         reviewer: "Reviewer",
+        reviewerProfileHint: "Uses the {{name}} agent profile",
         reviewerHint: "The provider and model that review pull requests",
         postReviews: "Post reviews to GitHub",
         postReviewsHint:

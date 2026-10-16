@@ -3086,6 +3086,7 @@ export const es: TranslationResources = {
         autoReviewHint:
           "Solo GitHub. Paseo revisa las solicitudes directas en PR del mismo repositorio; los PR de forks y los borradores se listan para que los revises tú.",
         reviewer: "Revisor",
+        reviewerProfileHint: "Usa el perfil de agente {{name}}",
         reviewerHint: "El proveedor y el modelo que revisan los pull requests",
         postReviews: "Publicar revisiones en GitHub",
         postReviewsHint:

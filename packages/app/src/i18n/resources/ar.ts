@@ -3026,6 +3026,7 @@ export const ar: TranslationResources = {
         autoReviewHint:
           "GitHub فقط. يراجع Paseo الطلبات المباشرة على طلبات الدمج من المستودع نفسه؛ وتُعرض طلبات الدمج من النسخ المتفرعة والمسودات لتراجعها بنفسك.",
         reviewer: "المراجع",
+        reviewerProfileHint: "يستخدم ملف تعريف الوكيل {{name}}",
         reviewerHint: "المزوّد والنموذج اللذان يراجعان طلبات الدمج",
         postReviews: "نشر المراجعات على GitHub",
         postReviewsHint:

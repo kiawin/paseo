@@ -3093,6 +3093,7 @@ export const fr: TranslationResources = {
         autoReviewHint:
           "GitHub uniquement. Paseo relit les demandes directes sur les PR du même dépôt ; les PR de forks et les brouillons sont listées pour que vous les relisiez.",
         reviewer: "Relecteur",
+        reviewerProfileHint: "Utilise le profil d'agent {{name}}",
         reviewerHint: "Le fournisseur et le modèle qui relisent les pull requests",
         postReviews: "Publier les relectures sur GitHub",
         postReviewsHint:

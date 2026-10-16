@@ -20,6 +20,7 @@ describe("project automation", () => {
       ...OFF,
       autoReview: true,
       reviewProvider: "codex/gpt-5",
+      reviewProfileId: null,
     });
     expect(
       applyAutoReviewChange(
@@ -27,6 +28,21 @@ describe("project automation", () => {
         { enabled: false },
       ),
     ).toEqual({ ...OFF, autoReview: false, reviewProvider: "claude", postReviews: true });
+  });
+
+  it("picks the reviewer by profile or by provider, not both", () => {
+    expect(applyAutoReviewChange(OFF, { enabled: true, profile: "Review" }).reviewProfileId).toBe(
+      "Review",
+    );
+    expect(
+      applyAutoReviewChange(
+        { ...OFF, reviewProfileId: "prof_1" },
+        { enabled: true, provider: "codex" },
+      ),
+    ).toMatchObject({ reviewProvider: "codex", reviewProfileId: null });
+    expect(() =>
+      applyAutoReviewChange(OFF, { enabled: true, provider: "codex", profile: "Review" }),
+    ).toThrow();
   });
 
   it("sets when reviewers look again, and rejects anything but request or push", () => {

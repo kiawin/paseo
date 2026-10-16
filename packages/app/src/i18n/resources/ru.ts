@@ -3078,6 +3078,7 @@ export const ru: TranslationResources = {
         autoReviewHint:
           "Только GitHub. Paseo проверяет прямые запросы в PR из того же репозитория; PR из форков и черновики показываются в списке для ручной проверки.",
         reviewer: "Рецензент",
+        reviewerProfileHint: "Использует профиль агента {{name}}",
         reviewerHint: "Провайдер и модель, которые проверяют pull request",
         postReviews: "Публиковать ревью в GitHub",
         postReviewsHint:

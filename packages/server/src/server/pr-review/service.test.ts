@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import type { ProjectPrAutomation } from "@getpaseo/protocol/messages";
+import type { AgentProfile, ProjectPrAutomation } from "@getpaseo/protocol/messages";
 
 import type { PullRequestSummary } from "../../services/forge-service.js";
 import { createTestLogger } from "../../test-utils/test-logger.js";
@@ -53,6 +53,7 @@ class Harness {
     autoFixAgentPullRequests: false,
   };
   readonly budget = new AutomationTurnBudget(3);
+  readonly profiles = new Map<string, AgentProfile>();
   readonly store: PrReviewStore;
   readonly service: PrReviewService;
   private agentSubscriber: ((event: AgentManagerEvent) => void) | null = null;
@@ -104,6 +105,7 @@ class Harness {
         get: async (agentId) =>
           ({ id: agentId, archivedAt: this.archivedAgents.has(agentId) ? "2026" : null }) as never,
       },
+      getAgentProfile: (profileId) => this.profiles.get(profileId) ?? null,
       createReviewer: async (params) => {
         this.reviewers.push(params);
         const agentId = `reviewer-${this.reviewers.length}`;
@@ -169,7 +171,7 @@ describe("PrReviewService", () => {
         cwd: PROJECT_ROOT,
         prNumber: 7,
         checkout: true,
-        provider: "codex",
+        reviewer: { provider: "codex" },
         labels: { "paseo.pr-review": "https://github.com/acme/widgets/pull/7" },
       }),
     ]);
@@ -264,12 +266,47 @@ describe("PrReviewService", () => {
       harness.service.startReview({ projectId: "project-1", prNumber: 7 }),
     ).rejects.toThrow("Choose a reviewer provider");
     await harness.service.startReview({ projectId: "project-1", prNumber: 7, provider: "claude" });
-    expect(harness.reviewers[0]?.provider).toBe("claude");
+    expect(harness.reviewers[0]?.reviewer).toEqual({ provider: "claude" });
 
     harness.forge = "gitlab";
     await expect(
       harness.service.startReview({ projectId: "project-1", prNumber: 8 }),
     ).rejects.toThrow("only available for GitHub");
+  });
+
+  test("starts reviewers with the project's agent profile when one is set", async () => {
+    harness.profiles.set("prof_review", {
+      id: "prof_review",
+      name: "Review",
+      provider: "claude",
+      model: "opus",
+      modeId: "plan",
+      thinkingOptionId: "max",
+      featureValues: { fast_mode: true },
+    });
+    harness.settings = { ...harness.settings, reviewProfileId: "prof_review" };
+    harness.requestDirectly(pr(7));
+
+    await harness.service.poll();
+
+    expect(harness.reviewers[0]?.reviewer).toEqual({
+      provider: "claude/opus",
+      modeId: "plan",
+      thinkingOptionId: "max",
+      featureValues: { fast_mode: true },
+    });
+  });
+
+  test("doesn't fall back to another reviewer when the chosen profile was deleted", async () => {
+    harness.settings = { ...harness.settings, reviewProfileId: "prof_gone" };
+    harness.requestDirectly(pr(7));
+
+    await harness.service.poll();
+    await expect(
+      harness.service.startReview({ projectId: "project-1", prNumber: 7 }),
+    ).rejects.toThrow("agent profile no longer exists");
+
+    expect(harness.reviewers).toEqual([]);
   });
 
   test("reviews direct same-repo requests on its own, once per request", async () => {

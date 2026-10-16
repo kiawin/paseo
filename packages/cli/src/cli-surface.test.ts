@@ -100,6 +100,7 @@ describe("canonical CLI surface", () => {
     expect(autoreview?.helpInformation()).toContain("--provider <provider>");
     expect(autoreview?.helpInformation()).toContain("--no-post-reviews");
     expect(autoreview?.helpInformation()).toContain("--rereview <when>");
+    expect(autoreview?.helpInformation()).toContain("--profile <profile>");
     expect(projectAutofix?.helpInformation()).toContain("<state>");
     const review = project?.commands.find((command) => command.name() === "review");
     expect(review?.helpInformation()).toContain("<pr-number>");

@@ -3195,6 +3195,11 @@ export const ProjectPrAutomationSchema = z.object({
   autoReview: z.boolean(),
   /** `provider` or `provider/model` for reviewer agents; null until chosen. */
   reviewProvider: z.string().nullable(),
+  /**
+   * Agent profile for reviewer agents: provider, model, mode, thinking and
+   * features together. Takes precedence over reviewProvider when set.
+   */
+  reviewProfileId: z.string().nullable().optional(),
   /** Let reviewers post a comment-only review; otherwise findings stay in Paseo. */
   postReviews: z.boolean(),
   /** Watch PRs that agents open from this project's worktrees for auto-fix. */

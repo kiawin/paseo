@@ -55,6 +55,7 @@ export function createProjectCommand(): Command {
       .argument("<project-id>", "Project id")
       .argument("<state>", "on or off")
       .option("--provider <provider>", "Reviewer agent provider, as provider or provider/model")
+      .option("--profile <profile>", "Agent profile for reviewers, by name or id")
       .option("--post-reviews", "Let reviewers post a comment-only review on the PR")
       .option("--no-post-reviews", "Keep review findings in Paseo")
       .option(

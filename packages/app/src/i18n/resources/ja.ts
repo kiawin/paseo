@@ -3057,6 +3057,7 @@ export const ja: TranslationResources = {
         autoReviewHint:
           "GitHub のみ。同じリポジトリの PR への直接の依頼を Paseo がレビューします。フォークからの PR とドラフトは、あなたがレビューできるよう一覧に表示されます。",
         reviewer: "レビュアー",
+        reviewerProfileHint: "エージェントプロファイル「{{name}}」を使用",
         reviewerHint: "プルリクエストをレビューするプロバイダーとモデル",
         postReviews: "レビューを GitHub に投稿",
         postReviewsHint:

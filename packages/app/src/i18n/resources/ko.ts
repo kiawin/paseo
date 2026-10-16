@@ -3042,6 +3042,7 @@ export const ko: TranslationResources = {
         autoReviewHint:
           "GitHub 전용. 같은 저장소 PR에 대한 직접 요청은 Paseo가 리뷰합니다. 포크 PR과 초안은 직접 리뷰할 수 있도록 목록에 표시됩니다.",
         reviewer: "리뷰어",
+        reviewerProfileHint: "{{name}} 에이전트 프로필 사용",
         reviewerHint: "풀 리퀘스트를 리뷰할 제공자와 모델",
         postReviews: "GitHub에 리뷰 게시",
         postReviewsHint:
