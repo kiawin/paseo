@@ -15,6 +15,7 @@ import { addImportOptions, runImportCommand } from "./import.js";
 import { runUpdateCommand } from "./update.js";
 import { runDetachCommand } from "./detach.js";
 import { addOpenOptions, runOpenCommand } from "./open.js";
+import { runAutofixCommand } from "./autofix.js";
 import { withOutput } from "../../output/index.js";
 import {
   addDaemonHostOption,
@@ -78,6 +79,14 @@ export function createAgentCommand(): Command {
       .argument("[mode]", "Mode to set (required unless --list)")
       .option("--list", "List available modes for this agent"),
   ).action(withOutput(runModeCommand));
+
+  addJsonAndDaemonHostOptions(
+    agent
+      .command("autofix")
+      .description("Turn PR auto-fix on or off for an agent's pull request, or show it")
+      .argument("<id>", "Agent ID (or prefix)")
+      .argument("[action]", "on, off, or status (default)"),
+  ).action(withOutput(runAutofixCommand));
 
   addJsonAndDaemonHostOptions(addArchiveOptions(agent.command("archive"))).action(
     withOutput(runArchiveCommand),

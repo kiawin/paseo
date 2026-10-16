@@ -88,6 +88,20 @@ describe("canonical CLI surface", () => {
     expect(open?.helpInformation()).toContain("--server <server-id>");
   });
 
+  it("offers PR auto-fix per agent and PR automation per project", () => {
+    const cli = createCli();
+    const agent = cli.commands.find((command) => command.name() === "agent");
+    const project = cli.commands.find((command) => command.name() === "project");
+    const autofix = agent?.commands.find((command) => command.name() === "autofix");
+    const autoreview = project?.commands.find((command) => command.name() === "autoreview");
+    const projectAutofix = project?.commands.find((command) => command.name() === "autofix");
+
+    expect(autofix?.helpInformation()).toContain("[action]");
+    expect(autoreview?.helpInformation()).toContain("--provider <provider>");
+    expect(autoreview?.helpInformation()).toContain("--no-post-reviews");
+    expect(projectAutofix?.helpInformation()).toContain("<state>");
+  });
+
   it("offers the complete local plugin lifecycle", () => {
     const plugin = createCli().commands.find((command) => command.name() === "plugin");
 
