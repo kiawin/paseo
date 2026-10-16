@@ -15,6 +15,8 @@ import {
   parseWorkspaceFileDragPayload,
   WORKSPACE_FILE_DRAG_MIME,
 } from "@/attachments/workspace-file-drag";
+import { takeNativeWorkspaceFileDrop } from "@/attachments/native-workspace-file-drag";
+import { getDroppedFilePath } from "@/desktop/dropped-file-path";
 
 type DesktopDragDropPayload =
   | { type: "enter"; paths: string[] }
@@ -328,6 +330,16 @@ export function useDropListeners({
         }
 
         const files = Array.from(e.dataTransfer?.files ?? []);
+        // A workspace file dragged out as an OS file (desktop) comes back here as a file drop.
+        // Treat it as the in-app workspace file drag: attach it, never upload a copy of it.
+        const desktopHost = getDesktopHost();
+        const nativeWorkspaceFileDrag = takeNativeWorkspaceFileDrop(
+          files.flatMap((file) => getDroppedFilePath(file, desktopHost) ?? []),
+        );
+        if (nativeWorkspaceFileDrag) {
+          sink.onWorkspaceFile?.(nativeWorkspaceFileDrag.payload);
+          return;
+        }
 
         if (sink.rawFiles) {
           // Read the entries synchronously: DataTransfer is detached once this handler yields.
