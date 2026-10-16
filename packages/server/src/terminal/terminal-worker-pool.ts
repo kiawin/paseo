@@ -209,6 +209,14 @@ export function createTerminalWorkerPool(
       return "unknown";
     },
 
+    isHumanInputOnly(id) {
+      return ownerOf(id)?.isHumanInputOnly(id) ?? false;
+    },
+
+    getRequestedByAgentId(id) {
+      return ownerOf(id)?.getRequestedByAgentId(id);
+    },
+
     getTerminal(id) {
       for (const member of members()) {
         const session = member.manager.getTerminal(id);
