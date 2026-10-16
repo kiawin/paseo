@@ -656,3 +656,41 @@ it("does not emit workspace contribution event when an idle terminal is removed"
 
   unsubscribe();
 });
+it("marks a human-input-only terminal and forgets it once the terminal is gone", async () => {
+  manager = createTerminalManager();
+  const cwd = mkdtempSync(join(tmpdir(), "terminal-manager-human-input-"));
+  temporaryDirs.push(cwd);
+
+  const guarded = await manager.createTerminal({
+    cwd,
+    workspaceId: "ws-test",
+    humanInputOnly: true,
+  });
+  const ordinary = await manager.createTerminal({ cwd, workspaceId: "ws-test" });
+
+  expect(manager.isHumanInputOnly(guarded.id)).toBe(true);
+  expect(manager.isHumanInputOnly(ordinary.id)).toBe(false);
+
+  await manager.killTerminalAndWait(guarded.id);
+
+  expect(manager.isHumanInputOnly(guarded.id)).toBe(false);
+});
+it("records the agent that asked for a terminal and forgets it once gone", async () => {
+  manager = createTerminalManager();
+  const cwd = mkdtempSync(join(tmpdir(), "terminal-manager-requester-"));
+  temporaryDirs.push(cwd);
+
+  const requested = await manager.createTerminal({
+    cwd,
+    workspaceId: "ws-test",
+    requestedByAgentId: "agent-1",
+  });
+  const userOpened = await manager.createTerminal({ cwd, workspaceId: "ws-test" });
+
+  expect(manager.getRequestedByAgentId(requested.id)).toBe("agent-1");
+  expect(manager.getRequestedByAgentId(userOpened.id)).toBeUndefined();
+
+  await manager.killTerminalAndWait(requested.id);
+
+  expect(manager.getRequestedByAgentId(requested.id)).toBeUndefined();
+});
