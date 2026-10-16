@@ -113,6 +113,7 @@ import {
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
 import { parseAgentMessage, projectAgentMessages } from "./agent-messages/index.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
+import { buildSharedCheckoutInstructions, isMainGitCheckout } from "./shared-checkout.js";
 import {
   denyDaemonApprovalsForAgent,
   isPendingDaemonApproval,
@@ -1959,11 +1960,6 @@ export class AgentManager {
 
     const launchEnv = record?.launchEnv;
     const workspaceId = resolveResumeWorkspaceId({ options, record });
-    const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
-      mergedConfig,
-      resolvedAgentId,
-      { purpose, env: launchEnv, workspaceId },
-    );
     const client = this.requireClient(handle.provider);
     const available = await client.isAvailable();
     if (!available) {
@@ -1971,6 +1967,11 @@ export class AgentManager {
         `Provider '${handle.provider}' is not available. Please ensure the CLI is installed.`,
       );
     }
+    const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
+      mergedConfig,
+      resolvedAgentId,
+      { purpose, env: launchEnv, workspaceId },
+    );
     this.paseoToolPolicies.set(resolvedAgentId, paseoToolPolicy);
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
@@ -6806,7 +6807,7 @@ export class AgentManager {
     const paseoToolPolicy = paseoToolsEnabled
       ? this.resolvePaseoToolPolicy(storedConfig.provider)
       : { enabled: false };
-    const launchConfig = this.applyDaemonAppendSystemPrompt(
+    const launchConfig = await this.applyDaemonAppendSystemPrompt(
       withRuntimePaseoMcpServer({
         config: storedConfig,
         mcpBaseUrl:
@@ -6816,19 +6817,28 @@ export class AgentManager {
             ? await this.getOrCreateMcpToken(agentId)
             : null,
       }),
+      options.purpose,
     );
     return { storedConfig, launchConfig, paseoToolPolicy };
   }
 
-  private applyDaemonAppendSystemPrompt(config: AgentSessionConfig): AgentSessionConfig {
+  private async applyDaemonAppendSystemPrompt(
+    config: AgentSessionConfig,
+    purpose?: AgentResumePurpose,
+  ): Promise<AgentSessionConfig> {
     const daemonAppendSystemPrompt = this.appendSystemPrompt.trim();
+    const sharedCheckoutPrompt =
+      purpose !== "history" && (await isMainGitCheckout(config.cwd))
+        ? buildSharedCheckoutInstructions()
+        : "";
+    const prompt = [daemonAppendSystemPrompt, sharedCheckoutPrompt].filter(Boolean).join("\n\n");
     const next = { ...config };
     delete next.daemonAppendSystemPrompt;
 
-    return daemonAppendSystemPrompt
+    return prompt
       ? {
           ...next,
-          daemonAppendSystemPrompt,
+          daemonAppendSystemPrompt: prompt,
         }
       : next;
   }
