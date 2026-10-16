@@ -5,7 +5,7 @@ import {
   formatSystemNotificationPrompt,
 } from "./agent-messages/index.js";
 import { expect, test, vi, onTestFinished } from "vitest";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -58,6 +58,7 @@ import type {
 } from "./agent-sdk-types.js";
 import type { PaseoToolCatalog } from "./tools/types.js";
 import type { ProviderDefinition } from "./provider-registry.js";
+import { buildSharedCheckoutInstructions } from "./shared-checkout.js";
 
 const DESKTOP_OPEN_AGENT_TAB_LABEL = getOpenAgentTabLabel("desktop-client");
 const MOBILE_OPEN_AGENT_TAB_LABEL = getOpenAgentTabLabel("mobile-client");
@@ -2679,6 +2680,59 @@ test("createAgent injects daemon append system prompt at runtime only", async ()
   expect(snapshot.config).not.toHaveProperty("daemonAppendSystemPrompt");
   expect(record?.config?.systemPrompt).toBe("Agent instructions.");
   expect(record?.config).not.toHaveProperty("daemonAppendSystemPrompt");
+});
+
+function createGitCheckoutWithWorktree(): { repoDir: string; worktreeDir: string } {
+  const root = mkdtempSync(join(tmpdir(), "agent-manager-checkout-"));
+  const repoDir = join(root, "repo");
+  const worktreeDir = join(root, "worktree");
+  const git = (cwd: string, args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe" });
+  execFileSync("git", ["init", repoDir], { stdio: "pipe" });
+  git(repoDir, ["config", "user.email", "test@example.com"]);
+  git(repoDir, ["config", "user.name", "Test"]);
+  git(repoDir, ["config", "commit.gpgsign", "false"]);
+  writeFileSync(join(repoDir, "README.md"), "hello\n");
+  git(repoDir, ["add", "README.md"]);
+  git(repoDir, ["commit", "-m", "init"]);
+  git(repoDir, ["worktree", "add", "-b", "feature", worktreeDir]);
+  return { repoDir, worktreeDir };
+}
+
+test("agents in a main checkout get the shared-checkout rule after the daemon prompt", async () => {
+  const { repoDir } = createGitCheckoutWithWorktree();
+  const client = new TestAgentClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: new AgentStorage(join(repoDir, ".paseo-agents"), logger),
+    logger,
+    appendSystemPrompt: "Daemon instructions.",
+    idFactory: () => "00000000-0000-4000-8000-000000000105",
+  });
+
+  await manager.createAgent({ provider: "codex", cwd: repoDir }, undefined, {
+    workspaceId: undefined,
+  });
+
+  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe(
+    `Daemon instructions.\n\n${buildSharedCheckoutInstructions()}`,
+  );
+});
+
+test("agents in a linked worktree do not get the shared-checkout rule", async () => {
+  const { worktreeDir } = createGitCheckoutWithWorktree();
+  const client = new TestAgentClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: new AgentStorage(join(worktreeDir, ".paseo-agents"), logger),
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000106",
+  });
+
+  await manager.createAgent({ provider: "codex", cwd: worktreeDir }, undefined, {
+    workspaceId: undefined,
+  });
+
+  expect(client.createdConfigs[0]).not.toHaveProperty("daemonAppendSystemPrompt");
 });
 
 test("daemon append system prompt is injected into Pi configs", async () => {

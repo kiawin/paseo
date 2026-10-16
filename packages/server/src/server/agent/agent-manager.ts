@@ -99,6 +99,7 @@ import {
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import type { PaseoToolCatalogFactory } from "./tools/types.js";
 import { isPaseoToolPolicyEnabled } from "./paseo-tool-policy.js";
+import { buildSharedCheckoutInstructions, isMainGitCheckout } from "./shared-checkout.js";
 import {
   ProviderSubagentStore,
   type ProviderSubagentDescriptor,
@@ -5698,6 +5699,9 @@ export class AgentManager {
     const paseoToolPolicy = paseoToolsEnabled
       ? this.resolvePaseoToolPolicy(storedConfig.provider)
       : { enabled: false };
+    const sharedCheckoutInstructions = (await this.isInMainGitCheckout(storedConfig.cwd))
+      ? buildSharedCheckoutInstructions()
+      : null;
     const launchConfig = this.applyDaemonAppendSystemPrompt(
       withRuntimePaseoMcpServer({
         config: storedConfig,
@@ -5705,6 +5709,7 @@ export class AgentManager {
           paseoToolsEnabled && isPaseoToolPolicyEnabled(paseoToolPolicy) ? this.mcpBaseUrl : null,
         mcpAuthToken: null,
       }),
+      sharedCheckoutInstructions,
     );
     return { storedConfig, launchConfig, paseoToolPolicy };
   }
@@ -5723,8 +5728,23 @@ export class AgentManager {
     });
   }
 
-  private applyDaemonAppendSystemPrompt(config: AgentSessionConfig): AgentSessionConfig {
-    const daemonAppendSystemPrompt = this.appendSystemPrompt.trim();
+  private async isInMainGitCheckout(cwd: string): Promise<boolean> {
+    try {
+      return await isMainGitCheckout(cwd);
+    } catch (error) {
+      // The rule is advisory; a git failure must not block the agent from starting.
+      this.logger.warn({ err: error, cwd }, "Could not determine whether cwd is a main checkout");
+      return false;
+    }
+  }
+
+  private applyDaemonAppendSystemPrompt(
+    config: AgentSessionConfig,
+    workspaceInstructions: string | null,
+  ): AgentSessionConfig {
+    const daemonAppendSystemPrompt = [this.appendSystemPrompt.trim(), workspaceInstructions]
+      .filter((part): part is string => Boolean(part))
+      .join("\n\n");
     const next = { ...config };
     delete next.daemonAppendSystemPrompt;
 
