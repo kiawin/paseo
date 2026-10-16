@@ -81,6 +81,7 @@ import type { ToggleSidebarWorkspacePin } from "@/hooks/use-sidebar-workspace-pi
 import { DraggableList, type DraggableRenderItemInfo } from "@/components/draggable-list";
 import type { DraggableListDragHandleProps } from "@/components/draggable-list.types";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
+import { WINDOW_CONTENT_DATASET } from "@/components/desktop/titlebar-drag-region";
 
 // Themed icon wrappers
 const mutedGroupIconProps = densityIconProps("sm", (theme) => ({
@@ -255,7 +256,7 @@ export function SidebarStatusWorkspaceList({
   );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} dataSet={WINDOW_CONTENT_DATASET}>
       {platformIsNative ? (
         <NestableScrollContainer
           style={styles.list}
