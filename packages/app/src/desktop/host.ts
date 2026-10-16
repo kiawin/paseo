@@ -88,6 +88,13 @@ export interface DesktopWebUtilsBridge {
   getPathForFile?: (file: File) => string;
 }
 
+export interface DesktopFileDragBridge {
+  /** Start an OS-level drag of a local file, as if it was dragged from the file manager. */
+  start?: (filePath: string) => Promise<void>;
+  /** Write bytes to a local temp file that can be dragged; resolves to its path. */
+  stage?: (input: { fileName: string; bytes: Uint8Array }) => Promise<string>;
+}
+
 export interface DesktopMenuBridge {
   showContextMenu?: (input?: { kind?: "terminal"; hasSelection?: boolean }) => Promise<void>;
   setCapturingShortcut?: (capturing: boolean) => Promise<void>;
@@ -185,6 +192,7 @@ export interface DesktopHostBridge {
   opener?: DesktopOpenerBridge;
   editor?: DesktopEditorBridge;
   webUtils?: DesktopWebUtilsBridge;
+  fileDrag?: DesktopFileDragBridge;
   menu?: DesktopMenuBridge;
   browser?: DesktopBrowserBridge;
 }
