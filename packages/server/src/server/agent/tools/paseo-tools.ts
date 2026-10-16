@@ -30,6 +30,14 @@ import {
   toAgentPayload,
 } from "../agent-projections.js";
 import { summarizeAgentActivity } from "../activity-curator.js";
+import { buildAgentForkContextAttachment } from "../activity-curator.js";
+import {
+  applyCapturedChanges,
+  buildMoveToWorktreePrompt,
+  captureUncommittedChanges,
+  hasCapturedChanges,
+  resolveCurrentBranch,
+} from "../move-to-worktree.js";
 import type { AgentStorage, StoredAgentRecord } from "../agent-storage.js";
 import { AgentNotFoundError, ensureAgentLoaded } from "../agent-loading.js";
 import type { ArtifactStore } from "../../artifact-store.js";
@@ -55,6 +63,8 @@ import {
   ScheduleStateConflictError,
   type ScheduleService,
 } from "../../schedule/service.js";
+import { localBranchExists } from "../../../utils/checkout-git.js";
+import { SCHEDULE_ID_LABEL } from "../../schedule/service.js";
 import {
   ScheduleRunSchema,
   ScheduleSummarySchema,
@@ -264,6 +274,30 @@ async function isExistingDirectory(path: string): Promise<boolean> {
 function isMissingPathError(error: unknown): boolean {
   if (typeof error !== "object" || error === null || !("code" in error)) return false;
   return error.code === "ENOENT" || error.code === "ENOTDIR";
+}
+
+/**
+ * Refuses callers whose session or run is tied to this agent. A voice session's
+ * speak bridge and locked cwd belong to it, a Hub execution tracks only the agents
+ * it owns, and a scheduled run archives the workspace once this agent stops.
+ */
+function assertCallerCanMoveToWorktree(
+  callerAgent: ManagedAgent,
+  callerContext: VoiceCallerContext | null,
+): void {
+  if (callerContext) {
+    throw new Error("move_to_worktree is unavailable in voice sessions. Ask the user instead.");
+  }
+  if (callerAgent.owner) {
+    throw new Error(
+      "move_to_worktree is unavailable to agents run by a Hub execution. Ask the user instead.",
+    );
+  }
+  if (callerAgent.labels[SCHEDULE_ID_LABEL]) {
+    throw new Error(
+      "move_to_worktree is unavailable to agents started by a schedule. Ask the user instead.",
+    );
+  }
 }
 
 function resolveWorkspaceWorktreeTarget(input: WorkspaceWorktreeOptions): WorkspaceWorktreeTarget {
@@ -1715,6 +1749,150 @@ function createToolCatalog(
       return {
         content: [],
         structuredContent: ensureValidJson(toWorkspaceAutomationSummary(workspace)),
+      };
+    },
+  );
+
+  registerTool(
+    "move_to_worktree",
+    {
+      title: "Move to worktree",
+      description:
+        "Continue your task on a new branch in a new Paseo worktree, leaving your current checkout untouched. Paseo branches off your checkout's current branch, optionally copies your uncommitted changes, and starts a new agent in the worktree with your conversation and the task you describe. After this returns, stop working in your current checkout.",
+      inputSchema: {
+        branchName: z.string().trim().min(1).describe("Name of the new branch."),
+        task: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("What the new agent should do next, including anything not yet done."),
+        carryChanges: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            "Copy uncommitted tracked and untracked changes into the worktree. The shared checkout keeps its copy; other agents' changes there are copied too.",
+          ),
+        title: z.string().trim().min(1).optional().describe("Workspace title."),
+      },
+      outputSchema: {
+        workspaceId: z.string(),
+        cwd: z.string(),
+        branchName: z.string(),
+        baseBranch: z.string(),
+        agentId: z.string(),
+        carriedChanges: z.boolean(),
+        guidance: z.string(),
+      },
+    },
+    async ({ branchName, task, carryChanges, title }) => {
+      if (!callerAgentId) {
+        throw new Error("move_to_worktree requires an agent-scoped session");
+      }
+      const callerAgent = resolveCallerAgent();
+      if (!callerAgent) {
+        throw new Error(`Caller agent ${callerAgentId} not found`);
+      }
+      assertCallerCanMoveToWorktree(callerAgent, callerContext);
+      const baseBranch = await resolveCurrentBranch(callerAgent.cwd);
+      // Branch-off reuses an existing branch as its base, which would start the
+      // worktree from that branch's commits instead of the caller's checkout.
+      if (await localBranchExists(callerAgent.cwd, branchName)) {
+        throw new Error(`Branch ${branchName} already exists. Pick another branch name.`);
+      }
+      const capturedChanges = carryChanges
+        ? await captureUncommittedChanges(callerAgent.cwd)
+        : null;
+
+      if (!options.createPaseoWorktree) {
+        throw new Error("Paseo worktree service is not configured");
+      }
+      const agentCommandDependencies = {
+        agentManager,
+        agentStorage,
+        logger: childLogger,
+        paseoHome: options.paseoHome,
+        worktreesRoot: options.worktreesRoot,
+        terminalManager,
+        providerSnapshotManager,
+        createPaseoWorktree: options.createPaseoWorktree,
+      };
+      const createdWorktree = await options.createPaseoWorktree({
+        cwd: callerAgent.cwd,
+        action: "branch-off",
+        branchName,
+        refName: baseBranch,
+        ...(title ? { title } : {}),
+        callerWorkspaceId: callerAgent.workspaceId,
+        runSetup: false,
+        paseoHome: options.paseoHome,
+        worktreesRoot: options.worktreesRoot,
+        ...(capturedChanges
+          ? {
+              prepareWorktree: (worktreeRoot: string) =>
+                applyCapturedChanges(capturedChanges, worktreeRoot),
+            }
+          : {}),
+      });
+      const workspace = createdWorktree.workspace;
+      const createdBranch = createdWorktree.worktree.branchName || branchName;
+      const failAfterWorktree = (step: string, error: unknown): never => {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Created worktree workspace ${workspace.workspaceId} at ${workspace.cwd}, but ${step} failed: ${reason}`,
+        );
+      };
+
+      const forkContext = buildAgentForkContextAttachment({
+        rows: agentManager.fetchTimeline(callerAgent.id, { direction: "tail", limit: 0 }).rows,
+        agentTitle: callerAgent.config.title ?? null,
+        cwd: callerAgent.cwd,
+      });
+      const initialPrompt = buildMoveToWorktreePrompt({
+        history: forkContext.attachment.text,
+        task,
+        sourceCwd: callerAgent.cwd,
+        worktreeCwd: workspace.cwd,
+        branchName: createdBranch,
+        baseBranch,
+        carriedChanges: capturedChanges,
+      });
+      const callerConfig = callerAgent.config;
+      const { snapshot } = await createAgentCommand(agentCommandDependencies, {
+        kind: "mcp",
+        provider: callerConfig.model
+          ? `${callerAgent.provider}/${callerConfig.model}`
+          : callerAgent.provider,
+        title: title ?? callerConfig.title ?? createdBranch,
+        initialPrompt,
+        config: {
+          ...(callerConfig.providerOptions
+            ? { providerOptions: callerConfig.providerOptions }
+            : {}),
+          ...(callerConfig.systemPrompt ? { systemPrompt: callerConfig.systemPrompt } : {}),
+          ...(callerConfig.mcpServers ? { mcpServers: callerConfig.mcpServers } : {}),
+        },
+        cwd: workspace.cwd,
+        workspaceId: workspace.workspaceId,
+        thinking: callerConfig.thinkingOptionId,
+        features: callerConfig.featureValues,
+        mode: callerAgent.currentModeId ?? undefined,
+        promptFailure: "throw",
+        notifyOnFinish: false,
+        callerAgentId,
+      }).catch((error: unknown) => failAfterWorktree("starting the new agent", error));
+
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          workspaceId: workspace.workspaceId,
+          cwd: workspace.cwd,
+          branchName: createdBranch,
+          baseBranch,
+          agentId: snapshot.id,
+          carriedChanges: capturedChanges ? hasCapturedChanges(capturedChanges) : false,
+          guidance: `Agent ${snapshot.id} now continues the task in workspace ${workspace.workspaceId} on branch ${createdBranch}. Stop here: do not edit files or run git commands in your current checkout. Tell the user where the work moved.`,
+        }),
       };
     },
   );
