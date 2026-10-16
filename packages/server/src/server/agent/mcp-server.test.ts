@@ -7864,6 +7864,8 @@ describe("move_to_worktree MCP tool", () => {
         ["user.email", "test@example.com"],
         ["user.name", "Test"],
         ["commit.gpgsign", "false"],
+        // Windows runners set core.autocrlf, which would check files out with CRLF.
+        ["core.autocrlf", "false"],
       ]) {
         execFileSync("git", ["config", key, value], { cwd: repoDir, stdio: "pipe" });
       }
@@ -7985,6 +7987,8 @@ describe("move_to_worktree MCP tool", () => {
         ["user.email", "test@example.com"],
         ["user.name", "Test"],
         ["commit.gpgsign", "false"],
+        // Windows runners set core.autocrlf, which would check files out with CRLF.
+        ["core.autocrlf", "false"],
       ]) {
         execFileSync("git", ["config", key, value], { cwd: repoDir, stdio: "pipe" });
       }
@@ -8129,6 +8133,8 @@ describe("move_to_worktree MCP tool", () => {
         ["user.email", "test@example.com"],
         ["user.name", "Test"],
         ["commit.gpgsign", "false"],
+        // Windows runners set core.autocrlf, which would check files out with CRLF.
+        ["core.autocrlf", "false"],
       ]) {
         execFileSync("git", ["config", key, value], { cwd: repoDir, stdio: "pipe" });
       }
