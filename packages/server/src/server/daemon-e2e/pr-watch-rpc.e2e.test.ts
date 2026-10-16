@@ -48,6 +48,13 @@ test("answers project PR automation and review request RPCs", async () => {
   await expect(
     client.setProjectPrAutomation("missing-project", { ...settings, reviewProvider: "codex" }),
   ).rejects.toThrow("Project not found");
+  await expect(
+    client.setProjectPrAutomation("missing-project", {
+      ...settings,
+      reviewProvider: "codex",
+      reReviewOn: "always",
+    }),
+  ).rejects.toThrow("Unknown re-review option");
   expect(await client.listReviewRequests()).toEqual({ reviewRequests: [], errors: [] });
   await expect(client.startPrReview({ projectId: "missing-project", prNumber: 1 })).rejects.toThrow(
     "Project not found",

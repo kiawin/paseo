@@ -56,7 +56,11 @@ export function createProjectCommand(): Command {
       .argument("<state>", "on or off")
       .option("--provider <provider>", "Reviewer agent provider, as provider or provider/model")
       .option("--post-reviews", "Let reviewers post a comment-only review on the PR")
-      .option("--no-post-reviews", "Keep review findings in Paseo"),
+      .option("--no-post-reviews", "Keep review findings in Paseo")
+      .option(
+        "--rereview <when>",
+        "Review again when your review is re-requested (request) or on every new commit (push)",
+      ),
   ).action(withOutput(runAutoReviewCommand));
 
   addJsonAndDaemonHostOptions(

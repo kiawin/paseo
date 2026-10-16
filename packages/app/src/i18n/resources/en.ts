@@ -3167,6 +3167,10 @@ export const en = {
         postReviews: "Post reviews to GitHub",
         postReviewsHint:
           "Reviewers post a comment-only review; they never approve or request changes. Off keeps findings in Paseo.",
+        reReview: "Review again",
+        reReviewHint: "When a reviewer looks again at a PR it already reviewed",
+        reReviewOnRequest: "When my review is requested again",
+        reReviewOnPush: "On every new commit",
         saveFailed: "Could not save pull request automation",
       },
       worktree: {

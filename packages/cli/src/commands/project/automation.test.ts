@@ -28,6 +28,13 @@ describe("project automation", () => {
       ),
     ).toEqual({ ...OFF, autoReview: false, reviewProvider: "claude", postReviews: true });
   });
+
+  it("sets when reviewers look again, and rejects anything but request or push", () => {
+    expect(applyAutoReviewChange(OFF, { enabled: true, reReviewOn: "push" }).reReviewOn).toBe(
+      "push",
+    );
+    expect(() => applyAutoReviewChange(OFF, { enabled: true, reReviewOn: "always" })).toThrow();
+  });
 });
 
 describe("project review", () => {

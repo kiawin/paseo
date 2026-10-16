@@ -3097,6 +3097,10 @@ export const fr: TranslationResources = {
         postReviews: "Publier les relectures sur GitHub",
         postReviewsHint:
           "Les relecteurs publient une relecture en commentaire uniquement ; ils n'approuvent jamais et ne demandent jamais de modifications. Désactivé, les constats restent dans Paseo.",
+        reReview: "Relire à nouveau",
+        reReviewHint: "Quand un relecteur revient sur une PR qu'il a déjà relue",
+        reReviewOnRequest: "Quand ma relecture est de nouveau demandée",
+        reReviewOnPush: "À chaque nouveau commit",
         saveFailed: "Impossible d'enregistrer l'automatisation des pull requests",
       },
       worktree: {

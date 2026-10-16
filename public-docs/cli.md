@@ -138,12 +138,12 @@ The remote daemon interprets that path on its own machine. See [Workspaces](/doc
 
 ```bash
 paseo agent autofix <agent-id> [on|off|status]
-paseo project autoreview <project-id> <on|off> [--provider <provider>] [--post-reviews | --no-post-reviews]
+paseo project autoreview <project-id> <on|off> [--provider <provider>] [--post-reviews | --no-post-reviews] [--rereview <request|push>]
 paseo project autofix <project-id> <on|off>
 paseo project review <project-id> <pr-number> [--provider <provider>]
 ```
 
-`agent autofix` watches the PR on the agent's branch and prompts the agent when CI fails, a reviewer comments, or the PR conflicts. `project autoreview` starts a reviewer agent when someone requests your review directly; `--provider` takes `provider` or `provider/model`. `project autofix` turns auto-fix on for every PR an agent opens from the project's worktrees. `project review` starts a reviewer agent on one GitHub PR, like the Review button. See [Pull requests](/docs/pull-requests).
+`agent autofix` watches the PR on the agent's branch and prompts the agent when CI fails, a reviewer comments, or the PR conflicts. `project autoreview` starts a reviewer agent when someone requests your review directly; `--provider` takes `provider` or `provider/model`; `--rereview push` has reviewers look at every new commit instead of waiting for a re-request. `project autofix` turns auto-fix on for every PR an agent opens from the project's worktrees. `project review` starts a reviewer agent on one GitHub PR, like the Review button. See [Pull requests](/docs/pull-requests).
 
 ## Workspaces
 

@@ -18,6 +18,16 @@ const DIRECT_REVIEW_REQUESTS_QUERY = "is:open user-review-requested:@me";
 export const PR_REVIEW_POLL_INTERVAL_MS = 3 * 60_000;
 const REVIEW_REQUESTS_LIMIT = 50;
 
+/** What started a review: a request (or a click), or a new commit in push mode. */
+type ReviewTrigger = "request" | "push";
+
+interface ReviewParams {
+  project: PersistedProjectRecord;
+  pullRequest: PullRequestSummary;
+  provider: string | null;
+  trigger?: ReviewTrigger;
+}
+
 export interface ReviewRequest {
   projectId: string;
   pullRequest: PullRequestSummary;
@@ -257,11 +267,16 @@ export class PrReviewService {
     }
   }
 
-  /** Clears requests that left the queue, and archives reviews whose PR merged or closed. */
+  /**
+   * Clears requests that left the queue, archives reviews whose PR merged or
+   * closed, and, for projects that re-review on push, prompts the reviewer when
+   * the PR's head moved past the commit it reviewed.
+   */
   private async settleReviews(stillRequested: Set<string>): Promise<void> {
     for (const record of await this.options.store.list()) {
-      if (record.state !== "active" || stillRequested.has(record.id)) continue;
-      if (record.requestActive) {
+      if (record.state !== "active") continue;
+      const requested = stillRequested.has(record.id);
+      if (!requested && record.requestActive) {
         await this.options.store.update(record.id, (current) => ({
           ...current,
           requestActive: false,
@@ -269,42 +284,74 @@ export class PrReviewService {
         }));
       }
       if (this.options.agentManager.hasInFlightRun(record.agentId)) continue;
-      await this.archiveIfEnded(record);
+      const project = await this.options.projectRegistry.get(record.projectId);
+      const reReviewOnPush = project?.prAutomation?.reReviewOn === "push";
+      // A PR still in your review queue is open; only push mode needs its head.
+      if (requested && !reReviewOnPush) continue;
+      await this.followUp(record, project, reReviewOnPush);
     }
   }
 
-  private async archiveIfEnded(record: PrReviewRecord): Promise<void> {
+  private async followUp(
+    record: PrReviewRecord,
+    project: PersistedProjectRecord | null,
+    reReviewOnPush: boolean,
+  ): Promise<void> {
     try {
-      const project = await this.options.projectRegistry.get(record.projectId);
-      const forge = project ? await this.githubForge(project) : null;
+      const forge = project && !project.archivedAt ? await this.githubForge(project) : null;
       if (!project || !forge) return;
       const pullRequest = await forge.getPullRequest({
         cwd: project.rootPath,
         number: record.prNumber,
         force: true,
-        reason: "pr-review-archive",
+        reason: "pr-review-follow-up",
       });
-      if (pullRequest.state.toLowerCase() === "open") return;
-      if (record.ownsWorktree && record.workspaceId) {
-        await this.options.archiveWorkspace(record.workspaceId);
+      if (pullRequest.state.toLowerCase() !== "open") {
+        await this.archive(record);
+      } else if (reReviewOnPush) {
+        await this.reReviewNewHead(record, project, pullRequest);
       }
-      await this.options.store.update(record.id, (current) => ({
-        ...current,
-        state: "archived",
-        requestActive: false,
-        updatedAt: this.timestamp(),
-      }));
     } catch (error) {
-      this.logger.warn({ err: error, reviewId: record.id }, "pr-review.archive.failed");
+      this.logger.warn({ err: error, reviewId: record.id }, "pr-review.follow-up.failed");
+    }
+  }
+
+  private async archive(record: PrReviewRecord): Promise<void> {
+    if (record.ownsWorktree && record.workspaceId) {
+      await this.options.archiveWorkspace(record.workspaceId);
+    }
+    await this.options.store.update(record.id, (current) => ({
+      ...current,
+      state: "archived",
+      requestActive: false,
+      updatedAt: this.timestamp(),
+    }));
+  }
+
+  private async reReviewNewHead(
+    record: PrReviewRecord,
+    project: PersistedProjectRecord,
+    pullRequest: PullRequestSummary,
+  ): Promise<void> {
+    const headSha = pullRequest.headSha ?? null;
+    // No review went out yet, or nothing new: the request path handles the first.
+    if (!headSha || !record.reviewedHeadSha || headSha === record.reviewedHeadSha) return;
+    // A reviewer you archived stays archived; a push doesn't bring it back.
+    const reviewer = await this.options.agentStorage.get(record.agentId);
+    if (!reviewer || reviewer.archivedAt) return;
+    const slot = `pr-review:${record.id}`;
+    if (!this.options.turnBudget.tryAcquire(slot)) return;
+    try {
+      const updated = await this.review({ project, pullRequest, provider: null, trigger: "push" });
+      this.holdSlotUntilIdle(slot, updated.agentId);
+    } catch (error) {
+      this.options.turnBudget.release(slot);
+      this.logger.warn({ err: error, reviewId: record.id }, "pr-review.re-review.failed");
     }
   }
 
   /** One review at a time per PR, so a poll and a click can't both create a reviewer. */
-  private review(params: {
-    project: PersistedProjectRecord;
-    pullRequest: PullRequestSummary;
-    provider: string | null;
-  }): Promise<PrReviewRecord> {
+  private review(params: ReviewParams): Promise<PrReviewRecord> {
     const id = prReviewId(params.project.projectId, params.pullRequest.number);
     const previous = this.locks.get(id) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(() => this.reviewLocked(params));
@@ -318,11 +365,7 @@ export class PrReviewService {
     return next;
   }
 
-  private async reviewLocked(params: {
-    project: PersistedProjectRecord;
-    pullRequest: PullRequestSummary;
-    provider: string | null;
-  }): Promise<PrReviewRecord> {
+  private async reviewLocked(params: ReviewParams): Promise<PrReviewRecord> {
     const { project, pullRequest } = params;
     const id = prReviewId(project.projectId, pullRequest.number);
     const promptInput = toReviewPromptInput(project, pullRequest);
@@ -330,7 +373,7 @@ export class PrReviewService {
     const existing = await this.options.store.get(id);
     const reviewer = existing ? await this.options.agentStorage.get(existing.agentId) : null;
     if (existing && existing.state === "active" && reviewer && !reviewer.archivedAt) {
-      return this.promptReviewer(existing, promptInput);
+      return this.promptReviewer(existing, promptInput, params.trigger ?? "request");
     }
 
     if (!params.provider) {
@@ -373,6 +416,7 @@ export class PrReviewService {
   private async promptReviewer(
     existing: PrReviewRecord,
     promptInput: ReviewPromptInput,
+    trigger: ReviewTrigger,
   ): Promise<PrReviewRecord> {
     // Already reviewing this request at this head: nothing new to ask.
     if (existing.requestActive && existing.reviewedHeadSha === promptInput.headSha) {
@@ -392,7 +436,8 @@ export class PrReviewService {
     const updated = await this.options.store.update(existing.id, (current) => ({
       ...current,
       reviewedHeadSha: promptInput.headSha,
-      requestActive: true,
+      // A push doesn't put the PR back in your review queue.
+      requestActive: trigger === "request" ? true : current.requestActive,
       updatedAt: this.timestamp(),
     }));
     return updated ?? existing;

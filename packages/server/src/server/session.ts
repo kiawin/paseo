@@ -3875,6 +3875,11 @@ export class Session {
         respond("Choose a reviewer provider to review automatically");
         return;
       }
+      const { reReviewOn } = request.settings;
+      if (reReviewOn !== undefined && reReviewOn !== "request" && reReviewOn !== "push") {
+        respond(`Unknown re-review option: ${reReviewOn}`);
+        return;
+      }
       const settings = { ...request.settings, reviewProvider };
       const updated = await this.projectRegistry.update(request.projectId, (existing) => ({
         ...existing,

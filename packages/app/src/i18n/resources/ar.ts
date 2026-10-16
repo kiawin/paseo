@@ -3030,6 +3030,10 @@ export const ar: TranslationResources = {
         postReviews: "نشر المراجعات على GitHub",
         postReviewsHint:
           "ينشر المراجعون مراجعة بتعليقات فقط؛ ولا يوافقون أبدًا ولا يطلبون تغييرات. عند الإيقاف تبقى الملاحظات في Paseo.",
+        reReview: "المراجعة مرة أخرى",
+        reReviewHint: "متى يعيد المراجِع النظر في طلب سحب راجعه من قبل",
+        reReviewOnRequest: "عند طلب مراجعتي مرة أخرى",
+        reReviewOnPush: "عند كل التزام جديد",
         saveFailed: "تعذر حفظ أتمتة طلبات الدمج",
       },
       worktree: {

@@ -3199,6 +3199,11 @@ export const ProjectPrAutomationSchema = z.object({
   postReviews: z.boolean(),
   /** Watch PRs that agents open from this project's worktrees for auto-fix. */
   autoFixAgentPullRequests: z.boolean(),
+  /**
+   * When a reviewer looks at a PR again: "request" when your review is
+   * requested again, "push" on every new commit. Open string; absent means "request".
+   */
+  reReviewOn: z.string().optional(),
 });
 
 // Gate on server_info.features.prAutoFix before sending.

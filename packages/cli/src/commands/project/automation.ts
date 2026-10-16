@@ -7,6 +7,7 @@ interface ProjectAutomationResult {
   projectId: string;
   autoReview: string;
   reviewer: string;
+  reReview: string;
   postReviews: string;
   autoFixAgentPrs: string;
 }
@@ -17,6 +18,7 @@ const projectAutomationSchema = {
     { header: "PROJECT ID", field: "projectId" as const, width: 20 },
     { header: "AUTO-REVIEW", field: "autoReview" as const, width: 12 },
     { header: "REVIEWER", field: "reviewer" as const, width: 20 },
+    { header: "RE-REVIEW", field: "reReview" as const, width: 10 },
     { header: "POST REVIEWS", field: "postReviews" as const, width: 13 },
     { header: "AUTO-FIX AGENT PRS", field: "autoFixAgentPrs" as const, width: 18 },
   ],
@@ -39,15 +41,24 @@ export function parseOnOff(value: string, usage: string): boolean {
   } satisfies CommandError;
 }
 
+export function parseReReview(value: string): "request" | "push" {
+  if (value === "request" || value === "push") return value;
+  throw {
+    code: "INVALID_OPTIONS",
+    message: `--rereview takes request or push, got: ${value}`,
+  } satisfies CommandError;
+}
+
 export function applyAutoReviewChange(
   current: ProjectPrAutomation,
-  change: { enabled: boolean; provider?: string; postReviews?: boolean },
+  change: { enabled: boolean; provider?: string; postReviews?: boolean; reReviewOn?: string },
 ): ProjectPrAutomation {
   return {
     ...current,
     autoReview: change.enabled,
     reviewProvider: change.provider?.trim() || current.reviewProvider,
     postReviews: change.postReviews ?? current.postReviews,
+    ...(change.reReviewOn !== undefined ? { reReviewOn: parseReReview(change.reReviewOn) } : {}),
   };
 }
 
@@ -57,6 +68,7 @@ function toResult(projectId: string, settings: ProjectPrAutomation): ProjectAuto
     projectId,
     autoReview: onOff(settings.autoReview),
     reviewer: settings.reviewProvider ?? "-",
+    reReview: settings.reReviewOn ?? "request",
     postReviews: onOff(settings.postReviews),
     autoFixAgentPrs: onOff(settings.autoFixAgentPullRequests),
   };
@@ -104,7 +116,7 @@ async function updateProjectAutomation(
 export function runAutoReviewCommand(
   projectId: string,
   stateArg: string,
-  options: CommandOptions & { provider?: string; postReviews?: boolean },
+  options: CommandOptions & { provider?: string; postReviews?: boolean; rereview?: string },
   _command: Command,
 ): Promise<SingleResult<ProjectAutomationResult>> {
   const enabled = parseOnOff(
@@ -116,6 +128,7 @@ export function runAutoReviewCommand(
       enabled,
       ...(options.provider !== undefined ? { provider: options.provider } : {}),
       ...(options.postReviews !== undefined ? { postReviews: options.postReviews } : {}),
+      ...(options.rereview !== undefined ? { reReviewOn: options.rereview } : {}),
     }),
   );
 }

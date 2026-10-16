@@ -3061,6 +3061,10 @@ export const ja: TranslationResources = {
         postReviews: "レビューを GitHub に投稿",
         postReviewsHint:
           "レビュアーはコメントのみのレビューを投稿し、承認や変更依頼は行いません。オフの場合、指摘は Paseo 内に残ります。",
+        reReview: "再レビュー",
+        reReviewHint: "レビュー済みの PR をレビュアーが見直すタイミング",
+        reReviewOnRequest: "レビューが再依頼されたとき",
+        reReviewOnPush: "新しいコミットごと",
         saveFailed: "プルリクエストの自動化を保存できませんでした",
       },
       worktree: {

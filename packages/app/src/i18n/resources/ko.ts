@@ -3046,6 +3046,10 @@ export const ko: TranslationResources = {
         postReviews: "GitHub에 리뷰 게시",
         postReviewsHint:
           "리뷰어는 댓글만 있는 리뷰를 게시하며 승인하거나 변경을 요청하지 않습니다. 끄면 결과는 Paseo에만 남습니다.",
+        reReview: "다시 리뷰",
+        reReviewHint: "이미 리뷰한 PR을 리뷰어가 다시 보는 시점",
+        reReviewOnRequest: "리뷰가 다시 요청될 때",
+        reReviewOnPush: "새 커밋마다",
         saveFailed: "풀 리퀘스트 자동화를 저장하지 못했습니다",
       },
       worktree: {

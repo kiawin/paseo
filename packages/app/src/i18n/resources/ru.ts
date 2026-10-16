@@ -3082,6 +3082,10 @@ export const ru: TranslationResources = {
         postReviews: "Публиковать ревью в GitHub",
         postReviewsHint:
           "Рецензенты публикуют ревью только с комментариями и никогда не одобряют и не запрашивают изменения. Если выключено, замечания остаются в Paseo.",
+        reReview: "Повторная проверка",
+        reReviewHint: "Когда ревьюер снова смотрит PR, который уже проверял",
+        reReviewOnRequest: "Когда мой ревью запрашивают снова",
+        reReviewOnPush: "При каждом новом коммите",
         saveFailed: "Не удалось сохранить автоматизацию pull request",
       },
       worktree: {

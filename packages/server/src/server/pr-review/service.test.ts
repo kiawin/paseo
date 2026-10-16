@@ -327,6 +327,60 @@ describe("PrReviewService", () => {
     expect(harness.budget.tryAcquire("d")).toBe(true);
   });
 
+  test("re-reviews a new commit when the project re-reviews on push", async () => {
+    harness.settings = { ...harness.settings, reReviewOn: "push" };
+    harness.requestDirectly(pr(7));
+    await harness.service.poll();
+    harness.finishTurn("reviewer-1");
+
+    // You submitted your review, so the request left the queue; then the author pushed.
+    harness.requestDirectly();
+    harness.queues.set("is:open review-requested:@me", [pr(7, { headSha: "head-7b" })]);
+    await harness.service.poll();
+
+    expect(harness.prompts).toEqual([
+      expect.objectContaining({
+        agentId: "reviewer-1",
+        prompt: expect.stringContaining("since head-7"),
+      }),
+    ]);
+    expect(await harness.store.get("project-1:7")).toMatchObject({
+      reviewedHeadSha: "head-7b",
+      requestActive: false,
+    });
+
+    await harness.service.poll();
+    expect(harness.prompts).toHaveLength(1);
+  });
+
+  test("waits for a re-request by default, even when the PR gets new commits", async () => {
+    harness.requestDirectly(pr(7));
+    await harness.service.poll();
+    harness.finishTurn("reviewer-1");
+
+    harness.requestDirectly();
+    harness.queues.set("is:open review-requested:@me", [pr(7, { headSha: "head-7b" })]);
+    await harness.service.poll();
+
+    expect(harness.prompts).toEqual([]);
+  });
+
+  test("doesn't re-review on push for a busy or archived reviewer", async () => {
+    harness.settings = { ...harness.settings, reReviewOn: "push" };
+    harness.requestDirectly(pr(7));
+    await harness.service.poll();
+    harness.queues.set("is:open review-requested:@me", [pr(7, { headSha: "head-7b" })]);
+    harness.queues.set("is:open user-review-requested:@me", []);
+
+    await harness.service.poll();
+    expect(harness.prompts).toEqual([]);
+
+    harness.finishTurn("reviewer-1");
+    harness.archivedAgents.add("reviewer-1");
+    await harness.service.poll();
+    expect(harness.prompts).toEqual([]);
+  });
+
   test("archives the review's worktree once the PR merges", async () => {
     harness.requestDirectly(pr(7));
     await harness.service.poll();

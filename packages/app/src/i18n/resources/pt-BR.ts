@@ -3073,6 +3073,10 @@ export const ptBR: TranslationResources = {
         postReviews: "Publicar revisões no GitHub",
         postReviewsHint:
           "Os revisores publicam uma revisão só com comentários; nunca aprovam nem pedem alterações. Desligado, as descobertas ficam no Paseo.",
+        reReview: "Revisar novamente",
+        reReviewHint: "Quando um revisor olha de novo um PR que já revisou",
+        reReviewOnRequest: "Quando minha revisão for solicitada novamente",
+        reReviewOnPush: "A cada novo commit",
         saveFailed: "Não foi possível salvar a automação de pull requests",
       },
       worktree: {

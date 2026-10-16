@@ -21,7 +21,10 @@ workspace.
 
 `PrReviewService` doesn't use workspace polling: review requests aren't tied to a workspace. It
 polls `gh pr list --search` per project every 3 minutes, and only for projects with auto-review on.
-The app's list request fetches on demand.
+The app's list request fetches on demand. The same poll follows up on every active review: it
+archives reviews whose PR ended and, for projects with `reReviewOn: "push"`, prompts the reviewer
+when the head moved past `reviewedHeadSha`. A push re-review leaves `requestActive` alone: the PR
+isn't back in your queue, and marking it would make a later real re-request look already handled.
 
 ## Failure identity
 

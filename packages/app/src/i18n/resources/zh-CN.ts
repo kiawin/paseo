@@ -2993,6 +2993,10 @@ export const zhCN: TranslationResources = {
         postReviews: "将审阅发布到 GitHub",
         postReviewsHint:
           "审阅者只发布评论式审阅，从不批准或要求更改。关闭时，审阅结果只保留在 Paseo 中。",
+        reReview: "再次审查",
+        reReviewHint: "审查者何时重新查看已审查过的 PR",
+        reReviewOnRequest: "再次请求我的审查时",
+        reReviewOnPush: "每次有新提交时",
         saveFailed: "无法保存拉取请求自动化设置",
       },
       worktree: {
