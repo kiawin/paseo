@@ -1,7 +1,7 @@
 import { memo, type ReactElement, useCallback, useMemo, useState } from "react";
 import { Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-drag-source";
+import { useWorkspaceFileDragSource } from "@/desktop/attachments/use-workspace-file-drag-source";
 import { DiffStat } from "@/components/diff-stat";
 import { FileActionsContextMenuContent } from "@/components/file-actions-menu";
 import { FileChangeIcon } from "@/components/file-change-icon";
