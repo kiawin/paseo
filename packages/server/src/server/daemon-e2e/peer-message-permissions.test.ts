@@ -21,6 +21,9 @@ async function createQuestionHarness() {
     location: runtime.info.location,
     data: [{ id: "test", name: "Test", activation: "enabled", package: "test" }],
   });
+  runtime.api.command.list = async () => ({ location: runtime.info.location, data: [] });
+  runtime.api.skill.list = async () => ({ location: runtime.info.location, data: [] });
+  runtime.api.session.instructions.entry.put = async () => {};
   let form: FormInfo | null = null;
   const answers: Array<Record<string, unknown>> = [];
   runtime.api.session.form.list = async () => (form ? [form] : []);
