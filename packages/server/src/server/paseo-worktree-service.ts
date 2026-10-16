@@ -13,6 +13,7 @@ import {
   type CreateWorktreeCoreInput,
 } from "./worktree-core.js";
 import {
+  isManagedWorktreeLocation,
   mapWorkspaceRelativeCwdToWorktree,
   rollbackCreatedPaseoWorktree,
   seedPaseoConfigFile,
@@ -38,6 +39,14 @@ export interface CreatePaseoWorktreeInput extends CreateWorktreeCoreInput {
   metadata?: Record<string, JsonValue>;
   background?: boolean;
   callerWorkspaceId?: string;
+  /**
+   * Fills a newly created worktree before Paseo checks the workspace folder or
+   * provisions the workspace. Git has created it and seeded paseo.json from the
+   * repository root by then; the hook may overwrite seeded files. A failure rolls
+   * the worktree back, forcibly when the worktree sits outside Paseo's managed
+   * root. Not called when an existing worktree is reused.
+   */
+  prepareWorktree?: (worktreeRoot: string) => Promise<void>;
 }
 
 export interface CreatePaseoWorktreeResult {
@@ -80,6 +89,10 @@ async function createPaseoWorktreeWithPriority(
 ): Promise<CreatePaseoWorktreeResult> {
   const workspaceCwdPlan = await planWorkspaceCwdForWorktree(input.cwd, deps.workspaceGitService);
   const createdWorktree = await createWorktreeCore(input, deps);
+  // From the mode that was used, not the resulting path: a custom root can sit anywhere,
+  // including under Paseo's own base, where path shape would read as managed and arm the
+  // forced recursive delete.
+  const managedPlacement = isManagedWorktreeLocation(createdWorktree.location);
   try {
     if (createdWorktree.created) {
       await deps.lifecycle?.wait("worktree.create.after", {
@@ -91,6 +104,8 @@ async function createPaseoWorktreeWithPriority(
       });
     }
     await maybeMarkFirstAgentBranchAutoNameEligible({ createdWorktree, input });
+    // Before the directory check: prepared changes can add the workspace's folder.
+    await prepareCreatedWorktree(input, createdWorktree);
     const workspaceCwd = mapWorkspaceRelativeCwdToWorktree({
       relativeWorkspaceCwd: workspaceCwdPlan.relativeWorkspaceCwd,
       targetWorktreePath: createdWorktree.worktree.worktreePath,
@@ -130,11 +145,7 @@ async function createPaseoWorktreeWithPriority(
             },
           }
         : {}),
-      // From the mode that was used, not the resulting path: a custom root can
-      // sit anywhere, including under Paseo's own base, where path shape would
-      // read as managed and arm the forced recursive delete.
-      worktreePlacement:
-        (createdWorktree.location?.mode ?? "managed") === "managed" ? "managed" : "external",
+      worktreePlacement: managedPlacement ? "managed" : "external",
     });
 
     deps.github.invalidate({ cwd: createdWorktree.worktree.worktreePath });
@@ -154,16 +165,15 @@ async function createPaseoWorktreeWithPriority(
       {
         // A worktree outside the managed root is not inside the hash-derived
         // root the default policy checks, so the managed path would refuse it
-        // and leave a git-registered stray behind. It was created seconds ago
-        // and is clean, so git removes it without complaint.
-        policy:
-          (createdWorktree.location?.mode ?? "managed") === "managed"
-            ? { kind: "managed" }
-            : { kind: "git-validated" },
-        worktreesRoot:
-          (createdWorktree.location?.mode ?? "managed") === "managed"
-            ? undefined
-            : dirname(createdWorktree.worktree.worktreePath),
+        // and leave a git-registered stray behind. It was created seconds ago,
+        // so git removes it without complaint; force covers changes this call
+        // prepared into it.
+        policy: managedPlacement
+          ? { kind: "managed" }
+          : { kind: "git-validated", force: input.prepareWorktree !== undefined },
+        worktreesRoot: managedPlacement
+          ? undefined
+          : dirname(createdWorktree.worktree.worktreePath),
         cwd: createdWorktree.repoRoot,
         worktreePath: createdWorktree.worktree.worktreePath,
         teardownCwds: [],
@@ -172,6 +182,15 @@ async function createPaseoWorktreeWithPriority(
       },
       error,
     );
+  }
+}
+
+async function prepareCreatedWorktree(
+  input: CreatePaseoWorktreeInput,
+  createdWorktree: Awaited<ReturnType<typeof createWorktreeCore>>,
+): Promise<void> {
+  if (createdWorktree.created && input.prepareWorktree) {
+    await input.prepareWorktree(createdWorktree.worktree.worktreePath);
   }
 }
 
