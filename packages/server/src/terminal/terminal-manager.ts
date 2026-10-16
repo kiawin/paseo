@@ -72,9 +72,17 @@ export interface TerminalManager {
     activityUrl?: string | null;
     baseEnv?: Record<string, string>;
     paseoCliPath?: string | null;
+    // Terminal opened for a person to type into (a sudo password prompt, an
+    // interactive login). Agents may read it and kill it but never send input.
+    humanInputOnly?: boolean;
+    // Agent that asked for this terminal, for display. Not an ownership link:
+    // agent-backed terminals (an agent process hosted in a terminal) are gone.
+    requestedByAgentId?: string;
   }): Promise<TerminalSession>;
   registerCwdEnv(options: { cwd: string; env: Record<string, string> }): void;
   validateTerminalActivityToken(terminalId: string, token: string): "valid" | "unknown" | "invalid";
+  isHumanInputOnly(id: string): boolean;
+  getRequestedByAgentId(id: string): string | undefined;
   getTerminal(id: string): TerminalSession | undefined;
   getTerminalState(
     id: string,
@@ -124,11 +132,25 @@ export function createTerminalManager(
   const terminalTitleUnsubscribeById = new Map<string, () => void>();
   const terminalActivityUnsubscribeById = new Map<string, () => void>();
   const terminalActivityTokenById = new Map<string, string>();
+  const humanInputOnlyTerminalIds = new Set<string>();
+  const requestedByAgentIdByTerminalId = new Map<string, string>();
   const terminalsChangedListeners = new Set<TerminalsChangedListener>();
   const terminalActivityListeners = new Set<TerminalActivityListener>();
   const terminalWorkspaceContributionChangedListeners =
     new Set<TerminalWorkspaceContributionChangedListener>();
   const defaultEnvByRootCwd = new Map<string, Record<string, string>>();
+
+  function recordTerminalRequest(
+    terminalId: string,
+    request: { humanInputOnly?: boolean; requestedByAgentId?: string },
+  ): void {
+    if (request.humanInputOnly) {
+      humanInputOnlyTerminalIds.add(terminalId);
+    }
+    if (request.requestedByAgentId) {
+      requestedByAgentIdByTerminalId.set(terminalId, request.requestedByAgentId);
+    }
+  }
 
   function removeSessionById(id: string, options: { kill: boolean }): void {
     const session = terminalsById.get(id);
@@ -154,6 +176,8 @@ export function createTerminalManager(
 
     terminalsById.delete(id);
     terminalActivityTokenById.delete(id);
+    humanInputOnlyTerminalIds.delete(id);
+    requestedByAgentIdByTerminalId.delete(id);
 
     const terminals = terminalsByCwd.get(session.cwd);
     if (terminals) {
@@ -337,6 +361,8 @@ export function createTerminalManager(
       activityUrl?: string | null;
       baseEnv?: Record<string, string>;
       paseoCliPath?: string | null;
+      humanInputOnly?: boolean;
+      requestedByAgentId?: string;
     }): Promise<TerminalSession> {
       assertAbsolutePath(options.cwd);
 
@@ -357,6 +383,7 @@ export function createTerminalManager(
         ...(terminalActivityUrl ? { PASEO_TERMINAL_ACTIVITY_URL: terminalActivityUrl } : {}),
       };
       terminalActivityTokenById.set(terminalId, activityToken);
+      recordTerminalRequest(terminalId, options);
       let session: TerminalSession;
       try {
         session = registerSession(
@@ -378,6 +405,8 @@ export function createTerminalManager(
         );
       } catch (error) {
         terminalActivityTokenById.delete(terminalId);
+        humanInputOnlyTerminalIds.delete(terminalId);
+        requestedByAgentIdByTerminalId.delete(terminalId);
         throw error;
       }
 
@@ -402,6 +431,14 @@ export function createTerminalManager(
         return "unknown";
       }
       return expected === token ? "valid" : "invalid";
+    },
+
+    isHumanInputOnly(id: string): boolean {
+      return humanInputOnlyTerminalIds.has(id);
+    },
+
+    getRequestedByAgentId(id: string): string | undefined {
+      return requestedByAgentIdByTerminalId.get(id);
     },
 
     getTerminal(id: string): TerminalSession | undefined {
