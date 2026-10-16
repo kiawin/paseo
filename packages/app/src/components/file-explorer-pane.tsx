@@ -305,6 +305,7 @@ function TreeRowItem({
     serverId,
     workspaceId,
     path: entry.path,
+    size: entry.size,
   });
 
   const handlePress = useCallback(() => {
