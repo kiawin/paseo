@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/floating-panel-portal";
 import { SplitContainer } from "@/components/split-container";
 import { RetainedPanel } from "@/components/retained-panel";
+import { WINDOW_CONTENT_DATASET } from "@/components/desktop/titlebar-drag-region";
 import { WorkspaceActions } from "@/git/workspace-actions";
 import { WorkspaceOpenInEditorButton } from "@/workspace/open-in-editor/button";
 import { WorkspaceScriptsButton } from "@/screens/workspace/scripts";
@@ -3547,7 +3548,9 @@ function WorkspaceScreenContent({
       >
         {(topOverlayInset) => (
           <StreamTopOverlayProvider value={topOverlayInset}>
-            <View style={styles.content}>{content}</View>
+            <View style={styles.content} dataSet={WINDOW_CONTENT_DATASET}>
+              {content}
+            </View>
           </StreamTopOverlayProvider>
         )}
       </FloatingHeaderLayout>
