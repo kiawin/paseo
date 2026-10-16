@@ -31,6 +31,6 @@ export function buildSharedCheckoutInstructions(): string {
   return [
     "Paseo: your workspace is a shared local checkout. Other Paseo workspaces and agents can use the same folder, so changing its branch changes their files too.",
     "Do not switch this checkout to another branch, do not run `git worktree add`, and do not use any built-in tool that enters a worktree.",
-    "When the task needs its own branch, call the Paseo `move_to_worktree` tool before you edit files if you have it. If you don't have it, or it refuses, stop and ask the user to start the task in a new worktree workspace.",
+    "When the task needs its own branch, call `move_to_worktree` from the `paseo` MCP server before you edit files. Search or list your tools for it first, since some clients load MCP tools on demand. Only if it is missing after that check, or it refuses, stop and ask the user to start the task in a new worktree workspace.",
   ].join(" ");
 }
