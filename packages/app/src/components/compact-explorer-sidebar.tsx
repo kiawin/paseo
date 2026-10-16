@@ -28,7 +28,10 @@ import { FileExplorerPane } from "./file-explorer-pane";
 import { useKeyboardShiftStyle } from "@/keyboard/shift";
 import { shouldUseCompactExplorerKeyboardPadding } from "@/keyboard/shift";
 import { WindowChromeSafeArea } from "@/utils/desktop-window";
-import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
+import {
+  TitlebarDragRegion,
+  WINDOW_CONTENT_DATASET,
+} from "@/components/desktop/titlebar-drag-region";
 import { RetainedPanel, RetainedPanelActivity } from "@/components/retained-panel";
 import { useMountedTabSet } from "@/screens/workspace/use-mounted-tab-set";
 import { usePullRequestPanelAvailability } from "@/panels/pull-request-availability";
@@ -468,7 +471,11 @@ function ExplorerSidebarContent({
       </WindowChromeSafeArea>
 
       {/* Content based on active tab */}
-      <View style={styles.contentArea} testID="explorer-content-area">
+      <View
+        style={styles.contentArea}
+        dataSet={WINDOW_CONTENT_DATASET}
+        testID="explorer-content-area"
+      >
         {mountedTabIds.has("changes") ? (
           <RetainedPanel active={resolvedTab === "changes"}>
             <ChangedFilesPane
