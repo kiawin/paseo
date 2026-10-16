@@ -34,7 +34,10 @@ import {
   removeWindowChromeCorner,
   type WindowChromeCorners,
 } from "@/utils/desktop-window";
-import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
+import {
+  TitlebarDragRegion,
+  WINDOW_CONTENT_DATASET,
+} from "@/components/desktop/titlebar-drag-region";
 import { type TabDropPreview } from "@/components/split-container-tab-drop-preview";
 import { SplitDropZone, type SplitDropZoneHover } from "@/components/split-drop-zone";
 import { deriveWorkspacePaneState } from "@/screens/workspace/workspace-pane-state";
@@ -746,7 +749,7 @@ const SplitPaneView = memo(function SplitPaneView({
           />
         </WindowChromeSafeArea>
 
-        <View style={styles.paneContent}>
+        <View style={styles.paneContent} dataSet={WINDOW_CONTENT_DATASET}>
           <WorkspacePanelHost
             paneId={pane.id}
             tabs={paneTabs}
