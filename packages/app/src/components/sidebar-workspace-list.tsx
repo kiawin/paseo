@@ -92,6 +92,7 @@ import { hasVisibleOrderChanged, mergeWithRemainder } from "@/utils/sidebar-reor
 import { confirmDialog } from "@/utils/confirm-dialog";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { SidebarStatusWorkspaceList } from "@/components/sidebar/sidebar-status-list";
+import { WINDOW_CONTENT_DATASET } from "@/components/desktop/titlebar-drag-region";
 import type { SidebarWorkspaceGroup } from "@/components/sidebar/sidebar-labels";
 import {
   SidebarWorkspaceContextMenu,
@@ -2515,7 +2516,7 @@ function ProjectModeList({
   );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} dataSet={WINDOW_CONTENT_DATASET}>
       {platformIsNative ? (
         <NestableScrollContainer
           {...nativeScrollGestureProps}
