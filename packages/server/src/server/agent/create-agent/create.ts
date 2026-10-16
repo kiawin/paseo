@@ -7,6 +7,7 @@ import type { CreatePaseoWorktreeInput } from "../../paseo-worktree-service.js";
 import { expandUserPath, resolvePathFromBase } from "../../path-utils.js";
 import { toWorktreeRequestError } from "../../worktree-errors.js";
 import type {
+  CreatePaseoWorktreeSetupContinuationInput,
   CreatePaseoWorktreeWorkflowFn,
   CreatePaseoWorktreeWorkflowResult,
 } from "../../worktree-session.js";
@@ -100,6 +101,12 @@ export interface CreateAgentFromMcpInput {
     action?: "branch-off" | "checkout";
     githubPrNumber?: number;
   };
+  /**
+   * Setup for a worktree the caller created with
+   * buildAgentWorktreeSetupContinuationInput. Started once the agent exists, before
+   * its first prompt, the same as a worktree this command creates.
+   */
+  worktreeSetupContinuation?: AgentWorktreeSetupContinuation;
 }
 
 export type CreateAgentCommandInput = CreateAgentFromSessionInput | CreateAgentFromMcpInput;
@@ -335,6 +342,7 @@ async function resolveMcpCreateAgent(
     source: input.callerAgentId
       ? { kind: "agent-message", agentId: input.callerAgentId }
       : undefined,
+    setupContinuation: setupContinuation ?? input.worktreeSetupContinuation,
     createdWorktree,
     promptFailure: input.promptFailure ?? "log",
   };
@@ -490,6 +498,7 @@ interface CreateMcpWorktreeOptions {
   input: CreatePaseoWorktreeInput;
   createPaseoWorktree: CreatePaseoWorktreeWorkflowFn | undefined;
   resolveDefaultBranch?: (repoRoot: string) => Promise<string>;
+  setupContinuation?: CreatePaseoWorktreeSetupContinuationInput;
 }
 
 async function createMcpWorktree(
@@ -499,10 +508,12 @@ async function createMcpWorktree(
     if (!options.createPaseoWorktree) {
       throw new Error("Paseo worktree service is not configured");
     }
-    return await options.createPaseoWorktree(
-      options.input,
-      options.resolveDefaultBranch ? { resolveDefaultBranch: options.resolveDefaultBranch } : {},
-    );
+    return await options.createPaseoWorktree(options.input, {
+      ...(options.resolveDefaultBranch
+        ? { resolveDefaultBranch: options.resolveDefaultBranch }
+        : {}),
+      ...(options.setupContinuation ? { setupContinuation: options.setupContinuation } : {}),
+    });
   } catch (error) {
     throw toWorktreeRequestError(error);
   }
@@ -555,6 +566,7 @@ async function resolveMcpCwd(params: {
     },
     createPaseoWorktree: dependencies.createPaseoWorktree,
     resolveDefaultBranch: baseBranch ? async () => baseBranch : undefined,
+    setupContinuation: buildAgentWorktreeSetupContinuationInput(dependencies),
   });
   return {
     resolvedCwd: createdWorktree.workspace.cwd,
@@ -569,3 +581,27 @@ function requireFinishSubscriptions(
   if (!dependencies.finishSubscriptions) throw new Error("Finish subscriptions are not configured");
   return dependencies.finishSubscriptions;
 }
+
+/** Worktree setup that waits for the agent, so its bootstrap and terminals attach to it. */
+export function buildAgentWorktreeSetupContinuationInput(
+  dependencies: Pick<CreateAgentCommandDependencies, "agentManager" | "terminalManager" | "logger">,
+): CreatePaseoWorktreeSetupContinuationInput {
+  return {
+    kind: "agent",
+    terminalManager: dependencies.terminalManager ?? null,
+    appendTimelineItem: ({ agentId, item }) =>
+      appendTimelineItemIfAgentKnown({
+        agentManager: dependencies.agentManager,
+        agentId,
+        item,
+      }),
+    emitLiveTimelineItem: ({ agentId, item }) =>
+      emitLiveTimelineItemIfAgentKnown({
+        agentManager: dependencies.agentManager,
+        agentId,
+        item,
+      }),
+    logger: dependencies.logger,
+  };
+}
+

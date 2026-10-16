@@ -27,6 +27,8 @@ import type {
 import type { FirstAgentContext } from "@getpaseo/protocol/messages";
 
 const SCHEDULE_TICK_INTERVAL_MS = 1000;
+/** Marks an agent a schedule created for one run; the run archives its workspace. */
+export const SCHEDULE_ID_LABEL = "paseo.schedule-id";
 
 // A run failed because its target no longer exists: the agent was deleted or
 // archived, or a new-agent cwd was removed. These are permanent, so the schedule
@@ -992,7 +994,7 @@ export class ScheduleService {
         workspaceId: workspace.workspaceId,
         title: resolveScheduleAgentTitle(config, schedule.prompt),
         labels: {
-          "paseo.schedule-id": schedule.id,
+          [SCHEDULE_ID_LABEL]: schedule.id,
           "paseo.schedule-run": runId,
         },
         mode: config.modeId,
