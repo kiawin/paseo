@@ -36,6 +36,9 @@ import type { TerminalClipboardWriter } from "../terminal/native-renderer/termin
 import type { TerminalRendererReadyChange } from "../utils/terminal-renderer-readiness";
 import { openExternalUrl } from "../utils/open-external-url";
 import { focusWithRetries } from "../utils/web-focus";
+import { extractTerminalDropPaths, isTerminalFileDrag } from "../terminal/drop/terminal-file-drop";
+import { getDesktopHost } from "@/desktop/host";
+import { takeNativeWorkspaceFileDrop } from "@/attachments/native-workspace-file-drag";
 
 export interface TerminalEmulatorHandle {
   find?: TerminalFindHandle;
@@ -577,6 +580,29 @@ export default function TerminalEmulator({
     },
     [showTerminalContextMenu],
   );
+
+  // A workspace file dragged out to the OS and dropped back here is the in-app drag, already
+  // staged: swallow it before the drop zone around the terminal uploads a copy.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) {
+      return () => {};
+    }
+
+    const handleDrop = (event: DragEvent) => {
+      if (!isTerminalFileDrag(event.dataTransfer)) return;
+      const paths = extractTerminalDropPaths(event.dataTransfer, getDesktopHost());
+      if (paths.length > 0 && takeNativeWorkspaceFileDrop(paths)?.staged) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    root.addEventListener("drop", handleDrop, { capture: true });
+    return () => {
+      root.removeEventListener("drop", handleDrop, { capture: true });
+    };
+  }, []);
 
   const rootDivStyle = useMemo<CSSProperties>(
     () => ({
