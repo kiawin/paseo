@@ -3047,6 +3047,22 @@ export const ja: TranslationResources = {
           "ワークスペースをアーカイブしてもワークツリーはディスクに残ります。git worktree remove で自分で削除してください。",
         saveFailed: "ワークツリーの場所を変更できませんでした",
       },
+      prAutomation: {
+        title: "プルリクエストの自動化",
+        info: "このホストでこのプロジェクトのプルリクエストに Paseo が行うこと",
+        autoFix: "エージェントが作成した PR を自動修正",
+        autoFixHint:
+          "このプロジェクトのワークツリーでエージェントが PR を作成すると Paseo がすぐに監視し、CI の失敗、レビュアーのコメント、コンフリクトが発生したときにエージェントに指示します。",
+        autoReview: "レビューを依頼されたら自動でレビュー",
+        autoReviewHint:
+          "GitHub のみ。同じリポジトリの PR への直接の依頼を Paseo がレビューします。フォークからの PR とドラフトは、あなたがレビューできるよう一覧に表示されます。",
+        reviewer: "レビュアー",
+        reviewerHint: "プルリクエストをレビューするプロバイダーとモデル",
+        postReviews: "レビューを GitHub に投稿",
+        postReviewsHint:
+          "レビュアーはコメントのみのレビューを投稿し、承認や変更依頼は行いません。オフの場合、指摘は Paseo 内に残ります。",
+        saveFailed: "プルリクエストの自動化を保存できませんでした",
+      },
       worktree: {
         title: "ワークツリーライフサイクルフック",
         info: "このプロジェクトのワークツリーが作成または削除されたときに実行されるコマンド",

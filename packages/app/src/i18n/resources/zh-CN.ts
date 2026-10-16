@@ -2979,6 +2979,22 @@ export const zhCN: TranslationResources = {
           "归档工作区会将其 worktree 留在磁盘上。请使用 git worktree remove 自行删除。",
         saveFailed: "无法更改 worktree 位置",
       },
+      prAutomation: {
+        title: "拉取请求自动化",
+        info: "Paseo 在此主机上如何处理该项目的拉取请求",
+        autoFix: "自动修复智能体创建的 PR",
+        autoFixHint:
+          "当智能体在该项目的某个 worktree 中创建 PR 后，Paseo 会立即关注它，并在 CI 失败、审阅者评论或 PR 出现冲突时提示该智能体。",
+        autoReview: "有人请求我审阅时自动审阅",
+        autoReviewHint:
+          "仅限 GitHub。Paseo 会审阅同一仓库 PR 上的直接请求；来自 fork 的 PR 和草稿会列出供你审阅。",
+        reviewer: "审阅者",
+        reviewerHint: "负责审阅拉取请求的提供方和模型",
+        postReviews: "将审阅发布到 GitHub",
+        postReviewsHint:
+          "审阅者只发布评论式审阅，从不批准或要求更改。关闭时，审阅结果只保留在 Paseo 中。",
+        saveFailed: "无法保存拉取请求自动化设置",
+      },
       worktree: {
         title: "Worktree 生命周期 hooks",
         info: "为此 Project 创建或清理 worktree 时运行的命令",

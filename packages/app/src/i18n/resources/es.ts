@@ -3076,6 +3076,22 @@ export const es: TranslationResources = {
           "Archivar un espacio de trabajo deja su worktree en el disco. Elimínalo tú con git worktree remove.",
         saveFailed: "No se pudo cambiar la ubicación del worktree",
       },
+      prAutomation: {
+        title: "Automatización de pull requests",
+        info: "Qué hace Paseo con los pull requests de este proyecto en este host",
+        autoFix: "Corregir automáticamente los PR abiertos por agentes",
+        autoFixHint:
+          "Paseo vigila un PR en cuanto un agente lo abre desde uno de los worktrees de este proyecto, y avisa al agente cuando falla la CI, un revisor comenta o el PR tiene conflictos.",
+        autoReview: "Revisar automáticamente cuando se solicite mi revisión",
+        autoReviewHint:
+          "Solo GitHub. Paseo revisa las solicitudes directas en PR del mismo repositorio; los PR de forks y los borradores se listan para que los revises tú.",
+        reviewer: "Revisor",
+        reviewerHint: "El proveedor y el modelo que revisan los pull requests",
+        postReviews: "Publicar revisiones en GitHub",
+        postReviewsHint:
+          "Los revisores publican una revisión solo con comentarios; nunca aprueban ni solicitan cambios. Desactivado, los hallazgos se quedan en Paseo.",
+        saveFailed: "No se pudo guardar la automatización de pull requests",
+      },
       worktree: {
         title: "Ganchos del ciclo de vida del árbol de trabajo",
         info: "Comandos que se ejecutan cuando se crea o elimina un árbol de trabajo para este proyecto",

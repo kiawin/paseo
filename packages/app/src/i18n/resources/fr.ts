@@ -3083,6 +3083,22 @@ export const fr: TranslationResources = {
           "Archiver un espace de travail laisse son worktree sur le disque. Supprimez-le vous-même avec git worktree remove.",
         saveFailed: "Impossible de changer l'emplacement du worktree",
       },
+      prAutomation: {
+        title: "Automatisation des pull requests",
+        info: "Ce que Paseo fait des pull requests de ce projet sur cet hôte",
+        autoFix: "Corriger automatiquement les PR ouvertes par des agents",
+        autoFixHint:
+          "Paseo surveille une PR dès qu'un agent l'ouvre depuis l'un des worktrees de ce projet, et relance l'agent quand la CI échoue, qu'un relecteur commente ou que la PR est en conflit.",
+        autoReview: "Relire automatiquement quand ma relecture est demandée",
+        autoReviewHint:
+          "GitHub uniquement. Paseo relit les demandes directes sur les PR du même dépôt ; les PR de forks et les brouillons sont listées pour que vous les relisiez.",
+        reviewer: "Relecteur",
+        reviewerHint: "Le fournisseur et le modèle qui relisent les pull requests",
+        postReviews: "Publier les relectures sur GitHub",
+        postReviewsHint:
+          "Les relecteurs publient une relecture en commentaire uniquement ; ils n'approuvent jamais et ne demandent jamais de modifications. Désactivé, les constats restent dans Paseo.",
+        saveFailed: "Impossible d'enregistrer l'automatisation des pull requests",
+      },
       worktree: {
         title: "Hooks de cycle de vie des worktrees",
         info: "Commandes exécutées à la création ou à la suppression d’un worktree de ce projet",

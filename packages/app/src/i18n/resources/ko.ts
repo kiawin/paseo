@@ -3032,6 +3032,22 @@ export const ko: TranslationResources = {
           "워크스페이스를 보관해도 워크트리는 디스크에 남습니다. git worktree remove로 직접 삭제하세요.",
         saveFailed: "워크트리 위치를 변경하지 못했습니다",
       },
+      prAutomation: {
+        title: "풀 리퀘스트 자동화",
+        info: "이 호스트에서 이 프로젝트의 풀 리퀘스트에 Paseo가 하는 일",
+        autoFix: "에이전트가 연 PR 자동 수정",
+        autoFixHint:
+          "이 프로젝트의 워크트리에서 에이전트가 PR을 열면 Paseo가 바로 지켜보고, CI 실패, 리뷰어 댓글, PR 충돌이 생기면 에이전트에게 알립니다.",
+        autoReview: "내 리뷰가 요청되면 자동으로 리뷰",
+        autoReviewHint:
+          "GitHub 전용. 같은 저장소 PR에 대한 직접 요청은 Paseo가 리뷰합니다. 포크 PR과 초안은 직접 리뷰할 수 있도록 목록에 표시됩니다.",
+        reviewer: "리뷰어",
+        reviewerHint: "풀 리퀘스트를 리뷰할 제공자와 모델",
+        postReviews: "GitHub에 리뷰 게시",
+        postReviewsHint:
+          "리뷰어는 댓글만 있는 리뷰를 게시하며 승인하거나 변경을 요청하지 않습니다. 끄면 결과는 Paseo에만 남습니다.",
+        saveFailed: "풀 리퀘스트 자동화를 저장하지 못했습니다",
+      },
       worktree: {
         title: "워크트리 수명 주기 훅",
         info: "이 프로젝트에서 워크트리가 생성되거나 정리될 때 실행되는 명령",

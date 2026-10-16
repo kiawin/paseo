@@ -3153,6 +3153,22 @@ export const en = {
           "Archiving a workspace leaves its worktree on disk. Remove it yourself with git worktree remove.",
         saveFailed: "Could not change the worktree location",
       },
+      prAutomation: {
+        title: "Pull request automation",
+        info: "What Paseo does with this project's pull requests on this host",
+        autoFix: "Auto-fix PRs opened by agents",
+        autoFixHint:
+          "Paseo watches a PR as soon as an agent in one of this project's worktrees opens it, and prompts the agent when CI fails, a reviewer comments, or the PR conflicts.",
+        autoReview: "Review automatically when my review is requested",
+        autoReviewHint:
+          "GitHub only. Paseo reviews direct requests on same-repo PRs; fork PRs and drafts are listed for you to review.",
+        reviewer: "Reviewer",
+        reviewerHint: "The provider and model that review pull requests",
+        postReviews: "Post reviews to GitHub",
+        postReviewsHint:
+          "Reviewers post a comment-only review; they never approve or request changes. Off keeps findings in Paseo.",
+        saveFailed: "Could not save pull request automation",
+      },
       worktree: {
         title: "Worktree lifecycle hooks",
         info: "Commands that run when a worktree is created or torn down for this project",

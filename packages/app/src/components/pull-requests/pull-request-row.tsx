@@ -297,7 +297,14 @@ function renderKebabTriggerIcon({ hovered }: { hovered?: boolean }): ReactElemen
   );
 }
 
-function PullRequestKebab({ row }: { row: PullRequestListRow }): ReactElement {
+export interface PullRequestLinkTarget {
+  key: string;
+  forge: string;
+  url: string;
+}
+
+/** Row kebab whose one item opens the pull request on its forge. */
+export function PullRequestKebab({ row }: { row: PullRequestLinkTarget }): ReactElement {
   const brand = getForgePresentation(row.forge).brandLabel;
   const handleOpen = useCallback(() => {
     void openExternalUrl(row.url);
