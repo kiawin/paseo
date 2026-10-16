@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -91,9 +91,14 @@ export function PrAutomationSection({
   const { t } = useTranslation();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const [current, setCurrent] = useState<ProjectPrAutomation>(
-    () => settings ?? DEFAULT_PR_AUTOMATION,
-  );
+  // The host's descriptor is the source of truth; it arrives after the screen
+  // mounts and updates when any client saves. Only an unconfirmed save overrides it.
+  const [pending, setPending] = useState<ProjectPrAutomation | null>(null);
+  const current = pending ?? settings ?? DEFAULT_PR_AUTOMATION;
+  // A new descriptor from the host supersedes whatever this screen saved.
+  useEffect(() => {
+    setPending(null);
+  }, [settings]);
   const [error, setError] = useState<string | null>(null);
 
   const snapshot = useProvidersSnapshot(serverId, { cwd: repoRoot });
@@ -106,17 +111,14 @@ export function PrAutomationSection({
   const mutation = useMutation({
     mutationFn: (next: ProjectPrAutomation) => client.setProjectPrAutomation(projectId, next),
     onMutate: (next: ProjectPrAutomation) => {
-      const previous = current;
       setError(null);
-      setCurrent(next);
-      return { previous };
+      setPending(next);
     },
-    onSuccess: (saved) => {
-      setCurrent(saved);
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
-    onError: (mutationError: unknown, _next, context) => {
-      if (context) setCurrent(context.previous);
+    onError: (mutationError: unknown) => {
+      setPending(null);
       setError(
         mutationError instanceof Error
           ? mutationError.message
