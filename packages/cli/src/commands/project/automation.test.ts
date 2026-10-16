@@ -29,3 +29,12 @@ describe("project automation", () => {
     ).toEqual({ ...OFF, autoReview: false, reviewProvider: "claude", postReviews: true });
   });
 });
+
+describe("project review", () => {
+  it("takes a PR number with or without a leading #", async () => {
+    const { parsePrNumber } = await import("./review.js");
+    expect(parsePrNumber("12")).toBe(12);
+    expect(parsePrNumber("#12")).toBe(12);
+    expect(() => parsePrNumber("12a")).toThrow();
+  });
+});

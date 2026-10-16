@@ -64,6 +64,7 @@ paseo project autoreview <project-id> on --provider codex
 paseo project autoreview <project-id> on --post-reviews
 paseo project autoreview <project-id> off
 paseo project autofix <project-id> on   # Auto-fix PRs opened by agents
+paseo project review <project-id> 42    # Review PR #42 now
 ```
 
 Agents use the `watch_pull_request` and `unwatch_pull_request` tools; see the [MCP reference](/docs/mcp#pull-requests).
