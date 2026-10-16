@@ -14,6 +14,14 @@ export function serializeWorkspaceFileDragPayload(payload: WorkspaceFileDragPayl
   return JSON.stringify(payload);
 }
 
+export function setWorkspaceFileDragData(
+  dataTransfer: DataTransfer,
+  payload: WorkspaceFileDragPayload,
+): void {
+  dataTransfer.effectAllowed = "copy";
+  dataTransfer.setData(WORKSPACE_FILE_DRAG_MIME, serializeWorkspaceFileDragPayload(payload));
+}
+
 export function parseWorkspaceFileDragPayload(serialized: string): WorkspaceFileDragPayload | null {
   let value: unknown;
   try {
