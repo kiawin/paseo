@@ -831,6 +831,7 @@ describe("ForgeService", () => {
       repoOwner: "acme",
       repoName: "repo",
       url: "https://github.acme.internal/acme/repo/pull/42",
+      headSha: "1111111111111111111111111111111111111111",
     });
   });
 
@@ -1139,6 +1140,7 @@ describe("ForgeService", () => {
     expect(statusesA).toEqual([
       expect.objectContaining({
         number: 41,
+        headSha: "oid-a",
         state: "merged",
         isMerged: true,
         checksStatus: "success",
