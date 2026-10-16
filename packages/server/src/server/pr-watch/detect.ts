@@ -57,10 +57,11 @@ export function observePullRequest(
   };
 }
 
-/** Identifies one failed run of one check, stable across polls and daemon restarts. */
+/**
+ * Identifies one check failing on one head. GitHub's batch poll reports check-run
+ * ids but `gh pr view` doesn't, so the key uses only what every fetch reports; a
+ * re-run of the same check on the same head is the same failure.
+ */
 export function ciFailureKey(check: PullRequestCheck, headSha: string | null): string {
-  if (check.checkRunId !== undefined) {
-    return `check-run:${check.checkRunId}`;
-  }
-  return `status:${headSha ?? "unknown-head"}:${check.workflow ?? ""}:${check.name}`;
+  return `${headSha ?? "unknown-head"}:${check.workflow ?? ""}:${check.name}`;
 }
