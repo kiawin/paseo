@@ -6,7 +6,7 @@ Paseo surfaces terminal activity as a tab indicator (the same "running" dot used
 
 Terminal activity is source-agnostic plumbing. `TerminalActivityTracker` holds the current per-terminal state and emits transitions to the manager, worker protocol, websocket subscription, app buckets, dots, and notifications.
 
-The tracker defaults to unknown (`null`). Activity production lives outside terminal stream parsing: agent hook commands report coarse activity to the daemon's local `/api/terminal-activity` endpoint.
+The tracker defaults to unknown (`null`). Activity production lives outside terminal stream parsing. Two sources produce it: agent hook commands report coarse activity to the daemon's local `/api/terminal-activity` endpoint, and the `create_terminal` MCP tool raises `attention` directly when an agent opens a terminal for the user to type into.
 
 ## Architecture
 
@@ -79,6 +79,41 @@ OpenCode uses a server plugin instead of command hooks. Both generations discove
 The plugin translates both event contracts into the existing Paseo hook events. OpenCode 2 disposes its event subscription when the plugin unloads.
 
 The daemon maps hook states onto terminal activity like an agent lifecycle plus unread attention: `running` → `state: working`, `idle` → `state: idle`, and `needs-input` → `state: idle` with `attentionReason: needs_input`. A `working` → `idle` transition records `state: idle` with `attentionReason: finished` until the user focuses that terminal; plain idle terminals still contribute no workspace status.
+
+## Agent-opened input terminals
+
+An agent cannot type a password. When a command needs a secret from the user — `sudo`, an
+interactive login, a passphrase prompt — the agent calls `create_terminal` with `command` and
+`requestUserInput: true`. The daemon spawns the command in a real terminal and sets activity to
+`attention`, which lands on the same `needs_input` path a hook-reported prompt uses: tab dot,
+workspace status, and a "Terminal needs input" notification. The user finds the prompt from the
+indicator rather than from the agent's chat message.
+
+The agent then reads the terminal with `capture_terminal` and waits. There is no await primitive;
+it polls.
+
+`requestUserInput` requires `name`, and that name is pinned as the terminal's title. A terminal
+without a preset title follows the PTY, which for a command terminal is the command line — so the
+tab for a password prompt would read `node /tmp/prompt.cjs` instead of what the agent called it.
+Pinning the title also stops it drifting later, because a preset title puts the session in manual
+title mode and the PTY title subscription is never installed.
+
+The notification names the agent. `create_terminal` stamps the calling agent id on every terminal
+an agent opens, and the attention body reads `<terminal name> · asked by <provider> (<agent
+title>)`. Without it the user is asked to type a password into a terminal whose only label is a
+string the agent wrote — the agent gains no capability it lacked, since it already runs code in the
+workspace, but it would get to borrow Paseo's own notification as the frame. A terminal the user
+opened, or one whose requesting agent is gone, keeps the plain terminal name. The stamp is
+display-only and does not revive agent-backed terminals; `agentId` on `create_terminal_request` is
+still rejected at the wire layer.
+
+`requestUserInput` also blocks `send_terminal_keys` on that terminal for the rest of its life.
+Without the block, an agent could wait for the user's password to be accepted and then type its own
+commands into a session that now holds a valid sudo timestamp. The flag lives in the terminal
+manager next to the activity token, is keyed by terminal id, and is dropped when the terminal is
+removed; the terminal worker never sees it, because the worker runs the PTY and has no say in who
+may write to it. Ordinary terminals are unaffected — an agent still drives those with
+`send_terminal_keys`.
 
 ## Focus clearing
 
