@@ -946,11 +946,22 @@ export class VoiceAssistantWebSocketServer {
         if (!reason) {
           return;
         }
+        const requestedByAgentId = this.terminalManager?.getRequestedByAgentId(event.terminalId);
+        const requestedByAgent = requestedByAgentId
+          ? this.agentManager.getAgent(requestedByAgentId)
+          : null;
+        const requestedByAgentTitle = requestedByAgent?.config.title?.trim();
+        const requestedByAgentLabel = requestedByAgent
+          ? `${this.providerSnapshotManager.getProviderLabel(requestedByAgent.provider)}${
+              requestedByAgentTitle ? ` (${requestedByAgentTitle})` : ""
+            }`
+          : undefined;
         void this.broadcastTerminalAttention({
           terminalId: event.terminalId,
           cwd: event.cwd,
           ...(event.workspaceId ? { workspaceId: event.workspaceId } : {}),
           terminalName: event.name,
+          ...(requestedByAgentLabel ? { requestedByAgentLabel } : {}),
           reason,
         }).catch((err) => {
           this.logger.warn(
@@ -3290,6 +3301,7 @@ export class VoiceAssistantWebSocketServer {
     cwd: string;
     workspaceId?: string;
     terminalName: string;
+    requestedByAgentLabel?: string;
     reason: TerminalAttentionReason;
   }): Promise<void> {
     const clientEntries: Array<{
@@ -3332,7 +3344,9 @@ export class VoiceAssistantWebSocketServer {
     });
 
     const title = terminalAttentionTitle(params.reason);
-    const body = params.terminalName;
+    const body = params.requestedByAgentLabel
+      ? `${params.terminalName} · asked by ${params.requestedByAgentLabel}`
+      : params.terminalName;
 
     if (plan.shouldPush) {
       void this.pushNotificationSender

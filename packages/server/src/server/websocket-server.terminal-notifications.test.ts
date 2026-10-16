@@ -93,6 +93,7 @@ function createTerminalManager() {
   let listener: TerminalActivityListener | null = null;
 
   const manager = createStub<TerminalManager>({
+    getRequestedByAgentId: vi.fn(() => undefined),
     subscribeTerminalActivity: vi.fn((l: TerminalActivityListener) => {
       listener = l;
       return () => {
