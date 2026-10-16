@@ -128,6 +128,8 @@ export interface CurrentPullRequestStatus {
   state: string;
   baseRefName: string;
   headRefName: string;
+  /** Commit the PR head points at; checks belong to this commit. */
+  headSha?: string;
   isMerged: boolean;
   isDraft?: boolean;
   mergeable: PullRequestMergeable;
