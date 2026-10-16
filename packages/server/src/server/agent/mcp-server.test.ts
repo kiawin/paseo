@@ -302,6 +302,9 @@ function createTerminalManagerStub(overrides: Partial<TerminalManager> = {}): Te
     killTerminal: vi.fn(),
     killTerminalAndWait: vi.fn().mockResolvedValue(undefined),
     captureTerminal: vi.fn().mockResolvedValue({ lines: [], totalLines: 0 }),
+    setTerminalActivity: vi.fn().mockResolvedValue(true),
+    isHumanInputOnly: vi.fn().mockReturnValue(false),
+    getRequestedByAgentId: vi.fn().mockReturnValue(undefined),
     listDirectories: vi.fn().mockReturnValue([]),
     killAll: vi.fn(),
     subscribeTerminalsChanged: vi.fn().mockReturnValue(() => {}),
@@ -1465,6 +1468,199 @@ describe("terminal MCP tools", () => {
       lines: ["from worker scrollback"],
       totalLines: 42,
     });
+  });
+
+  it("opens a terminal for the user to type into and raises the needs-input indicator", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const createTerminal = vi.fn().mockResolvedValue({
+      id: "term-sudo",
+      name: "sudo: install deps",
+      cwd: process.cwd(),
+    });
+    const setTerminalActivity = vi.fn().mockResolvedValue(true);
+    const terminalManager = createTerminalManagerStub({ createTerminal, setTerminalActivity });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      terminalManager,
+      ensureWorkspaceForCreate: vi.fn().mockResolvedValue("ws-1"),
+      logger,
+    });
+
+    const response = await registeredTool(server, "create_terminal").handler({
+      cwd: process.cwd(),
+      name: "sudo: install deps",
+      command: "sudo",
+      args: ["apt", "install", "ripgrep"],
+      requestUserInput: true,
+    });
+
+    expect(createTerminal).toHaveBeenCalledWith({
+      cwd: process.cwd(),
+      workspaceId: "ws-1",
+      name: "sudo: install deps",
+      command: "sudo",
+      args: ["apt", "install", "ripgrep"],
+      title: "sudo: install deps",
+      humanInputOnly: true,
+    });
+    expect(setTerminalActivity).toHaveBeenCalledWith("term-sudo", "attention");
+    expect(response.structuredContent).toEqual({
+      id: "term-sudo",
+      name: "sudo: install deps",
+      cwd: process.cwd(),
+    });
+  });
+
+  it("leaves an ordinary terminal unflagged and raises no indicator", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const createTerminal = vi.fn().mockResolvedValue({
+      id: "term-plain",
+      name: "Terminal 1",
+      cwd: process.cwd(),
+    });
+    const setTerminalActivity = vi.fn().mockResolvedValue(true);
+    const terminalManager = createTerminalManagerStub({ createTerminal, setTerminalActivity });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      terminalManager,
+      ensureWorkspaceForCreate: vi.fn().mockResolvedValue("ws-1"),
+      logger,
+    });
+
+    await registeredTool(server, "create_terminal").handler({ cwd: process.cwd() });
+
+    expect(createTerminal).toHaveBeenCalledWith({
+      cwd: process.cwd(),
+      workspaceId: "ws-1",
+    });
+    expect(setTerminalActivity).not.toHaveBeenCalled();
+  });
+
+  it("stamps the calling agent on the terminal it opens", async () => {
+    const createTerminal = vi.fn().mockResolvedValue({
+      id: "term-sudo",
+      name: "Terminal 1",
+      cwd: REPO_CWD,
+    });
+    const terminalManager = createTerminalManagerStub({ createTerminal });
+    const server = await createAgentMcpServer({
+      agentManager: new BoundaryAgentManagerFake() as unknown as AgentManager,
+      agentStorage: new BoundaryAgentStorageFake() as unknown as AgentStorage,
+      providerSnapshotManager:
+        new BoundaryProviderSnapshotManagerFake() as unknown as ProviderSnapshotManager,
+      terminalManager,
+      callerAgentId: "agent-1",
+      logger,
+    });
+
+    await registeredTool(server, "create_terminal").handler({
+      name: "sudo: restart service",
+      requestUserInput: true,
+    });
+
+    expect(createTerminal).toHaveBeenCalledWith({
+      cwd: REPO_CWD,
+      workspaceId: BROWSER_WORKSPACE_ID,
+      name: "sudo: restart service",
+      title: "sudo: restart service",
+      humanInputOnly: true,
+      requestedByAgentId: "agent-1",
+    });
+  });
+
+  it("rejects a user-input terminal with no name to label it", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const createTerminal = vi.fn();
+    const terminalManager = createTerminalManagerStub({ createTerminal });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      terminalManager,
+      ensureWorkspaceForCreate: vi.fn().mockResolvedValue("ws-1"),
+      logger,
+    });
+
+    await expect(
+      registeredTool(server, "create_terminal").handler({
+        cwd: process.cwd(),
+        requestUserInput: true,
+      }),
+    ).rejects.toThrow("requestUserInput requires name");
+    expect(createTerminal).not.toHaveBeenCalled();
+  });
+
+  it("rejects args without a command", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const createTerminal = vi.fn();
+    const terminalManager = createTerminalManagerStub({ createTerminal });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      terminalManager,
+      ensureWorkspaceForCreate: vi.fn().mockResolvedValue("ws-1"),
+      logger,
+    });
+
+    await expect(
+      registeredTool(server, "create_terminal").handler({
+        cwd: process.cwd(),
+        args: ["install"],
+      }),
+    ).rejects.toThrow("args requires command");
+    expect(createTerminal).not.toHaveBeenCalled();
+  });
+
+  it("refuses to send keys to a terminal opened for user input", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const send = vi.fn();
+    const terminalManager = createTerminalManagerStub({
+      getTerminal: vi.fn().mockReturnValue({ id: "term-sudo", send }),
+      isHumanInputOnly: vi.fn().mockReturnValue(true),
+    });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      terminalManager,
+      logger,
+    });
+
+    await expect(
+      registeredTool(server, "send_terminal_keys").handler({
+        terminalId: "term-sudo",
+        keys: "hunter2\r",
+        literal: true,
+      }),
+    ).rejects.toThrow("does not accept agent input");
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("still sends keys to an ordinary terminal", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const send = vi.fn();
+    const terminalManager = createTerminalManagerStub({
+      getTerminal: vi.fn().mockReturnValue({ id: "term-plain", send }),
+    });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      terminalManager,
+      logger,
+    });
+
+    await registeredTool(server, "send_terminal_keys").handler({
+      terminalId: "term-plain",
+      keys: "Enter",
+    });
+
+    expect(send).toHaveBeenCalledWith({ type: "input", data: "\r" });
   });
 });
 
