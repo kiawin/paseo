@@ -233,7 +233,9 @@ export const PASEO_TOOL_CATALOG = {
   create_terminal: {
     label: "Create terminal",
     context: field("name", "command"),
-    detail: { inputOrder: ["cwd", "workspaceId", "name", "command"] },
+    detail: {
+      inputOrder: ["cwd", "workspaceId", "name", "command", "args", "requestUserInput"],
+    },
   },
   list_terminals: { label: "List terminals", detail: { inputOrder: ["cwd", "all"] } },
   capture_terminal: {
