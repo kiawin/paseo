@@ -1,26 +1,7 @@
 import type { DesktopHostBridge } from "@/desktop/host";
+import { getDroppedFilePath } from "@/desktop/dropped-file-path";
 
 const DANGEROUS_NON_WINDOWS_PATH_CHARS = /[`$|&>~#!^*;<]/g;
-
-function getLegacyFilePath(file: File): string | null {
-  const path = Reflect.get(file, "path");
-  return typeof path === "string" && path.length > 0 ? path : null;
-}
-
-function getFilePath(file: File, bridge: DesktopHostBridge | null): string | null {
-  const getPathForFile = bridge?.webUtils?.getPathForFile;
-  if (typeof getPathForFile === "function") {
-    try {
-      const path = getPathForFile(file);
-      if (typeof path === "string" && path.length > 0) {
-        return path;
-      }
-    } catch {
-      // Fall through to the legacy Electron File.path property if present.
-    }
-  }
-  return getLegacyFilePath(file);
-}
 
 export function isTerminalFileDrag(dataTransfer: DataTransfer | null): boolean {
   return Boolean(dataTransfer && Array.from(dataTransfer.types).includes("Files"));
@@ -58,7 +39,7 @@ export function extractTerminalDropPaths(
 
   const paths: string[] = [];
   for (const file of Array.from(dataTransfer.files)) {
-    const path = getFilePath(file, bridge);
+    const path = getDroppedFilePath(file, bridge);
     if (path) {
       paths.push(path);
     }
