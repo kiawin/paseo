@@ -526,7 +526,9 @@ async function createMcpWorktree(
     }
     return await options.createPaseoWorktree(
       options.input,
-      options.resolveDefaultBranch ? { resolveDefaultBranch: options.resolveDefaultBranch } : {},
+      options.resolveDefaultBranch
+        ? { resolveDefaultBranch: options.resolveDefaultBranch }
+        : undefined,
     );
   } catch (error) {
     throw toWorktreeRequestError(error);
@@ -574,7 +576,7 @@ async function resolveMcpCwd(params: {
       action: worktree.action,
       githubPrNumber: worktree.githubPrNumber,
       firstAgentContext: { prompt: params.initialPrompt },
-
+      runSetup: false,
       paseoHome: dependencies.paseoHome,
       worktreesRoot: dependencies.worktreesRoot,
     },

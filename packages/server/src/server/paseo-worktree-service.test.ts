@@ -360,6 +360,67 @@ test("removes a new worktree when workspace persistence fails", async () => {
   ).toBe(false);
 });
 
+test("removes a new worktree when preparing it fails", async () => {
+  const { repoDir, tempDir } = createGitRepo();
+  cleanupPaths.push(tempDir);
+  const paseoHome = path.join(tempDir, ".paseo");
+  const worktreePath = path.join(
+    await getPaseoWorktreesRoot(repoDir, paseoHome),
+    "prepare-failure",
+  );
+
+  await expect(
+    createPaseoWorktree(
+      {
+        cwd: repoDir,
+        worktreeSlug: "prepare-failure",
+        runSetup: false,
+        paseoHome,
+        prepareWorktree: async () => {
+          throw new Error("could not copy changes");
+        },
+      },
+      createDeps(),
+    ),
+  ).rejects.toThrow("could not copy changes");
+
+  expect(existsSync(worktreePath)).toBe(false);
+  expect(
+    execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: repoDir, stdio: "pipe" })
+      .toString()
+      .includes("prepare-failure"),
+  ).toBe(false);
+});
+
+test("removes a prepared external worktree when preparing it fails", async () => {
+  const { repoDir, tempDir } = createGitRepo();
+  cleanupPaths.push(tempDir);
+  const customRoot = path.join(tempDir, "custom-worktrees");
+
+  await expect(
+    createPaseoWorktree(
+      {
+        cwd: repoDir,
+        worktreeSlug: "prepared-external",
+        runSetup: false,
+        paseoHome: path.join(tempDir, ".paseo"),
+        resolveWorktreeLocation: async () => ({ mode: "custom", root: customRoot }),
+        prepareWorktree: async (worktreeRoot) => {
+          writeFileSync(path.join(worktreeRoot, "carried.txt"), "uncommitted\n");
+          throw new Error("could not finish copying changes");
+        },
+      },
+      createDeps(),
+    ),
+  ).rejects.toThrow("could not finish copying changes");
+
+  expect(
+    execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: repoDir, stdio: "pipe" })
+      .toString()
+      .includes("prepared-external"),
+  ).toBe(false);
+});
+
 test("maps a nested cwd from an existing Paseo worktree into the next worktree", async () => {
   const { repoDir, tempDir } = createGitRepo();
   cleanupPaths.push(tempDir);
