@@ -82,7 +82,7 @@ import {
   showHiddenFilesAndRestoreExpandedDirectories,
   type ExplorerTreeRow,
 } from "@/file-explorer/tree";
-import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-drag-source";
+import { useWorkspaceFileDragSource } from "@/desktop/attachments/use-workspace-file-drag-source";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { useToast } from "@/contexts/toast-context";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
@@ -305,6 +305,7 @@ function TreeRowItem({
     serverId,
     workspaceId,
     path: entry.path,
+    size: entry.size,
   });
 
   const handlePress = useCallback(() => {
