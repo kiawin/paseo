@@ -189,12 +189,13 @@ test("scrolled chat does not exclude the workspace titlebar from dragging", asyn
       await scrollAgentChatToBottom(page);
       // Electron can subtract no-drag rectangles outside a scroll viewport's clip.
       // Check the offending geometry, rather than DOM hit testing or a specific row style.
+      // The pane is a window-content root, so even the chat's focus scope emits no region.
       await expect
         .poll(() => chat.evaluate(inspectChatDragExclusions))
         .toEqual({
           contentCrossesHeader: true,
           contentCrossesTabRow: true,
-          focusScopeRegion: "no-drag",
+          focusScopeRegion: "none",
           exclusions: 0,
         });
     }
@@ -221,13 +222,14 @@ test("scrolled chat does not exclude the workspace titlebar from dragging", asyn
     await page.keyboard.press("Meta+f");
     const find = page.getByRole("textbox", { name: "Find in pane", exact: true });
     await expect(find).toBeFocused();
-    await expect(find).toHaveCSS("-webkit-app-region", "no-drag");
+    // Find sits inside the pane's window-content root: no window region, plain DOM hit testing.
+    await expect(find).toHaveCSS("-webkit-app-region", "none");
     await find.fill("Paragraph 40:");
     await expect(page.getByRole("status", { name: "Find matches" })).toHaveText("1 of 1");
     for (const name of ["Next match", "Previous match", "Close Find"]) {
       await expect(page.getByRole("button", { name, exact: true })).toHaveCSS(
         "-webkit-app-region",
-        "no-drag",
+        "none",
       );
     }
     await page.getByRole("button", { name: "Close Find", exact: true }).click();
@@ -242,7 +244,7 @@ test("scrolled chat does not exclude the workspace titlebar from dragging", asyn
           ),
         })),
       )
-      .toEqual({ focusReturned: true, tabindex: "-1", appRegion: "no-drag" });
+      .toEqual({ focusReturned: true, tabindex: "-1", appRegion: "none" });
     await page.screenshot({ path: testInfo.outputPath("scrolled-chat-titlebar.png") });
   } finally {
     await agent.cleanup();
