@@ -91,6 +91,11 @@ const TOOL_SPECS: Readonly<Record<string, ToolDetailSpec>> = {
     inputOrder: WORKSPACE_FIELDS,
     outputFields: ["workspaceId", "projectId"],
   },
+  move_to_worktree: {
+    promptField: "task",
+    inputOrder: ["title", "branchName", "carryChanges"],
+    outputFields: ["workspaceId", "agentId", "branchName", "baseBranch", "cwd"],
+  },
   list_workspaces: {},
   archive_workspace: {
     inputOrder: ["workspaceId"],
