@@ -1,0 +1,21 @@
+== shared checkout BEFORE
+main
+ M README.md
+?? notes.md
+<scratch>/demo-service cf11887 [main]
+== shared checkout AFTER
+main
+ M README.md
+?? notes.md
+== worktrees
+<scratch>/demo-service                                    cf11887 [main]
+<scratch>/paseo-home-qa5/worktrees/2y44vdb8/feature-notes 611d3f0 [feature/notes]
+== new worktree (feature/notes)
+611d3f0 docs: add setup notes
+cf11887 init
+ README.md | 2 ++
+ notes.md  | 2 ++
+ 2 files changed, 4 insertions(+)
+-- notes.md
+draft notes
+done
