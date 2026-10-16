@@ -1278,6 +1278,7 @@ export const ru: TranslationResources = {
       sessions: "История",
       search: "Поиск",
       schedules: "Расписания",
+      pullRequests: "Пул-реквесты",
     },
     worktreeSetup: {
       title: "Настроить скрипты worktree",
