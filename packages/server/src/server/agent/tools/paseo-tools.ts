@@ -2891,12 +2891,36 @@ function createToolCatalog(
           .optional()
           .describe("Optional working directory. Defaults to your current working directory."),
         name: z.string().optional().describe("Optional terminal name."),
+        command: z
+          .string()
+          .optional()
+          .describe("Optional command to run instead of an interactive shell."),
+        args: z.array(z.string()).optional().describe("Arguments for command."),
+        requestUserInput: z
+          .boolean()
+          .optional()
+          .describe(
+            "Open this terminal for the user to type into, for a command that prompts for a " +
+              "password or other secret. Requires name, which becomes the terminal's pinned " +
+              "label. Flags the terminal as needing input so it shows an indicator and sends a " +
+              "notification. You cannot call send_terminal_keys on a terminal created this way; " +
+              "read it with capture_terminal and wait for the user.",
+          ),
       },
       outputSchema: TerminalSummarySchema.shape,
     },
-    async ({ cwd, name }) => {
+    async ({ cwd, name, command, args, requestUserInput }) => {
       if (!terminalManager) {
         throw new Error("Terminal manager is not configured");
+      }
+
+      if (args && !command) {
+        throw new Error("args requires command");
+      }
+
+      const trimmedName = name?.trim();
+      if (requestUserInput && !trimmedName) {
+        throw new Error("requestUserInput requires name, which labels the terminal for the user");
       }
 
       const resolvedCwd = resolveScopedCwd(cwd, { required: true });
@@ -2905,8 +2929,21 @@ function createToolCatalog(
       const terminal = await terminalManager.createTerminal({
         cwd: resolvedCwd,
         workspaceId,
-        ...(name?.trim() ? { name: name.trim() } : {}),
+        ...(trimmedName ? { name: trimmedName } : {}),
+        ...(command ? { command } : {}),
+        ...(args ? { args } : {}),
+        // A terminal the user has to find and act on keeps the label the agent gave it. Passing it
+        // as the title pins it: without a preset title the label follows the PTY, which for a
+        // command terminal means the command line.
+        ...(requestUserInput && trimmedName ? { title: trimmedName, humanInputOnly: true } : {}),
+        ...(callerAgentId ? { requestedByAgentId: callerAgentId } : {}),
       });
+
+      // Raises the same needs-input indicator and notification an agent hook
+      // raises, so the user finds the prompt instead of waiting on the agent.
+      if (requestUserInput) {
+        await terminalManager.setTerminalActivity(terminal.id, "attention");
+      }
 
       return {
         content: [],
@@ -3259,6 +3296,15 @@ function createToolCatalog(
       const terminal = terminalManager.getTerminal(terminalId);
       if (!terminal) {
         throw new PaseoToolInputError(`Terminal ${terminalId} not found`);
+      }
+
+      // A terminal opened with requestUserInput exists so a person can type a
+      // secret into it. Writing to it would let the agent ride the credential
+      // the user just entered, so the block is permanent for the terminal's life.
+      if (terminalManager.isHumanInputOnly(terminalId)) {
+        throw new Error(
+          `Terminal ${terminalId} was created for user input and does not accept agent input`,
+        );
       }
 
       terminal.send({
