@@ -119,7 +119,9 @@ const TOOL_SPECS: Readonly<Record<string, ToolDetailSpec>> = {
   start_workspace_script: { inputOrder: ["workspaceId", "scriptName"] },
   stop_workspace_script: { inputOrder: ["workspaceId", "scriptName"] },
   list_terminals: { inputOrder: ["cwd", "all"] },
-  create_terminal: { inputOrder: ["cwd", "workspaceId", "name", "command"] },
+  create_terminal: {
+    inputOrder: ["cwd", "workspaceId", "name", "command", "args", "requestUserInput"],
+  },
   kill_terminal: { inputOrder: ["terminalId"] },
   capture_terminal: { inputOrder: ["terminalId", "lines"] },
   send_terminal_keys: { inputOrder: ["terminalId", "keys", "literal"] },
