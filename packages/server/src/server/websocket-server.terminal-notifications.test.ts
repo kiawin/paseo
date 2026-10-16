@@ -14,6 +14,7 @@ import type {
   TerminalManager,
 } from "../terminal/terminal-manager.js";
 import type { PersistedWorkspaceRecord, WorkspaceRegistry } from "./workspace-registry.js";
+import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
 import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
 import type { PushNotificationSender, PushPayload } from "./push/index.js";
@@ -75,7 +76,7 @@ function createWorkspaceAutoNameStub(): WorkspaceAutoName {
   });
 }
 
-function createTerminalManager() {
+function createTerminalManager(requestedByAgentId?: string) {
   let listener: TerminalActivityListener | null = null;
 
   const manager = createStub<TerminalManager>({
@@ -85,6 +86,7 @@ function createTerminalManager() {
         listener = null;
       };
     }),
+    getRequestedByAgentId: vi.fn(() => requestedByAgentId),
   });
 
   function emit(event: TerminalActivityTransitionEvent): void {
@@ -114,12 +116,20 @@ function createWorkspaceRegistry(records: PersistedWorkspaceRecord[]): Workspace
   });
 }
 
-function createServer(terminalManager: TerminalManager, workspaceRegistry?: WorkspaceRegistry) {
+function createServer(
+  terminalManager: TerminalManager,
+  workspaceRegistry?: WorkspaceRegistry,
+  requestingAgent: { provider: string; title?: string } | null = null,
+) {
   const pushNotifications = new RecordingPushNotificationSender();
   const agentManager = {
     setAgentAttentionCallback: vi.fn(),
     subscribe: vi.fn(() => () => {}),
-    getAgent: vi.fn(() => null),
+    getAgent: vi.fn(() =>
+      requestingAgent
+        ? { provider: requestingAgent.provider, config: { title: requestingAgent.title } }
+        : null,
+    ),
     getLastAssistantMessage: vi.fn(async () => null),
     getMetricsSnapshot: vi.fn(() => ({
       total: 0,
@@ -428,6 +438,89 @@ describe("VoiceAssistantWebSocketServer terminal attention notifications", () =>
     await flushAsync();
 
     expectNoTerminalAttentionMessage(ws);
+  });
+
+  it("names the agent that asked, with its title, in the attention body", async () => {
+    const { manager, emit } = createTerminalManager("agent-1");
+    const { server } = createServer(manager, undefined, {
+      provider: "claude",
+      title: "fix-auth",
+    });
+    const ws = connectClient(server);
+
+    emit(
+      transition({
+        previousState: "working",
+        previousChangedAt: 1000,
+        state: "attention",
+        changedAt: 15000,
+      }),
+    );
+
+    await flushAsync();
+
+    const providerLabel = getAgentProviderDefinition("claude").label;
+    const payload = readTerminalAttentionMessage(ws);
+    expect(payload.reason).toBe("needs_input");
+    expect(payload.body).toBe(`bash · asked by ${providerLabel} (fix-auth)`);
+  });
+
+  it("falls back to the provider label when the requesting agent has no title", async () => {
+    const { manager, emit } = createTerminalManager("agent-1");
+    const { server } = createServer(manager, undefined, { provider: "claude" });
+    const ws = connectClient(server);
+
+    emit(
+      transition({
+        previousState: "working",
+        previousChangedAt: 1000,
+        state: "attention",
+        changedAt: 15000,
+      }),
+    );
+
+    await flushAsync();
+
+    const providerLabel = getAgentProviderDefinition("claude").label;
+    expect(readTerminalAttentionMessage(ws).body).toBe(`bash · asked by ${providerLabel}`);
+  });
+
+  it("leaves the body as the terminal name when no agent asked for the terminal", async () => {
+    const { manager, emit } = createTerminalManager();
+    const { server } = createServer(manager);
+    const ws = connectClient(server);
+
+    emit(
+      transition({
+        previousState: "working",
+        previousChangedAt: 1000,
+        state: "attention",
+        changedAt: 15000,
+      }),
+    );
+
+    await flushAsync();
+
+    expect(readTerminalAttentionMessage(ws).body).toBe("bash");
+  });
+
+  it("leaves the body as the terminal name when the requesting agent is gone", async () => {
+    const { manager, emit } = createTerminalManager("agent-gone");
+    const { server } = createServer(manager, undefined, null);
+    const ws = connectClient(server);
+
+    emit(
+      transition({
+        previousState: "working",
+        previousChangedAt: 1000,
+        state: "attention",
+        changedAt: 15000,
+      }),
+    );
+
+    await flushAsync();
+
+    expect(readTerminalAttentionMessage(ws).body).toBe("bash");
   });
 
   it("broadcasts needs_input after working -> attention", async () => {
