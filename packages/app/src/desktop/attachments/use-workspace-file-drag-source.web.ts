@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type RefCallback } from "react";
 import type { View } from "react-native";
-import { createWorkspaceFileAttachment } from "./workspace-file";
-import { setWorkspaceFileDragData } from "./workspace-file-drag";
-import type { WorkspaceFileDragSourceInput } from "./workspace-file-drag-source.types";
+import { createWorkspaceFileAttachment } from "@/attachments/workspace-file";
+import { setWorkspaceFileDragData } from "@/attachments/workspace-file-drag";
+import type { WorkspaceFileDragSourceInput } from "@/attachments/workspace-file-drag-source.types";
 
 export function useWorkspaceFileDragSource({
   enabled,

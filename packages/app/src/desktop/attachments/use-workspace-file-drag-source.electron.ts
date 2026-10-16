@@ -5,10 +5,13 @@ import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useSessionStore } from "@/stores/session-store";
 import { useWorkspaceDirectory } from "@/stores/session-store-hooks";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
-import { beginNativeWorkspaceFileDrag } from "./native-workspace-file-drag";
-import { createWorkspaceFileAttachment } from "./workspace-file";
-import { setWorkspaceFileDragData, type WorkspaceFileDragPayload } from "./workspace-file-drag";
-import type { WorkspaceFileDragSourceInput } from "./workspace-file-drag-source.types";
+import { beginNativeWorkspaceFileDrag } from "@/attachments/native-workspace-file-drag";
+import { createWorkspaceFileAttachment } from "@/attachments/workspace-file";
+import {
+  setWorkspaceFileDragData,
+  type WorkspaceFileDragPayload,
+} from "@/attachments/workspace-file-drag";
+import type { WorkspaceFileDragSourceInput } from "@/attachments/workspace-file-drag-source.types";
 
 // Keep in sync with FILE_DRAG_STAGING_MAX_BYTES in packages/desktop/src/features/file-drag.
 const NATIVE_FILE_DRAG_MAX_BYTES = 50 * 1024 * 1024;
