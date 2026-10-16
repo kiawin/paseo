@@ -11,7 +11,9 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type Ref,
 } from "react";
@@ -36,6 +38,13 @@ import type { TerminalClipboardWriter } from "../terminal/native-renderer/termin
 import type { TerminalRendererReadyChange } from "../utils/terminal-renderer-readiness";
 import { openExternalUrl } from "../utils/open-external-url";
 import { focusWithRetries } from "../utils/web-focus";
+import {
+  extractTerminalDropPaths,
+  isTerminalDragLeaveOutside,
+  isTerminalFileDrag,
+} from "../terminal/drop/terminal-file-drop";
+import { getDesktopHost } from "@/desktop/host";
+import { takeNativeWorkspaceFileDrop } from "@/attachments/native-workspace-file-drag";
 
 export interface TerminalEmulatorHandle {
   find?: TerminalFindHandle;
@@ -232,6 +241,8 @@ export default function TerminalEmulator({
   initialSnapshotRef.current = initialSnapshot;
   const pendingModifiersRef = useRef(pendingModifiers);
   pendingModifiersRef.current = pendingModifiers;
+  const [isDropActive, setIsDropActive] = useState(false);
+  const dropActiveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const domBridgeRef = useRef<DOMImperativeFactory | null>(null);
   const pasteText = useCallback((text: string) => {
@@ -578,6 +589,93 @@ export default function TerminalEmulator({
     [showTerminalContextMenu],
   );
 
+  const clearDropActiveTimeout = useCallback(() => {
+    if (dropActiveTimeoutRef.current === null) {
+      return;
+    }
+    clearTimeout(dropActiveTimeoutRef.current);
+    dropActiveTimeoutRef.current = null;
+  }, []);
+
+  const clearTerminalDropActive = useCallback(() => {
+    clearDropActiveTimeout();
+    setIsDropActive(false);
+  }, [clearDropActiveTimeout]);
+
+  const keepTerminalDropActive = useCallback(() => {
+    clearDropActiveTimeout();
+    setIsDropActive(true);
+    dropActiveTimeoutRef.current = setTimeout(() => {
+      dropActiveTimeoutRef.current = null;
+      setIsDropActive(false);
+    }, 180);
+  }, [clearDropActiveTimeout]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) {
+      return () => {};
+    }
+
+    const handleDragEnter = (event: DragEvent) => {
+      if (!isTerminalFileDrag(event.dataTransfer)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      keepTerminalDropActive();
+    };
+
+    const handleDragOver = (event: DragEvent) => {
+      if (!isTerminalFileDrag(event.dataTransfer)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      keepTerminalDropActive();
+    };
+
+    const handleDrop = (event: DragEvent) => {
+      if (!isTerminalFileDrag(event.dataTransfer)) return;
+      clearTerminalDropActive();
+      const paths = extractTerminalDropPaths(event.dataTransfer, getDesktopHost());
+      if (paths.length > 0 && takeNativeWorkspaceFileDrop(paths)?.staged) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    root.addEventListener("dragenter", handleDragEnter, { capture: true });
+    root.addEventListener("dragover", handleDragOver, { capture: true });
+    root.addEventListener("drop", handleDrop, { capture: true });
+    window.addEventListener("dragend", clearTerminalDropActive);
+    window.addEventListener("drop", clearTerminalDropActive);
+
+    return () => {
+      root.removeEventListener("dragenter", handleDragEnter, { capture: true });
+      root.removeEventListener("dragover", handleDragOver, { capture: true });
+      root.removeEventListener("drop", handleDrop, { capture: true });
+      window.removeEventListener("dragend", clearTerminalDropActive);
+      window.removeEventListener("drop", clearTerminalDropActive);
+      clearDropActiveTimeout();
+    };
+  }, [clearDropActiveTimeout, clearTerminalDropActive, keepTerminalDropActive]);
+
+  const handleRootDragLeave = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (!isTerminalFileDrag(event.dataTransfer)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (
+        !isTerminalDragLeaveOutside({
+          currentTarget: event.currentTarget,
+          relatedTarget: event.relatedTarget,
+        })
+      ) {
+        return;
+      }
+      clearTerminalDropActive();
+    },
+    [clearTerminalDropActive],
+  );
+
   const rootDivStyle = useMemo<CSSProperties>(
     () => ({
       position: "relative",
@@ -593,6 +691,19 @@ export default function TerminalEmulator({
     }),
     [xtermTheme.background],
   );
+  const dropOverlayStyle = useMemo<CSSProperties>(
+    () => ({
+      position: "absolute",
+      inset: 0,
+      zIndex: 9,
+      border: "1px solid rgba(78, 161, 255, 0.72)",
+      backgroundColor: "rgba(78, 161, 255, 0.16)",
+      opacity: isDropActive ? 1 : 0,
+      pointerEvents: "none",
+      transition: "opacity 120ms ease-out",
+    }),
+    [isDropActive],
+  );
   return (
     <div
       ref={rootRef}
@@ -601,8 +712,10 @@ export default function TerminalEmulator({
       style={rootDivStyle}
       onPointerDown={handleRootPointerDown}
       onContextMenu={handleRootContextMenu}
+      onDragLeave={handleRootDragLeave}
     >
       <div ref={hostRef} style={HOST_DIV_STYLE} />
+      <div style={dropOverlayStyle} />
     </div>
   );
 }

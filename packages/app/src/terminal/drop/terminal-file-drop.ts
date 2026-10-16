@@ -2,7 +2,52 @@ import { getMimeTypeFromPath } from "@/attachments/file-types";
 import { readDesktopFileBytes } from "@/attachments/selected-file";
 import type { DroppedItem } from "@/components/file-drop/types";
 import type { DesktopHostBridge } from "@/desktop/host";
+import { getDroppedFilePath } from "@/desktop/dropped-file-path";
 import { readTerminalFile, type TerminalFile } from "../file-paste";
+
+export function isTerminalFileDrag(dataTransfer: DataTransfer | null): boolean {
+  return Boolean(dataTransfer && Array.from(dataTransfer.types).includes("Files"));
+}
+
+interface ContainsTarget {
+  contains: (other: EventTarget | null) => boolean;
+}
+
+function asContainsTarget(value: EventTarget | null): ContainsTarget | null {
+  if (!value || typeof (value as Partial<ContainsTarget>).contains !== "function") {
+    return null;
+  }
+  return value as unknown as ContainsTarget;
+}
+
+export function isTerminalDragLeaveOutside(input: {
+  currentTarget: EventTarget | null;
+  relatedTarget: EventTarget | null;
+}): boolean {
+  const currentTarget = asContainsTarget(input.currentTarget);
+  if (!currentTarget || !input.relatedTarget) {
+    return true;
+  }
+  return !currentTarget.contains(input.relatedTarget);
+}
+
+export function extractTerminalDropPaths(
+  dataTransfer: DataTransfer | null,
+  bridge: DesktopHostBridge | null,
+): string[] {
+  if (!dataTransfer) {
+    return [];
+  }
+
+  const paths: string[] = [];
+  for (const file of Array.from(dataTransfer.files)) {
+    const path = getDroppedFilePath(file, bridge);
+    if (path) {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
 
 function getLegacyFilePath(file: File): string | null {
   const path = Reflect.get(file, "path");
