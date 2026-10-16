@@ -155,6 +155,10 @@ export function createWorkerTerminalManager(
   const recordsById = new Map<string, WorkerTerminalRecord>();
   const terminalIdsByCwd = new Map<string, Set<string>>();
   const terminalActivityTokenById = new Map<string, string>();
+  // Human-input-only ids stay in the daemon process: the worker runs the PTY and
+  // has no say in who is allowed to write to it.
+  const humanInputOnlyTerminalIds = new Set<string>();
+  const requestedByAgentIdByTerminalId = new Map<string, string>();
   // Creation owns a reference to the session independently of the live-terminal
   // index. Only terminalCreated registers it; terminalExit removes it permanently.
   const pendingCreationsById = new Map<string, { session: TerminalSession | null }>();
@@ -403,6 +407,8 @@ export function createWorkerTerminalManager(
     }
     recordsById.delete(terminalId);
     terminalActivityTokenById.delete(terminalId);
+    humanInputOnlyTerminalIds.delete(terminalId);
+    requestedByAgentIdByTerminalId.delete(terminalId);
     const terminalIds = terminalIdsByCwd.get(record.info.cwd);
     if (terminalIds) {
       terminalIds.delete(terminalId);
@@ -679,19 +685,30 @@ export function createWorkerTerminalManager(
     },
 
     async createTerminal(
-      options: WorkerCreateTerminalOptions & { workspaceId: string },
+      options: WorkerCreateTerminalOptions & {
+        workspaceId: string;
+        humanInputOnly?: boolean;
+        requestedByAgentId?: string;
+      },
     ): Promise<TerminalSession> {
+      const { humanInputOnly, requestedByAgentId, ...workerOptions } = options;
       const terminalId = options.id ?? randomUUID();
       const activityToken = createActivityToken();
       const terminalActivityUrl = managerOptions.getTerminalActivityUrl?.() ?? null;
       terminalActivityTokenById.set(terminalId, activityToken);
+      if (humanInputOnly) {
+        humanInputOnlyTerminalIds.add(terminalId);
+      }
+      if (requestedByAgentId) {
+        requestedByAgentIdByTerminalId.set(terminalId, requestedByAgentId);
+      }
       const creation = { session: null as TerminalSession | null };
       pendingCreationsById.set(terminalId, creation);
       try {
         await sendRequest({
           type: "createTerminal",
           options: {
-            ...options,
+            ...workerOptions,
             id: terminalId,
             activityToken,
             activityUrl: terminalActivityUrl,
@@ -703,6 +720,8 @@ export function createWorkerTerminalManager(
         return creation.session;
       } catch (error) {
         terminalActivityTokenById.delete(terminalId);
+        humanInputOnlyTerminalIds.delete(terminalId);
+        requestedByAgentIdByTerminalId.delete(terminalId);
         throw error;
       } finally {
         pendingCreationsById.delete(terminalId);
@@ -726,6 +745,14 @@ export function createWorkerTerminalManager(
         return "unknown";
       }
       return expected === token ? "valid" : "invalid";
+    },
+
+    isHumanInputOnly(id: string): boolean {
+      return humanInputOnlyTerminalIds.has(id);
+    },
+
+    getRequestedByAgentId(id: string): string | undefined {
+      return requestedByAgentIdByTerminalId.get(id);
     },
 
     getTerminal(id: string): TerminalSession | undefined {

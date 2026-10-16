@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Logger } from "pino";
 import type {
   AgentCapabilityFlags,
@@ -49,6 +52,14 @@ export const MOCK_LOAD_TEST_HANDLED_COMMAND = `/${MOCK_LOAD_TEST_COMMAND.name} $
  * store, the transfer and the Artifacts view without staging files into `$PASEO_HOME`.
  */
 export const MOCK_LOAD_TEST_PUBLISH_ARTIFACT_COMMAND = "/mock publish-artifact";
+/**
+ * Opens a terminal the user has to type into, through the real `create_terminal` tool, then proves
+ * the agent cannot answer the prompt itself. Lets an e2e drive the whole request-user-input path
+ * without a live model.
+ */
+export const MOCK_LOAD_TEST_REQUEST_TERMINAL_INPUT_COMMAND = "/mock request-terminal-input";
+export const MOCK_LOAD_TEST_TERMINAL_NAME = "sudo: install deps";
+export const MOCK_LOAD_TEST_PASSWORD_PROMPT = "[sudo] password for e2e:";
 export const MOCK_LOAD_TEST_ARTIFACT_TITLE = "Mock published artifact";
 export const MOCK_LOAD_TEST_ARTIFACT_HTML =
   "<h1 id='heading'>Published by an agent</h1><p id='body'>Stored by the daemon, not the repo.</p>";
@@ -698,6 +709,62 @@ function createToolCall(input: {
   };
 }
 
+// Stands in for `sudo`: prompts, reads one line with echo off, and reports the length without
+// printing the secret. What is under test is Paseo's plumbing around a terminal a person must type
+// into, not sudo itself.
+const MOCK_PASSWORD_PROMPT_SCRIPT = [
+  `process.stdout.write(${JSON.stringify(`${MOCK_LOAD_TEST_PASSWORD_PROMPT} `)});`,
+  "if (process.stdin.isTTY) process.stdin.setRawMode(true);",
+  "let buffer = '';",
+  "process.stdin.on('data', (chunk) => {",
+  "  buffer += chunk.toString();",
+  "  if (buffer.includes('\\r') || buffer.includes('\\n')) {",
+  "    const secret = buffer.replace(/[\\r\\n]/g, '');",
+  "    process.stdout.write('\\r\\nPASEO_SECRET_ACCEPTED len=' + secret.length + '\\r\\n');",
+  // Stay alive after accepting: a terminal that exits takes its scrollback with it, and both the
+  // readback and the recording need the result to stay on screen.
+  "    buffer = '';",
+  "    setInterval(() => {}, 1000);",
+  "  }",
+  "});",
+].join("\n");
+
+async function requestMockTerminalInput(catalog: PaseoToolCatalog): Promise<string> {
+  // Run the prompt from a file rather than `node -e`: the terminal title is the command line, and
+  // an inlined script would fill the tab label with the whole program.
+  const scriptPath = join(tmpdir(), "paseo-mock-password-prompt.cjs");
+  await writeFile(scriptPath, MOCK_PASSWORD_PROMPT_SCRIPT, "utf8");
+  const created = await catalog.executeTool("create_terminal", {
+    name: MOCK_LOAD_TEST_TERMINAL_NAME,
+    command: process.execPath,
+    args: [scriptPath],
+    requestUserInput: true,
+  });
+  const terminalId = (created.structuredContent as { id?: string } | undefined)?.id;
+  if (!terminalId) {
+    return "Mock terminal request failed: create_terminal returned no id";
+  }
+
+  // The agent is not allowed to answer its own password prompt. Reported back in the
+  // turn so the refusal is visible in the app, not only in the daemon log.
+  let refusal = "send_terminal_keys was not refused";
+  try {
+    await catalog.executeTool("send_terminal_keys", {
+      terminalId,
+      keys: "hunter2\r",
+      literal: true,
+    });
+  } catch (error) {
+    refusal = error instanceof Error ? error.message : String(error);
+  }
+
+  // The reply renders as Markdown, where a single newline joins both lines into one paragraph.
+  return [
+    `Opened terminal ${terminalId} for your password.`,
+    `Agent input refused: ${refusal}`,
+  ].join("\n\n");
+}
+
 async function publishMockArtifact(catalog: PaseoToolCatalog): Promise<string> {
   try {
     await catalog.executeTool("publish_artifact", {
@@ -1006,6 +1073,30 @@ export class MockLoadTestAgentSession implements AgentSession {
   tryHandleOutOfBand(
     prompt: AgentPromptInput,
   ): { run(ctx: { emit: (event: AgentStreamEvent) => void }): Promise<void> } | null {
+    if (prompt === MOCK_LOAD_TEST_REQUEST_TERMINAL_INPUT_COMMAND) {
+      return {
+        run: async ({ emit }) => {
+          const catalog = this.paseoTools;
+          let text: string;
+          if (!catalog) {
+            text = "Paseo tools are not available to this agent.";
+          } else {
+            try {
+              text = await requestMockTerminalInput(catalog);
+            } catch (error) {
+              text = `Mock terminal request failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`;
+            }
+          }
+          emit({
+            type: "timeline",
+            provider: this.provider,
+            item: { type: "assistant_message", text },
+          });
+        },
+      };
+    }
     if (prompt === MOCK_LOAD_TEST_PUBLISH_ARTIFACT_COMMAND) {
       return {
         run: async ({ emit }) => {
