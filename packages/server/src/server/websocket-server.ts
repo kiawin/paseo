@@ -2958,6 +2958,20 @@ export class VoiceAssistantWebSocketServer {
     }
   }
 
+  private resolveTerminalRequesterLabel(terminalId: string): string | null {
+    const requestedByAgentId = this.terminalManager?.getRequestedByAgentId(terminalId);
+    if (!requestedByAgentId) {
+      return null;
+    }
+    const agent = this.agentManager.getAgent(requestedByAgentId);
+    if (!agent) {
+      return null;
+    }
+    const providerLabel = this.providerSnapshotManager.getProviderLabel(agent.provider);
+    const agentTitle = agent.config.title?.trim();
+    return agentTitle ? `${providerLabel} (${agentTitle})` : providerLabel;
+  }
+
   private async broadcastTerminalAttention(params: {
     terminalId: string;
     cwd: string;
@@ -3005,7 +3019,13 @@ export class VoiceAssistantWebSocketServer {
     });
 
     const title = terminalAttentionTitle(params.reason);
-    const body = params.terminalName;
+    // Name the agent that opened the terminal. A needs-input prompt asks the user
+    // to type a secret into a terminal whose only other label is a string the
+    // agent chose, so the notification states who asked instead of implying it.
+    const requesterLabel = this.resolveTerminalRequesterLabel(params.terminalId);
+    const body = requesterLabel
+      ? `${params.terminalName} · asked by ${requesterLabel}`
+      : params.terminalName;
 
     if (plan.shouldPush) {
       void this.pushNotificationSender

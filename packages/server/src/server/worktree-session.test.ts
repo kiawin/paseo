@@ -248,6 +248,8 @@ function createTerminalManagerStub(options?: {
         },
       ),
       validateTerminalActivityToken: vi.fn(() => "unknown"),
+      isHumanInputOnly: vi.fn(() => false),
+      getRequestedByAgentId: vi.fn(() => undefined),
       getTerminals: vi.fn(async () => []),
       getTerminal: vi.fn(() => undefined),
       killTerminal: vi.fn(),
