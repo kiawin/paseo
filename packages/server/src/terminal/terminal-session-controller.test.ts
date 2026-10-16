@@ -134,6 +134,8 @@ describe("terminal-session-controller restore", () => {
       createTerminal: vi.fn(),
       registerCwdEnv: vi.fn(),
       validateTerminalActivityToken: vi.fn(() => "unknown"),
+      isHumanInputOnly: vi.fn(() => false),
+      getRequestedByAgentId: vi.fn(() => undefined),
       getTerminal: vi.fn(() => terminal),
       replayTerminal: replayFixture(() => snapshot.promise),
       setTerminalTitle: vi.fn(),
@@ -249,6 +251,8 @@ describe("terminal-session-controller legacy terminal creation", () => {
       createTerminal,
       registerCwdEnv: vi.fn(),
       validateTerminalActivityToken: vi.fn(() => "unknown"),
+      isHumanInputOnly: vi.fn(() => false),
+      getRequestedByAgentId: vi.fn(() => undefined),
       getTerminal: vi.fn(),
       replayTerminal: async () => null,
       setTerminalTitle: vi.fn(),
@@ -324,6 +328,8 @@ describe("terminal-session-controller legacy terminal creation", () => {
       createTerminal,
       registerCwdEnv: vi.fn(),
       validateTerminalActivityToken: vi.fn(() => "unknown"),
+      isHumanInputOnly: vi.fn(() => false),
+      getRequestedByAgentId: vi.fn(() => undefined),
       getTerminal: vi.fn(),
       replayTerminal: async () => null,
       setTerminalTitle: vi.fn(),
@@ -442,6 +448,106 @@ async function waitForCoalescerFlush(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 30));
 }
 
+describe("terminal-session-controller replay capability gating", () => {
+  function setup(supportsChunkedReplay: boolean): {
+    controller: ReturnType<typeof createController>;
+    replayTerminal: ReturnType<typeof vi.fn>;
+  } {
+    const terminal: TerminalSession = {
+      id: "term-1",
+      name: "Terminal",
+      cwd: "/tmp",
+      workspaceId: "ws-test",
+      send: vi.fn(),
+      subscribe: (listener) => {
+        queueMicrotask(() => listener({ type: "snapshotReady", revision: 1 }));
+        return vi.fn();
+      },
+      onExit: () => vi.fn(),
+      onCommandFinished: () => vi.fn(),
+      onTitleChange: () => vi.fn(),
+      onActivityChange: () => vi.fn(),
+      getSize: () => ({ rows: 1, cols: 80 }),
+      getState: () => terminalState("hello"),
+      getStateSnapshot: () => ({ state: terminalState("hello"), revision: 1 }),
+      getReplayPreamble: () => "",
+      getTitle: () => undefined,
+      getActivity: () => null,
+      setActivity: vi.fn(),
+      setTitle: vi.fn(),
+      getExitInfo: () => null,
+      kill: vi.fn(),
+      killAndWait: vi.fn(),
+    };
+    const replayTerminal = vi.fn<TerminalManager["replayTerminal"]>(async () => ({
+      rows: 1,
+      cols: 80,
+      retainedHistoryLines: 0,
+      revision: 1,
+      replayPreamble: "",
+    }));
+    const terminalManager = {
+      getTerminals: vi.fn(),
+      createTerminal: vi.fn(),
+      registerCwdEnv: vi.fn(),
+      validateTerminalActivityToken: vi.fn(() => "unknown"),
+      isHumanInputOnly: vi.fn(() => false),
+      getRequestedByAgentId: vi.fn(() => undefined),
+      getTerminal: vi.fn(() => terminal),
+      replayTerminal,
+      setTerminalTitle: vi.fn(),
+      setTerminalActivity: vi.fn(),
+      killTerminal: vi.fn(),
+      killTerminalAndWait: vi.fn(),
+      captureTerminal: vi.fn(),
+      listDirectories: vi.fn(() => []),
+      killAll: vi.fn(),
+      subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeTerminalActivity: vi.fn(() => vi.fn()),
+      subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
+    } as unknown as TerminalManager;
+    const controller = createController({
+      terminalManager,
+      emit: vi.fn(),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: () => false,
+      sessionLogger: createLogger(),
+      supportsChunkedReplay: () => supportsChunkedReplay,
+    });
+    return { controller, replayTerminal };
+  }
+
+  async function subscribe(controller: ReturnType<typeof createController>): Promise<void> {
+    await controller.dispatch({
+      type: "subscribe_terminal_request",
+      terminalId: "term-1",
+      requestId: "req-1",
+      restore: { mode: "visible-snapshot", scrollbackLines: 10000 },
+    });
+    await flushMicrotasks();
+  }
+
+  test("requests the full visible history when the client supports chunked replay", async () => {
+    const { controller, replayTerminal } = setup(true);
+    await subscribe(controller);
+    expect(replayTerminal).toHaveBeenCalledWith(
+      "term-1",
+      { scrollbackLines: 10000 },
+      expect.any(Function),
+    );
+  });
+
+  test("caps visible history when the client does not support chunked replay", async () => {
+    const { controller, replayTerminal } = setup(false);
+    await subscribe(controller);
+    expect(replayTerminal).toHaveBeenCalledWith(
+      "term-1",
+      { scrollbackLines: 500 },
+      expect.any(Function),
+    );
+  });
+});
 describe("terminal-session-controller subdirectory aggregation", () => {
   test("delivers a subdirectory change to a root subscriber as an aggregated, root-keyed snapshot", async () => {
     const rootCwd = "/work/repo";
@@ -461,6 +567,8 @@ describe("terminal-session-controller subdirectory aggregation", () => {
       createTerminal: vi.fn(),
       registerCwdEnv: vi.fn(),
       validateTerminalActivityToken: vi.fn(() => "unknown"),
+      isHumanInputOnly: vi.fn(() => false),
+      getRequestedByAgentId: vi.fn(() => undefined),
       getTerminal: vi.fn(),
       replayTerminal: async () => null,
       setTerminalTitle: vi.fn(),
@@ -529,6 +637,8 @@ describe("terminal-session-controller subdirectory aggregation", () => {
       createTerminal: vi.fn(),
       registerCwdEnv: vi.fn(),
       validateTerminalActivityToken: vi.fn(() => "unknown"),
+      isHumanInputOnly: vi.fn(() => false),
+      getRequestedByAgentId: vi.fn(() => undefined),
       getTerminal: vi.fn(),
       replayTerminal: async () => null,
       setTerminalTitle: vi.fn(),
@@ -621,6 +731,8 @@ describe("terminal-session-controller workspace-scoped subscriptions", () => {
       createTerminal: vi.fn(),
       registerCwdEnv: vi.fn(),
       validateTerminalActivityToken: vi.fn(() => "unknown"),
+      isHumanInputOnly: vi.fn(() => false),
+      getRequestedByAgentId: vi.fn(() => undefined),
       getTerminal: vi.fn(),
       replayTerminal: async () => null,
       setTerminalTitle: vi.fn(),
@@ -992,6 +1104,8 @@ function exitFixture(readReplay: () => Promise<ReplayFixture | null>, backedUp =
     createTerminal: async () => terminal,
     registerCwdEnv() {},
     validateTerminalActivityToken: () => "unknown",
+    isHumanInputOnly: vi.fn(() => false),
+    getRequestedByAgentId: vi.fn(() => undefined),
     setTerminalTitle: () => true,
     setTerminalActivity: async () => true,
     clearTerminalAttention: async () => false,
