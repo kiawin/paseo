@@ -8192,6 +8192,8 @@ describe("PR auto-fix MCP tools", () => {
     prUrl: "https://github.com/acme/widgets/pull/42",
     state: { kind: "active" as const },
     ci: { headSha: "head-1", seenFailureKeys: [], attemptsForHead: 0, consecutiveFailedHeads: 0 },
+    review: { since: "2026-10-17T00:00:00.000Z", lastUpdatedAt: null, seenCommentIds: [] },
+    conflict: { notifiedHeadSha: null },
     createdAt: "2026-10-17T00:00:00.000Z",
     updatedAt: "2026-10-17T00:00:00.000Z",
   };

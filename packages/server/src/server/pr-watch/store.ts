@@ -27,13 +27,27 @@ const PrWatchCiStateSchema = z.object({
   headSha: z.string().nullable(),
   /** Failures already sent to the agent, so a restart or re-poll doesn't resend them. */
   seenFailureKeys: z.array(z.string()),
-  /** Auto-fix prompts sent for headSha. */
+  /** Auto-fix prompts sent for headSha, for any reason: CI, review comments or conflicts. */
   attemptsForHead: z.number().int().nonnegative(),
   /**
    * Heads in a row that still failed after a fix attempt. Each fix push makes a
    * new head, so the per-head cap alone cannot stop a fix loop.
    */
   consecutiveFailedHeads: z.number().int().nonnegative(),
+});
+
+const PrWatchReviewStateSchema = z.object({
+  /** Review comments written before this time predate the watch and are ignored. */
+  since: z.string(),
+  /** PR `updatedAt` the timeline was last read at; a new value means new activity. */
+  lastUpdatedAt: z.string().nullable(),
+  /** Comments already sent to the agent. */
+  seenCommentIds: z.array(z.string()),
+});
+
+const PrWatchConflictStateSchema = z.object({
+  /** Head the agent was last told conflicts with the base branch; one notice per head. */
+  notifiedHeadSha: z.string().nullable(),
 });
 
 export const PrWatchRecordSchema = z.object({
@@ -45,6 +59,8 @@ export const PrWatchRecordSchema = z.object({
   prUrl: z.string().nullable(),
   state: PrWatchStateSchema,
   ci: PrWatchCiStateSchema,
+  review: PrWatchReviewStateSchema,
+  conflict: PrWatchConflictStateSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -55,6 +71,12 @@ export type PrWatchState = z.infer<typeof PrWatchStateSchema>;
 export function createInitialPrWatchCiState(): PrWatchRecord["ci"] {
   return { headSha: null, seenFailureKeys: [], attemptsForHead: 0, consecutiveFailedHeads: 0 };
 }
+
+export function createInitialPrWatchReviewState(since: string): PrWatchRecord["review"] {
+  return { since, lastUpdatedAt: null, seenCommentIds: [] };
+}
+
+export const PR_WATCH_MAX_SEEN_COMMENT_IDS = 500;
 
 /** One watch per agent: the agent Paseo wakes when its PR's CI fails. */
 export class PrWatchStore extends FileBackedRegistry<PrWatchRecord> {

@@ -297,6 +297,8 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
       prUrl: "https://github.com/acme/widgets/pull/42",
       state: { kind: "paused", reason: "attempt_limit", at: "2026-10-17T00:00:00.000Z" },
       ci: { headSha: "head-1", seenFailureKeys: [], attemptsForHead: 3, consecutiveFailedHeads: 1 },
+      review: { since: "2026-10-17T00:00:00.000Z", lastUpdatedAt: null, seenCommentIds: [] },
+      conflict: { notifiedHeadSha: null },
       createdAt: "2026-10-17T00:00:00.000Z",
       updatedAt: "2026-10-17T00:00:00.000Z",
     });

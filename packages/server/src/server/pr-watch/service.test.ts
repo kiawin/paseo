@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import type { PullRequestCheck } from "../../services/forge-service.js";
+import type { PullRequestCheck, PullRequestTimelineItem } from "../../services/forge-service.js";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import type { AgentManagerEvent } from "../agent/agent-manager.js";
 import type { WorkspaceGitRuntimeSnapshot } from "../workspace-git-service.js";
@@ -47,6 +47,24 @@ function pending(name: string): PullRequestCheck {
   return { name, status: "pending", url: `https://ci/${name}` };
 }
 
+function reviewComment(
+  id: string,
+  overrides: Partial<PullRequestTimelineItem> = {},
+): PullRequestTimelineItem {
+  return {
+    kind: "comment",
+    id,
+    author: "maintainer",
+    authorUrl: null,
+    avatarUrl: null,
+    body: `Please fix ${id}.`,
+    createdAt: Date.now() + 60_000,
+    url: `https://github.com/acme/widgets/pull/42#${id}`,
+    authorAssociation: "MEMBER",
+    ...overrides,
+  } as PullRequestTimelineItem;
+}
+
 class Harness {
   readonly pullRequests = new Map<string, PrWatchPullRequest | null>();
   readonly listeners = new Map<string, (snapshot: WorkspaceGitRuntimeSnapshot) => void>();
@@ -56,6 +74,9 @@ class Harness {
   readonly sent: PrWatchSendPromptParams[] = [];
   readonly paused: PrWatchRecord[] = [];
   readonly forges = new Map<string, string>();
+  /** Timeline the fake forge returns, by cwd. */
+  readonly timelines = new Map<string, PullRequestTimelineItem[]>();
+  timelineFetches = 0;
   failNextSend: Error | null = null;
   private agentSubscriber: ((event: AgentManagerEvent) => void) | null = null;
   readonly store: PrWatchStore;
@@ -89,7 +110,18 @@ class Harness {
               forge: this.forges.get(cwd) ?? "github",
             },
           }) as unknown as WorkspaceGitRuntimeSnapshot,
-        resolveForge: async () => null,
+        resolveForge: async (cwd) =>
+          ({
+            service: {
+              getPullRequestTimeline: async () => {
+                this.timelineFetches += 1;
+                return { items: this.timelines.get(cwd) ?? [], error: null };
+              },
+              getCheckDetails: async () => {
+                throw new Error("no check details in tests");
+              },
+            },
+          }) as never,
       },
       agentManager: {
         subscribe: (callback) => {
@@ -392,6 +424,107 @@ describe("PrWatchService", () => {
 
     expect(record?.state).toMatchObject({ kind: "stopped", reason: "user_disabled" });
     expect(harness.listeners.has("/repo/a1")).toBe(false);
+  });
+});
+
+describe("PrWatchService review comments and conflicts", () => {
+  let paseoHome: string;
+
+  beforeEach(async () => {
+    paseoHome = await mkdtemp(path.join(tmpdir(), "paseo-pr-watch-review-"));
+  });
+
+  afterEach(async () => {
+    await rm(paseoHome, { recursive: true, force: true });
+  });
+
+  async function watching() {
+    const harness = new Harness(paseoHome);
+    await harness.service.start();
+    harness.addAgent("a1");
+    await harness.service.setWatch({ agentId: "a1", enabled: true });
+    return harness;
+  }
+
+  test("sends new review comments after PR activity, once each", async () => {
+    const harness = await watching();
+    harness.timelines.set("/repo/a1", [
+      reviewComment("c1"),
+      reviewComment("outsider", { authorAssociation: "NONE" }),
+    ]);
+
+    await harness.poll("a1", { updatedAt: "2026-10-17T01:00:00Z" });
+
+    expect(harness.sent).toHaveLength(1);
+    expect(harness.sent[0]?.prompt).toContain("Please fix c1.");
+    expect(harness.sent[0]?.prompt).not.toContain("outsider");
+
+    await harness.finishTurn("a1");
+    harness.timelines.get("/repo/a1")!.push(reviewComment("c2"));
+    await harness.poll("a1", { updatedAt: "2026-10-17T01:05:00Z" });
+
+    expect(harness.sent).toHaveLength(2);
+    expect(harness.sent[1]?.prompt).toContain("Please fix c2.");
+    expect(harness.sent[1]?.prompt).not.toContain("Please fix c1.");
+    expect((await harness.store.get("a1"))?.review.seenCommentIds).toEqual(["c1", "c2"]);
+  });
+
+  test("reads the timeline only when the PR's activity time moves", async () => {
+    const harness = await watching();
+    const fetchesAfterWatch = harness.timelineFetches;
+
+    await harness.poll("a1", { updatedAt: "2026-10-17T01:00:00Z" });
+    await harness.poll("a1", { updatedAt: "2026-10-17T01:00:00Z" });
+
+    expect(harness.timelineFetches).toBe(fetchesAfterWatch + 1);
+  });
+
+  test("ignores review comments on GitLab, which reports no author access", async () => {
+    const harness = new Harness(paseoHome);
+    await harness.service.start();
+    harness.addAgent("a1");
+    harness.forges.set("/repo/a1", "gitlab");
+    await harness.service.setWatch({ agentId: "a1", enabled: true });
+    harness.timelines.set("/repo/a1", [reviewComment("c1")]);
+
+    await harness.poll("a1", { updatedAt: "2026-10-17T01:00:00Z" });
+
+    expect(harness.sent).toHaveLength(0);
+    expect(harness.timelineFetches).toBe(0);
+  });
+
+  test("sends a comment without waiting for checks still running", async () => {
+    const harness = await watching();
+    harness.timelines.set("/repo/a1", [reviewComment("c1")]);
+
+    await harness.poll("a1", {
+      updatedAt: "2026-10-17T01:00:00Z",
+      checks: [failed("lint", 1), pending("test")],
+    });
+
+    expect(harness.sent).toHaveLength(1);
+    expect(harness.sent[0]?.prompt).toContain("Please fix c1.");
+    expect(harness.sent[0]?.prompt).not.toContain("CI failed");
+
+    await harness.finishTurn("a1");
+    await harness.poll("a1", { checks: [failed("lint", 1), passed("test")] });
+    expect(harness.sent).toHaveLength(2);
+    expect(harness.sent[1]?.prompt).toContain("- lint https://ci/lint");
+  });
+
+  test("reports a merge conflict once per head", async () => {
+    const harness = await watching();
+
+    await harness.poll("a1", { mergeable: "CONFLICTING" });
+    await harness.finishTurn("a1");
+    await harness.poll("a1", { mergeable: "CONFLICTING" });
+
+    expect(harness.sent).toHaveLength(1);
+    expect(harness.sent[0]?.prompt).toContain("conflicts with its base branch `main`");
+
+    await harness.poll("a1", { headSha: "head-2", mergeable: "CONFLICTING" });
+    expect(harness.sent).toHaveLength(2);
+    expect((await harness.store.get("a1"))?.conflict.notifiedHeadSha).toBe("head-2");
   });
 });
 

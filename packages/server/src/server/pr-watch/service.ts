@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { CheckDetails } from "../../services/forge-service.js";
+import type { CheckDetails, PullRequestTimelineItem } from "../../services/forge-service.js";
 import type { AgentManager, AgentManagerEvent } from "../agent/agent-manager.js";
 import type { AgentPromptSource } from "../agent/agent-messages/index.js";
 import type { AgentStorage } from "../agent/agent-storage.js";
@@ -10,10 +10,17 @@ import type {
   WorkspaceGitSubscription,
 } from "../workspace-git-service.js";
 import type { WorkspaceRegistry } from "../workspace-registry.js";
-import { observePullRequest, type PrWatchCiFailure, type PrWatchPullRequest } from "./detect.js";
-import { buildCiFailurePrompt } from "./prompt.js";
+import {
+  observePullRequest,
+  selectNewReviewComments,
+  type PrWatchCiFailure,
+  type PrWatchPullRequest,
+} from "./detect.js";
+import { buildAutoFixPrompt } from "./prompt.js";
 import {
   createInitialPrWatchCiState,
+  createInitialPrWatchReviewState,
+  PR_WATCH_MAX_SEEN_COMMENT_IDS,
   PR_WATCH_MAX_SEEN_FAILURE_KEYS,
   type PrWatchRecord,
   type PrWatchState,
@@ -56,7 +63,13 @@ export interface PrWatchServiceOptions {
 interface WatchRuntime {
   pending: Map<string, PrWatchCiFailure>;
   pendingHeadSha: string | null;
-  /** Repo identity from the last poll; GitHub addresses check runs by owner and name. */
+  /** The head's checks finished, or the settle timeout passed: pending failures can go out. */
+  ciReady: boolean;
+  /** Review comments not yet sent, by id. */
+  comments: Map<string, PullRequestTimelineItem>;
+  /** A conflict on this head not yet reported. */
+  conflict: { headSha: string; baseRefName: string } | null;
+  /** Repo identity from the last poll; GitHub addresses check runs and timelines by owner and name. */
   repo: { owner?: string; name?: string };
   firstFailureAt: number | null;
   settleTimer: ReturnType<typeof setTimeout> | null;
@@ -179,6 +192,8 @@ export class PrWatchService {
       prUrl: pullRequest.url,
       state: { kind: "active" },
       ci: { ...createInitialPrWatchCiState(), headSha: pullRequest.headSha ?? null },
+      review: createInitialPrWatchReviewState(timestamp),
+      conflict: { notifiedHeadSha: null },
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
@@ -240,8 +255,9 @@ export class PrWatchService {
     }
 
     const runtime = this.runtime(agentId);
+    runtime.repo = { owner: pullRequest?.repoOwner, name: pullRequest?.repoName };
     if (observation.headChanged || record.ci.headSha === null) {
-      this.resetPending(runtime);
+      this.resetCi(runtime);
       await this.startHead(agentId, observation.headSha);
     }
     if (observation.checksSettled && isGreen(pullRequest) && record.ci.consecutiveFailedHeads > 0) {
@@ -250,22 +266,79 @@ export class PrWatchService {
         ci: { ...current.ci, consecutiveFailedHeads: 0 },
       }));
     }
+    if (observation.activityChanged && pullRequest?.updatedAt) {
+      await this.collectReviewComments(record, runtime, pullRequest.updatedAt);
+    }
+    runtime.conflict =
+      observation.newConflict && observation.headSha && pullRequest
+        ? { headSha: observation.headSha, baseRefName: pullRequest.baseRefName }
+        : null;
 
+    this.collectCiFailures(agentId, runtime, observation);
+    if (runtime.comments.size > 0 || runtime.conflict) this.markReady(agentId);
+  }
+
+  private collectCiFailures(
+    agentId: string,
+    runtime: WatchRuntime,
+    observation: Extract<ReturnType<typeof observePullRequest>, { kind: "open" }>,
+  ): void {
     for (const failure of observation.newFailures) runtime.pending.set(failure.key, failure);
     if (runtime.pending.size === 0) return;
     runtime.pendingHeadSha = observation.headSha;
-    runtime.repo = { owner: pullRequest?.repoOwner, name: pullRequest?.repoName };
     runtime.firstFailureAt ??= this.now();
 
     const waited = this.now() - runtime.firstFailureAt;
     if (observation.checksSettled || waited >= this.settleTimeoutMs) {
+      runtime.ciReady = true;
       this.markReady(agentId);
     } else if (!runtime.settleTimer) {
       runtime.settleTimer = setTimeout(() => {
         runtime.settleTimer = null;
+        runtime.ciReady = true;
         this.markReady(agentId);
       }, this.settleTimeoutMs - waited);
     }
+  }
+
+  /** Reads the PR timeline after new activity and queues comments the agent should answer. */
+  private async collectReviewComments(
+    record: PrWatchRecord,
+    runtime: WatchRuntime,
+    updatedAt: string,
+  ): Promise<void> {
+    // Review comments need author access levels, which only the GitHub adapter reports.
+    if (record.forge !== "github" || record.prNumber === null) return;
+    if (!runtime.repo.owner || !runtime.repo.name) return;
+    try {
+      const resolution = await this.options.workspaceGitService.resolveForge(record.cwd);
+      if (!resolution) return;
+      const timeline = await resolution.service.getPullRequestTimeline({
+        cwd: record.cwd,
+        prNumber: record.prNumber,
+        repoOwner: runtime.repo.owner,
+        repoName: runtime.repo.name,
+        force: true,
+        reason: "pr-watch",
+      });
+      if (timeline.error) {
+        this.logger.warn(
+          { agentId: record.agentId, error: timeline.error },
+          "pr-watch.timeline.failed",
+        );
+        return;
+      }
+      for (const item of selectNewReviewComments(record, timeline.items)) {
+        runtime.comments.set(item.id, item);
+      }
+    } catch (error) {
+      this.logger.warn({ err: error, agentId: record.agentId }, "pr-watch.timeline.failed");
+      return;
+    }
+    await this.options.store.update(record.agentId, (current) => ({
+      ...current,
+      review: { ...current.review, lastUpdatedAt: updatedAt },
+    }));
   }
 
   /** A new head starts fresh: no failures seen and no attempts made on it yet. */
@@ -279,7 +352,7 @@ export class PrWatchService {
 
   private markReady(agentId: string): void {
     const runtime = this.runtimes.get(agentId);
-    if (!runtime || runtime.pending.size === 0 || runtime.turnInFlight) return;
+    if (!runtime || !hasWork(runtime) || runtime.turnInFlight) return;
     if (!this.readyQueue.includes(agentId)) this.readyQueue.push(agentId);
     this.pump();
   }
@@ -299,7 +372,7 @@ export class PrWatchService {
   private async dispatch(agentId: string): Promise<void> {
     const runtime = this.runtimes.get(agentId);
     const record = await this.options.store.get(agentId);
-    if (!runtime || !record || record.state.kind !== "active" || runtime.pending.size === 0) {
+    if (!runtime || !record || record.state.kind !== "active" || !hasWork(runtime)) {
       this.releaseTurn(agentId);
       return;
     }
@@ -311,16 +384,19 @@ export class PrWatchService {
       return;
     }
 
-    const failures = [...runtime.pending.values()];
-    runtime.pending.clear();
-    if (runtime.settleTimer) clearTimeout(runtime.settleTimer);
-    runtime.settleTimer = null;
-    runtime.firstFailureAt = null;
-    const isFirstAttemptOnHead = record.ci.attemptsForHead === 0;
-    const prompt = buildCiFailurePrompt({
+    const failures = runtime.ciReady ? [...runtime.pending.values()] : [];
+    if (failures.length > 0) this.resetCi(runtime);
+    const comments = [...runtime.comments.values()];
+    runtime.comments.clear();
+    const conflict = runtime.conflict;
+    runtime.conflict = null;
+    // Each fix push makes a new head; count a head as failed once, on its first CI prompt.
+    const isFirstCiPromptOnHead = failures.length > 0 && record.ci.seenFailureKeys.length === 0;
+    const prompt = buildAutoFixPrompt({
       prNumber: record.prNumber,
       prUrl: record.prUrl,
-      headSha: runtime.pendingHeadSha,
+      headSha:
+        failures.length > 0 ? runtime.pendingHeadSha : (conflict?.headSha ?? record.ci.headSha),
       attempt: record.ci.attemptsForHead + 1,
       maxAttempts: this.maxAttemptsPerHead,
       failures: await Promise.all(
@@ -329,6 +405,8 @@ export class PrWatchService {
           details: await this.fetchCheckDetails(record, runtime, failure),
         })),
       ),
+      comments,
+      conflict: conflict ? { baseRefName: conflict.baseRefName } : null,
     });
 
     runtime.turnInFlight = true;
@@ -343,9 +421,12 @@ export class PrWatchService {
         },
       });
     } catch (error) {
-      // Busy, or the agent couldn't load: keep the failures for the next idle moment.
+      // Busy, or the agent couldn't load: keep everything for the next idle moment.
       runtime.turnInFlight = false;
       for (const failure of failures) runtime.pending.set(failure.key, failure);
+      if (failures.length > 0) runtime.ciReady = true;
+      for (const comment of comments) runtime.comments.set(comment.id, comment);
+      runtime.conflict ??= conflict;
       this.releaseTurn(agentId);
       this.deferred.add(agentId);
       this.logger.info({ err: error, agentId }, "pr-watch.dispatch.deferred");
@@ -361,8 +442,16 @@ export class PrWatchService {
           ...failures.map((failure) => failure.key),
         ].slice(-PR_WATCH_MAX_SEEN_FAILURE_KEYS),
         attemptsForHead: current.ci.attemptsForHead + 1,
-        consecutiveFailedHeads: current.ci.consecutiveFailedHeads + (isFirstAttemptOnHead ? 1 : 0),
+        consecutiveFailedHeads: current.ci.consecutiveFailedHeads + (isFirstCiPromptOnHead ? 1 : 0),
       },
+      review: {
+        ...current.review,
+        seenCommentIds: [
+          ...current.review.seenCommentIds,
+          ...comments.map((comment) => comment.id),
+        ].slice(-PR_WATCH_MAX_SEEN_COMMENT_IDS),
+      },
+      conflict: conflict ? { notifiedHeadSha: conflict.headSha } : current.conflict,
       updatedAt: new Date(this.now()).toISOString(),
     }));
   }
@@ -422,7 +511,7 @@ export class PrWatchService {
       const runtime = this.runtimes.get(agentId);
       if (runtime) runtime.turnInFlight = false;
       this.releaseTurn(agentId);
-      if (runtime && runtime.pending.size > 0) this.markReady(agentId);
+      if (runtime && hasWork(runtime)) this.markReady(agentId);
     }
     if (this.deferred.delete(agentId)) this.markReady(agentId);
     if (this.readyQueue.length > 0) this.pump();
@@ -458,6 +547,9 @@ export class PrWatchService {
       runtime = {
         pending: new Map(),
         pendingHeadSha: null,
+        ciReady: false,
+        comments: new Map(),
+        conflict: null,
         repo: {},
         firstFailureAt: null,
         settleTimer: null,
@@ -468,8 +560,9 @@ export class PrWatchService {
     return runtime;
   }
 
-  private resetPending(runtime: WatchRuntime): void {
+  private resetCi(runtime: WatchRuntime): void {
     runtime.pending.clear();
+    runtime.ciReady = false;
     runtime.firstFailureAt = null;
     if (runtime.settleTimer) clearTimeout(runtime.settleTimer);
     runtime.settleTimer = null;
@@ -477,7 +570,7 @@ export class PrWatchService {
 
   private clearRuntime(agentId: string): void {
     const runtime = this.runtimes.get(agentId);
-    if (runtime) this.resetPending(runtime);
+    if (runtime) this.resetCi(runtime);
     this.runtimes.delete(agentId);
     const queued = this.readyQueue.indexOf(agentId);
     if (queued !== -1) this.readyQueue.splice(queued, 1);
@@ -497,6 +590,15 @@ export class PrWatchService {
     });
     return next;
   }
+}
+
+/** Something is ready to send: settled CI failures, review comments, or a conflict. */
+function hasWork(runtime: WatchRuntime): boolean {
+  return (
+    (runtime.ciReady && runtime.pending.size > 0) ||
+    runtime.comments.size > 0 ||
+    runtime.conflict !== null
+  );
 }
 
 function isGreen(pullRequest: PrWatchPullRequest | null): boolean {

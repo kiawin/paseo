@@ -3296,7 +3296,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     {
       title: "Watch pull request",
       description:
-        "Turn on auto-fix for the open pull request on your branch (GitHub or GitLab). When its CI fails, Paseo prompts you with the failed checks once they finish, up to 3 attempts per commit. Turning it on again resets the attempt count.",
+        "Turn on auto-fix for the open pull request on your branch (GitHub or GitLab). Paseo prompts you when its CI fails (once the checks finish), when it starts conflicting with its base branch, and, on GitHub, when someone with repo access leaves a review comment. Up to 3 auto-fix turns per commit. End any PR comment you post with <!-- paseo-autofix --> so it doesn't wake you. Turning it on again resets the turn count.",
       inputSchema: {},
       outputSchema: PrWatchPayloadSchema.shape,
     },
