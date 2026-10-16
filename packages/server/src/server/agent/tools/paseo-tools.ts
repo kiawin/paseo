@@ -6,7 +6,7 @@ import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager, ManagedAgent } from "../agent-manager.js";
-import { AgentProfileSchema } from "@getpaseo/protocol/messages";
+import { AgentProfileSchema, PrWatchPayloadSchema } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import {
   AgentFeatureSchema,
@@ -53,6 +53,8 @@ import { expandUserPath, isSameOrDescendantPath, resolvePathFromBase } from "../
 import type { TerminalManager } from "../../../terminal/terminal-manager.js";
 import type { CreatePaseoWorktreeWorkflowFn } from "../../worktree-session.js";
 import { SCHEDULE_ID_LABEL, type ScheduleService } from "../../schedule/service.js";
+import { toPrWatchPayload } from "../../pr-watch/payload.js";
+import type { PrWatchService } from "../../pr-watch/service.js";
 import { localBranchExists } from "../../../utils/checkout-git.js";
 import {
   ScheduleRunSchema,
@@ -129,6 +131,7 @@ export interface PaseoToolHostDependencies {
   terminalManager?: TerminalManager | null;
   getDaemonTcpPort?: () => number | null;
   scheduleService?: ScheduleService | null;
+  prWatchService?: PrWatchService | null;
   providerSnapshotManager: ProviderSnapshotManager;
   daemonConfigStore?: Pick<DaemonConfigStore, "get">;
   github?: ForgeService;
@@ -806,6 +809,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     terminalManager,
     workspaceScripts,
     scheduleService,
+    prWatchService,
     providerSnapshotManager,
     daemonConfigStore,
     callerAgentId,
@@ -3284,6 +3288,50 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         content: [],
         structuredContent: ensureValidJson(toScheduleSummary(schedule)),
       };
+    },
+  );
+
+  registerTool(
+    "watch_pull_request",
+    {
+      title: "Watch pull request",
+      description:
+        "Turn on auto-fix for the open pull request on your branch (GitHub or GitLab). When its CI fails, Paseo prompts you with the failed checks once they finish, up to 3 attempts per commit. Turning it on again resets the attempt count.",
+      inputSchema: {},
+      outputSchema: PrWatchPayloadSchema.shape,
+    },
+    async () => {
+      if (!prWatchService) {
+        throw new Error("PR auto-fix is not available on this daemon");
+      }
+      if (!callerAgentId) {
+        throw new Error("watch_pull_request requires an agent-scoped session");
+      }
+      const record = await prWatchService.setWatch({ agentId: callerAgentId, enabled: true });
+      if (!record) {
+        throw new Error("PR auto-fix did not start");
+      }
+      return { content: [], structuredContent: ensureValidJson(toPrWatchPayload(record)) };
+    },
+  );
+
+  registerTool(
+    "unwatch_pull_request",
+    {
+      title: "Unwatch pull request",
+      description: "Turn off auto-fix for your pull request.",
+      inputSchema: {},
+      outputSchema: { stopped: z.boolean() },
+    },
+    async () => {
+      if (!prWatchService) {
+        throw new Error("PR auto-fix is not available on this daemon");
+      }
+      if (!callerAgentId) {
+        throw new Error("unwatch_pull_request requires an agent-scoped session");
+      }
+      const record = await prWatchService.setWatch({ agentId: callerAgentId, enabled: false });
+      return { content: [], structuredContent: { stopped: record !== null } };
     },
   );
 

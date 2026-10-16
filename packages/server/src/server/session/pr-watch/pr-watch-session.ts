@@ -4,29 +4,13 @@ import { getErrorMessage } from "@getpaseo/protocol/error-utils";
 import type {
   AgentPrWatchListRequest,
   AgentPrWatchSetRequest,
-  PrWatchPayload,
   SessionOutboundMessage,
 } from "../../messages.js";
-import { PR_WATCH_MAX_ATTEMPTS_PER_HEAD, type PrWatchService } from "../../pr-watch/service.js";
-import type { PrWatchRecord } from "../../pr-watch/store.js";
+import { toPrWatchPayload } from "../../pr-watch/payload.js";
+import type { PrWatchService } from "../../pr-watch/service.js";
 
 export interface PrWatchSessionHost {
   emit(message: SessionOutboundMessage, source?: object): void;
-}
-
-export function toPrWatchPayload(record: PrWatchRecord): PrWatchPayload {
-  return {
-    agentId: record.agentId,
-    cwd: record.cwd,
-    forge: record.forge,
-    prNumber: record.prNumber,
-    prUrl: record.prUrl,
-    state: record.state,
-    headSha: record.ci.headSha,
-    attemptsForHead: record.ci.attemptsForHead,
-    maxAttemptsPerHead: PR_WATCH_MAX_ATTEMPTS_PER_HEAD,
-    updatedAt: record.updatedAt,
-  };
 }
 
 export class PrWatchSession {
