@@ -152,6 +152,9 @@ import {
 } from "./workspace-registry.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
+import { PrWatchService } from "./pr-watch/service.js";
+import { sendPromptToAgent } from "./agent/agent-prompt.js";
+import { PrWatchStore } from "./pr-watch/store.js";
 import { DaemonConfigStore, type MutableDaemonConfig } from "./daemon-config-store.js";
 import { createOrchestrationSkills } from "./orchestration-skills/index.js";
 import { resolveConfigFromPersisted, type CliConfigOverrides } from "./config.js";
@@ -943,6 +946,7 @@ export async function createPaseoDaemon(
   });
   const artifactStore = new ArtifactStore(path.join(config.paseoHome, "artifacts"), logger);
   const noteStore = new NoteStore(path.join(config.paseoHome, "notes"), logger);
+  const prWatchStore = new PrWatchStore(config.paseoHome, logger);
   const github = createGitHubService();
   const workspaceGitService = new WorkspaceGitServiceImpl({
     logger,
@@ -1431,11 +1435,37 @@ export async function createPaseoDaemon(
     archiveWorkspace: archiveScheduleWorkspaceExternal,
   });
   await scheduleService.start();
+  const prWatchService = new PrWatchService({
+    store: prWatchStore,
+    workspaceGitService,
+    agentManager,
+    agentStorage,
+    workspaceRegistry,
+    sendPrompt: async ({ agentId, prompt, source }) => {
+      await sendPromptToAgent({
+        agentManager,
+        agentStorage,
+        agentId,
+        prompt,
+        source,
+        unarchive: false,
+        replaceRunning: false,
+        logger,
+      });
+    },
+    logger,
+  });
+  await prWatchService.start();
   agentManager.setAgentArchivedCallback(async (agentId) => {
     try {
       await scheduleService.completeForAgent(agentId);
     } catch (error) {
       logger.warn({ err: error, agentId }, "Failed to complete schedules for archived agent");
+    }
+    try {
+      await prWatchService.stopForAgent(agentId, "agent_archived");
+    } catch (error) {
+      logger.warn({ err: error, agentId }, "Failed to stop PR watch for archived agent");
     }
   });
   logger.info({ elapsed: elapsed() }, "Schedule service initialized");
@@ -1882,6 +1912,9 @@ export async function createPaseoDaemon(
     await hubRelationships.stop();
     workspaceReconciliation.dispose();
     scriptHealthMonitor.stop();
+    // Stop PR auto-fix before agents close, so it can't prompt one mid-shutdown.
+    prWatchService.stop();
+    await prWatchService.whenIdle().catch(() => undefined);
     // Freeze both ingress and registration before taking the agent closure snapshot.
     wsServer?.prepareForShutdown();
     agentManager.prepareForShutdown();
