@@ -22,13 +22,19 @@ import { isNative } from "@/constants/platform";
  * regions, because Electron does not clip app-region rects to scroll viewports.
  * See the `[data-window-content]` rule in public/index.html.
  */
-export const WINDOW_CONTENT_DATASET = { "window-content": "" };
-
 export const titlebarDragSurfaceStyle: React.CSSProperties = {
   cursor: "default",
   // @ts-expect-error — WebkitAppRegion is not in CSSProperties
   WebkitAppRegion: "drag",
 };
+
+/**
+ * Marks a content root that sits below window chrome (`data-window-content`,
+ * see index.html). Electron keeps the app-region rectangles of controls that
+ * scroll above their viewport, so a scrolled file tree or diff can turn the
+ * titlebar above it into no-drag. Content roots emit no window regions.
+ */
+export const WINDOW_CONTENT_DATASET = { windowContent: "" } as const;
 
 const DRAG_OVERLAY_STYLE: React.CSSProperties = {
   ...titlebarDragSurfaceStyle,
