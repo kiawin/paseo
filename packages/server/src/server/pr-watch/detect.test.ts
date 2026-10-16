@@ -50,14 +50,14 @@ describe("observePullRequest", () => {
       kind: "open",
       headSha: "head-1",
       headChanged: false,
-      newFailures: [{ key: "check-run:7", check: failed }],
+      newFailures: [{ key: "head-1::lint", check: failed }],
       checksSettled: true,
     });
   });
 
   test("skips failures already sent for the same head", () => {
     const observation = observePullRequest(
-      watchRecord({ headSha: "head-1", seenFailureKeys: ["check-run:7"] }),
+      watchRecord({ headSha: "head-1", seenFailureKeys: ["head-1::test"] }),
       pullRequest({ checks: [check({ status: "failure", checkRunId: 7 })] }),
     );
 
@@ -66,14 +66,14 @@ describe("observePullRequest", () => {
 
   test("treats every failure on a new head as new", () => {
     const observation = observePullRequest(
-      watchRecord({ headSha: "head-1", seenFailureKeys: ["status:head-1::test"] }),
+      watchRecord({ headSha: "head-1", seenFailureKeys: ["head-1::test"] }),
       pullRequest({ headSha: "head-2", checks: [check({ status: "failure" })] }),
     );
 
     expect(observation).toMatchObject({
       kind: "open",
       headChanged: true,
-      newFailures: [{ key: "status:head-2::test" }],
+      newFailures: [{ key: "head-2::test" }],
     });
   });
 
@@ -106,13 +106,15 @@ describe("observePullRequest", () => {
 });
 
 describe("ciFailureKey", () => {
-  test("uses the check run id when the forge reports one", () => {
-    expect(ciFailureKey(check({ checkRunId: 9 }), "head-1")).toBe("check-run:9");
+  test("is the same whether or not the fetch reported a check-run id", () => {
+    expect(ciFailureKey(check({ workflow: "CI", name: "build", checkRunId: 9 }), "head-1")).toBe(
+      ciFailureKey(check({ workflow: "CI", name: "build" }), "head-1"),
+    );
   });
 
-  test("falls back to head, workflow and name for status contexts", () => {
-    expect(ciFailureKey(check({ workflow: "CI", name: "build" }), "head-1")).toBe(
-      "status:head-1:CI:build",
+  test("differs per head, so a new commit's failure is new", () => {
+    expect(ciFailureKey(check({ name: "build" }), "head-1")).not.toBe(
+      ciFailureKey(check({ name: "build" }), "head-2"),
     );
   });
 });

@@ -261,7 +261,7 @@ describe("PrWatchService", () => {
     await harness.service.setWatch({ agentId: "a1", enabled: true });
 
     for (let run = 1; run <= 4; run += 1) {
-      await harness.poll("a1", { checks: [failed("lint", run)] });
+      await harness.poll("a1", { checks: [failed(`check-${run}`)] });
       await harness.finishTurn("a1");
     }
 
@@ -392,5 +392,30 @@ describe("PrWatchService", () => {
 
     expect(record?.state).toMatchObject({ kind: "stopped", reason: "user_disabled" });
     expect(harness.listeners.has("/repo/a1")).toBe(false);
+  });
+});
+
+describe("PrWatchService failure identity", () => {
+  let paseoHome: string;
+
+  beforeEach(async () => {
+    paseoHome = await mkdtemp(path.join(tmpdir(), "paseo-pr-watch-identity-"));
+  });
+
+  afterEach(async () => {
+    await rm(paseoHome, { recursive: true, force: true });
+  });
+
+  test("does not resend a failure when a later poll adds its check-run id", async () => {
+    const harness = new Harness(paseoHome);
+    await harness.service.start();
+    harness.addAgent("a1");
+    await harness.service.setWatch({ agentId: "a1", enabled: true });
+
+    await harness.poll("a1", { checks: [failed("test")] });
+    await harness.finishTurn("a1");
+    await harness.poll("a1", { checks: [failed("test", 117)] });
+
+    expect(harness.sent).toHaveLength(1);
   });
 });
