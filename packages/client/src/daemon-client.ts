@@ -145,6 +145,7 @@ import type {
   ArtifactRecordPayload,
   ArtifactSearchMatch,
   NoteRecordPayload,
+  PrWatchPayload,
   NoteSearchMatch,
   MutableDaemonConfig,
   MutableDaemonConfigPatch,
@@ -5429,6 +5430,37 @@ export class DaemonClient {
     });
     if (!payload.success) throw new Error(payload.error ?? "Failed to search artifacts.");
     return payload.matches;
+  }
+
+  /**
+   * Turns PR auto-fix on or off for an agent's current PR. Turning it on resets its
+   * attempt counters. Gate on `server_info.features.prAutoFix` before calling.
+   */
+  async setAgentPrWatch(agentId: string, enabled: boolean): Promise<PrWatchPayload | null> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "agent.pr_watch.set.request", agentId, enabled, requestId },
+      responseType: "agent.pr_watch.set.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to update PR auto-fix.");
+    return payload.watch;
+  }
+
+  /** Gate on `server_info.features.prAutoFix` before calling. */
+  async listAgentPrWatches(agentId?: string): Promise<PrWatchPayload[]> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "agent.pr_watch.list.request",
+        ...(agentId ? { agentId } : {}),
+        requestId,
+      },
+      responseType: "agent.pr_watch.list.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to list PR auto-fix watches.");
+    return payload.watches;
   }
 
   /** Gate on `server_info.features.notes` before calling. */

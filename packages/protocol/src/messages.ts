@@ -3170,6 +3170,22 @@ export const NoteDeleteRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Gate on server_info.features.prAutoFix before sending.
+export const AgentPrWatchSetRequestSchema = z.object({
+  type: z.literal("agent.pr_watch.set.request"),
+  agentId: z.string(),
+  /** True watches the PR for the agent's branch; false stops watching. */
+  enabled: z.boolean(),
+  requestId: z.string(),
+});
+
+export const AgentPrWatchListRequestSchema = z.object({
+  type: z.literal("agent.pr_watch.list.request"),
+  /** Omit to list every watch on the daemon. */
+  agentId: z.string().optional(),
+  requestId: z.string(),
+});
+
 export const ProjectIconRequestSchema = z.object({
   type: z.literal("project_icon_request"),
   cwd: z.string(),
@@ -3707,6 +3723,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   NotePinSetRequestSchema,
   NoteSearchRequestSchema,
   NoteDeleteRequestSchema,
+  AgentPrWatchSetRequestSchema,
+  AgentPrWatchListRequestSchema,
   FileEntryDownloadRequestSchema,
   FileEntryUploadRequestSchema,
   FileTransferAckSchema,
@@ -3968,6 +3986,8 @@ export const ServerInfoStatusPayloadSchema = z
         notePin: z.boolean().optional(),
         // COMPAT(noteSearch): added in v0.11.x, remove after 2028-04-18.
         noteSearch: z.boolean().optional(),
+        // COMPAT(prAutoFix): added in v0.12.x, remove gate after 2028-10-17.
+        prAutoFix: z.boolean().optional(),
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the
         // feature gate and checkoutGithubSetAutoMerge fallback after 2027-01-17
         // once the supported daemon floor is >= v0.2.0.
@@ -6646,6 +6666,46 @@ export const NoteDeleteResponseSchema = z.object({
   }),
 });
 
+// Reasons stay open strings so a daemon can add one without breaking older clients.
+export const PrWatchStatePayloadSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("active") }),
+  z.object({ kind: z.literal("paused"), reason: z.string(), at: z.string() }),
+  z.object({ kind: z.literal("stopped"), reason: z.string(), at: z.string() }),
+]);
+
+export const PrWatchPayloadSchema = z.object({
+  agentId: z.string(),
+  cwd: z.string(),
+  forge: z.string(),
+  prNumber: z.number().int().nullable(),
+  prUrl: z.string().nullable(),
+  state: PrWatchStatePayloadSchema,
+  headSha: z.string().nullable(),
+  attemptsForHead: z.number().int().nonnegative(),
+  maxAttemptsPerHead: z.number().int().positive(),
+  updatedAt: z.string(),
+});
+
+export const AgentPrWatchSetResponseSchema = z.object({
+  type: z.literal("agent.pr_watch.set.response"),
+  payload: z.object({
+    watch: PrWatchPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const AgentPrWatchListResponseSchema = z.object({
+  type: z.literal("agent.pr_watch.list.response"),
+  payload: z.object({
+    watches: z.array(PrWatchPayloadSchema),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
 export const NoteChangedMessageSchema = z.object({
   type: z.literal("note.changed"),
   payload: z.object({
@@ -7642,6 +7702,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   NoteSearchResponseSchema,
   NoteDeleteResponseSchema,
   NoteChangedMessageSchema,
+  AgentPrWatchSetResponseSchema,
+  AgentPrWatchListResponseSchema,
   FileEntryDownloadResponseSchema,
   FileEntryUploadResponseSchema,
   FileTransferAckSchema,
@@ -8139,6 +8201,11 @@ export type NoteSearchResponse = z.infer<typeof NoteSearchResponseSchema>;
 export type NoteSearchMatch = z.infer<typeof NoteSearchMatchSchema>;
 export type NoteDeleteRequest = z.infer<typeof NoteDeleteRequestSchema>;
 export type NoteDeleteResponse = z.infer<typeof NoteDeleteResponseSchema>;
+export type AgentPrWatchSetRequest = z.infer<typeof AgentPrWatchSetRequestSchema>;
+export type AgentPrWatchSetResponse = z.infer<typeof AgentPrWatchSetResponseSchema>;
+export type AgentPrWatchListRequest = z.infer<typeof AgentPrWatchListRequestSchema>;
+export type AgentPrWatchListResponse = z.infer<typeof AgentPrWatchListResponseSchema>;
+export type PrWatchPayload = z.infer<typeof PrWatchPayloadSchema>;
 export type NoteChangedMessage = z.infer<typeof NoteChangedMessageSchema>;
 export type FileEntryDownloadRequest = z.infer<typeof FileEntryDownloadRequestSchema>;
 export type FileEntryDownloadResponse = z.infer<typeof FileEntryDownloadResponseSchema>;
