@@ -189,6 +189,8 @@ import { WorkspaceFilesSession } from "./session/files/workspace-files-session.j
 import { ArtifactsSession } from "./session/artifacts/artifacts-session.js";
 import type { ArtifactStore } from "./artifact-store.js";
 import { NotesSession } from "./session/notes/notes-session.js";
+import { PrWatchSession } from "./session/pr-watch/pr-watch-session.js";
+import type { PrWatchService } from "./pr-watch/service.js";
 import type { NoteChange, NoteStore } from "./note-store.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
 import { ProjectConfigSession } from "./session/project-config/project-config-session.js";
@@ -490,6 +492,7 @@ export interface SessionOptions {
   workspaceLabelService?: WorkspaceLabelService;
   artifactStore?: ArtifactStore;
   noteStore?: NoteStore;
+  prWatchService?: PrWatchService;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -818,6 +821,7 @@ export class Session {
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly artifactsSession: ArtifactsSession;
   private readonly notesSession: NotesSession;
+  private readonly prWatchSession: PrWatchSession;
   private readonly agentConfigSession: AgentConfigSession;
   private readonly projectConfigSession: ProjectConfigSession;
   private readonly daemonSession: DaemonSession;
@@ -854,6 +858,7 @@ export class Session {
       workspaceLabelService,
       artifactStore,
       noteStore,
+      prWatchService,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -924,6 +929,7 @@ export class Session {
     });
     this.artifactsSession = this.createArtifactsSession(artifactStore);
     this.notesSession = this.createNotesSession(noteStore);
+    this.prWatchSession = this.createPrWatchSession(prWatchService);
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry;
@@ -2433,6 +2439,7 @@ export class Session {
     (msg, source) => this.dispatchWorkspaceFileMessage(msg, source),
     (msg, source) => this.dispatchArtifactMessage(msg, source),
     (msg, source) => this.dispatchNoteMessage(msg, source),
+    (msg, source) => this.dispatchPrWatchMessage(msg, source),
     (msg) => this.dispatchProviderMessage(msg),
     (msg) => this.dispatchOrchestrationSkillsMessage(msg),
     (msg) => this.dispatchPluginDirectoryMessage(msg),
@@ -3106,6 +3113,14 @@ export class Session {
     );
   }
 
+  private createPrWatchSession(prWatchService: PrWatchService | undefined): PrWatchSession {
+    return new PrWatchSession(
+      { emit: (msg, source) => this.emitForSource(msg, source) },
+      prWatchService ?? null,
+      this.sessionLogger,
+    );
+  }
+
   private createNotesSession(noteStore: NoteStore | undefined): NotesSession {
     return new NotesSession(
       {
@@ -3166,6 +3181,20 @@ export class Session {
         return this.notesSession.handlePinSetRequest(msg, source);
       case "note.search.request":
         return this.notesSession.handleSearchRequest(msg, source);
+      default:
+        return undefined;
+    }
+  }
+
+  private dispatchPrWatchMessage(
+    msg: SessionInboundMessage,
+    source?: object,
+  ): Promise<void> | undefined {
+    switch (msg.type) {
+      case "agent.pr_watch.set.request":
+        return this.prWatchSession.handleSetRequest(msg, source);
+      case "agent.pr_watch.list.request":
+        return this.prWatchSession.handleListRequest(msg, source);
       default:
         return undefined;
     }

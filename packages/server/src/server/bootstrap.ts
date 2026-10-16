@@ -1453,6 +1453,7 @@ export async function createPaseoDaemon(
         logger,
       });
     },
+    onWatchPaused: (record) => wsServer?.notifyPrWatchPaused(record),
     logger,
   });
   await prWatchService.start();
@@ -1840,6 +1841,7 @@ export async function createPaseoDaemon(
               workspaceLabelService,
               artifactStore,
               noteStore,
+              prWatchService,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
