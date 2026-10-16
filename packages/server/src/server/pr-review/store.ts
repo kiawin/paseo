@@ -14,7 +14,12 @@ export const PrReviewRecordSchema = z.object({
   /** The reviewer agent; a re-review prompts it again while it isn't archived. */
   agentId: z.string(),
   workspaceId: z.string().nullable(),
-  /** Head commit the latest review covered. */
+  /**
+   * True when Paseo cut a worktree for this review, which it archives once the
+   * PR ends. Fork PRs are reviewed from the project's checkout, which it keeps.
+   */
+  ownsWorktree: z.boolean(),
+  /** Head commit the latest review covered; null until a review prompt went out. */
   reviewedHeadSha: z.string().nullable(),
   /**
    * True while the PR sits in your review requests. Submitting a review clears

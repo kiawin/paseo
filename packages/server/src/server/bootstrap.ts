@@ -1470,14 +1470,16 @@ export async function createPaseoDaemon(
     agentManager,
     agentStorage,
     turnBudget: prAutomationTurnBudget,
-    createReviewer: async ({ cwd, prNumber, provider, title, prompt, labels }) => {
+    createReviewer: async ({ cwd, prNumber, checkout, provider, title, prompt, labels }) => {
       const result = await createAgent({
         kind: "mcp",
         provider,
         title,
         initialPrompt: prompt,
         cwd,
-        worktree: { action: "checkout", githubPrNumber: prNumber },
+        ...(checkout
+          ? { worktree: { action: "checkout" as const, githubPrNumber: prNumber } }
+          : {}),
         labels,
         notifyOnFinish: false,
       });

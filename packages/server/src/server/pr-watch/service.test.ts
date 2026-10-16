@@ -193,6 +193,14 @@ class Harness {
     await this.service.whenIdle();
   }
 
+  startTurn(agentId: string): void {
+    this.busy.add(agentId);
+    this.agentSubscriber?.({
+      type: "agent_state",
+      agent: { id: agentId },
+    } as unknown as AgentManagerEvent);
+  }
+
   async finishTurn(agentId: string): Promise<void> {
     this.busy.delete(agentId);
     this.agentSubscriber?.({
@@ -524,6 +532,24 @@ describe("PrWatchService review comments and conflicts", () => {
     expect(harness.sent[1]?.prompt).toContain("- lint https://ci/lint");
   });
 
+  test("a comment held for a busy agent is still sent after a restart", async () => {
+    const harness = await watching();
+    harness.timelines.set("/repo/a1", [reviewComment("c1")]);
+    harness.busy.add("a1");
+    await harness.poll("a1", { updatedAt: "2026-10-17T01:00:00Z" });
+    expect(harness.sent).toHaveLength(0);
+
+    harness.service.stop();
+    harness.service = harness.createService();
+    await harness.service.start();
+    await harness.finishTurn("a1");
+    await harness.poll("a1", { updatedAt: "2026-10-17T01:00:00Z" });
+
+    expect(harness.sent).toHaveLength(1);
+    expect(harness.sent[0]?.prompt).toContain("Please fix c1.");
+    expect((await harness.store.get("a1"))?.review.lastUpdatedAt).toBe("2026-10-17T01:00:00Z");
+  });
+
   test("reports a merge conflict once per head", async () => {
     const harness = await watching();
 
@@ -552,10 +578,8 @@ describe("PrWatchService watches for PRs agents open", () => {
   });
 
   async function settled(harness: Harness, agentId: string): Promise<void> {
+    harness.startTurn(agentId);
     await harness.finishTurn(agentId);
-    // The check runs outside the per-watch lock; let it finish.
-    for (let tick = 0; tick < 20; tick += 1) await new Promise((resolve) => setImmediate(resolve));
-    await harness.service.whenIdle();
   }
 
   test("watches the PR when the agent's turn ends and the project opts in", async () => {
@@ -586,6 +610,38 @@ describe("PrWatchService watches for PRs agents open", () => {
     for (const id of ["main-checkout", "reviewer", "no-pr"]) await settled(harness, id);
 
     expect(await harness.store.list()).toEqual([]);
+  });
+
+  test("checks when a turn ends, not when the agent is idle before its first turn", async () => {
+    const harness = new Harness(paseoHome);
+    await harness.service.start();
+    harness.autoFixAgentPullRequests = true;
+    harness.addAgent("a1");
+    harness.pullRequests.set("/repo/a1", null);
+
+    // A new agent reports idle states before its first prompt runs.
+    await harness.finishTurn("a1");
+    harness.pullRequests.set("/repo/a1", pullRequest());
+    await settled(harness, "a1");
+
+    expect((await harness.store.get("a1"))?.state).toEqual({ kind: "active" });
+  });
+
+  test("watches a new PR from an agent whose earlier PR's watch was turned off", async () => {
+    const harness = new Harness(paseoHome);
+    await harness.service.start();
+    harness.autoFixAgentPullRequests = true;
+    harness.addAgent("a1");
+    await harness.service.setWatch({ agentId: "a1", enabled: true });
+    await harness.service.setWatch({ agentId: "a1", enabled: false });
+    harness.pullRequests.set("/repo/a1", pullRequest({ number: 43, headSha: "head-43" }));
+
+    await settled(harness, "a1");
+
+    expect(await harness.store.get("a1")).toMatchObject({
+      prNumber: 43,
+      state: { kind: "active" },
+    });
   });
 
   test("doesn't restart a watch the user turned off", async () => {

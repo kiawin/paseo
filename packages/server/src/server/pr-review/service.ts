@@ -30,9 +30,11 @@ export interface ReviewRequestListResult {
 }
 
 export interface CreateReviewerParams {
-  /** The project's checkout; the reviewer gets a new worktree of the PR cut from it. */
+  /** The project's checkout. */
   cwd: string;
   prNumber: number;
+  /** Cut a new worktree of the PR for the reviewer; false runs it in `cwd`. */
+  checkout: boolean;
   provider: string;
   title: string;
   prompt: string;
@@ -78,6 +80,7 @@ export class PrReviewService {
   private readonly now: () => number;
   /** Reviewer agents holding a turn-budget slot, by agent id. */
   private readonly budgetedReviewers = new Set<string>();
+  private readonly locks = new Map<string, Promise<unknown>>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling: Promise<void> | null = null;
   private unsubscribeAgents: (() => void) | null = null;
@@ -228,9 +231,13 @@ export class PrReviewService {
       }
       return;
     }
+    // Mark every request first: a full budget below must not make a later
+    // request look withdrawn, or it would be reviewed twice.
+    for (const pullRequest of pullRequests) {
+      stillRequested.add(prReviewId(project.projectId, pullRequest.number));
+    }
     for (const pullRequest of pullRequests) {
       const id = prReviewId(project.projectId, pullRequest.number);
-      stillRequested.add(id);
       const existing = await this.options.store.get(id);
       if (existing?.requestActive && existing.state === "active") continue;
       // Fork PRs and drafts are listed for you to review by hand.
@@ -278,7 +285,9 @@ export class PrReviewService {
         reason: "pr-review-archive",
       });
       if (pullRequest.state.toLowerCase() === "open") return;
-      if (record.workspaceId) await this.options.archiveWorkspace(record.workspaceId);
+      if (record.ownsWorktree && record.workspaceId) {
+        await this.options.archiveWorkspace(record.workspaceId);
+      }
       await this.options.store.update(record.id, (current) => ({
         ...current,
         state: "archived",
@@ -290,43 +299,38 @@ export class PrReviewService {
     }
   }
 
-  private async review(params: {
+  /** One review at a time per PR, so a poll and a click can't both create a reviewer. */
+  private review(params: {
+    project: PersistedProjectRecord;
+    pullRequest: PullRequestSummary;
+    provider: string | null;
+  }): Promise<PrReviewRecord> {
+    const id = prReviewId(params.project.projectId, params.pullRequest.number);
+    const previous = this.locks.get(id) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(() => this.reviewLocked(params));
+    this.locks.set(id, next);
+    void next
+      .catch(() => undefined)
+      .then(() => {
+        if (this.locks.get(id) === next) this.locks.delete(id);
+        return undefined;
+      });
+    return next;
+  }
+
+  private async reviewLocked(params: {
     project: PersistedProjectRecord;
     pullRequest: PullRequestSummary;
     provider: string | null;
   }): Promise<PrReviewRecord> {
     const { project, pullRequest } = params;
     const id = prReviewId(project.projectId, pullRequest.number);
-    const promptInput: ReviewPromptInput = {
-      prNumber: pullRequest.number,
-      prUrl: pullRequest.url,
-      title: pullRequest.title,
-      author: pullRequest.author ?? null,
-      baseRefName: pullRequest.baseRefName,
-      headSha: pullRequest.headSha ?? null,
-      isCrossRepository: pullRequest.isCrossRepository !== false,
-      postReviews: project.prAutomation?.postReviews ?? false,
-    };
+    const promptInput = toReviewPromptInput(project, pullRequest);
 
     const existing = await this.options.store.get(id);
     const reviewer = existing ? await this.options.agentStorage.get(existing.agentId) : null;
     if (existing && existing.state === "active" && reviewer && !reviewer.archivedAt) {
-      await this.options.sendPrompt({
-        agentId: existing.agentId,
-        prompt: buildReReviewPrompt({ ...promptInput, previousHeadSha: existing.reviewedHeadSha }),
-        source: {
-          kind: "forge-event",
-          agentId: `pr-review:${id}`,
-          title: `PR #${pullRequest.number} review`,
-        },
-      });
-      const updated = await this.options.store.update(id, (current) => ({
-        ...current,
-        reviewedHeadSha: pullRequest.headSha ?? null,
-        requestActive: true,
-        updatedAt: this.timestamp(),
-      }));
-      return updated ?? existing;
+      return this.promptReviewer(existing, promptInput);
     }
 
     if (!params.provider) {
@@ -335,6 +339,7 @@ export class PrReviewService {
     const created = await this.options.createReviewer({
       cwd: project.rootPath,
       prNumber: pullRequest.number,
+      checkout: !promptInput.isCrossRepository,
       provider: params.provider,
       title: `Review PR #${pullRequest.number}: ${pullRequest.title}`,
       prompt: buildReviewPrompt(promptInput),
@@ -348,14 +353,49 @@ export class PrReviewService {
       prUrl: pullRequest.url,
       agentId: created.agentId,
       workspaceId: created.workspaceId,
-      reviewedHeadSha: pullRequest.headSha ?? null,
-      requestActive: true,
+      ownsWorktree: !promptInput.isCrossRepository,
+      // An idle reviewer whose prompt never started stays retryable: the next
+      // poll, or the next Review click, sends it the review prompt.
+      reviewedHeadSha: created.promptStarted ? (pullRequest.headSha ?? null) : null,
+      requestActive: created.promptStarted,
       state: "active",
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
     await this.options.store.upsert(record);
+    if (!created.promptStarted) {
+      throw new Error("The reviewer was created, but its first prompt didn't start. Try again.");
+    }
     return record;
+  }
+
+  /** Asks a reviewer that already exists to review, or to review again. */
+  private async promptReviewer(
+    existing: PrReviewRecord,
+    promptInput: ReviewPromptInput,
+  ): Promise<PrReviewRecord> {
+    // Already reviewing this request at this head: nothing new to ask.
+    if (existing.requestActive && existing.reviewedHeadSha === promptInput.headSha) {
+      return existing;
+    }
+    await this.options.sendPrompt({
+      agentId: existing.agentId,
+      prompt: existing.reviewedHeadSha
+        ? buildReReviewPrompt({ ...promptInput, previousHeadSha: existing.reviewedHeadSha })
+        : buildReviewPrompt(promptInput),
+      source: {
+        kind: "forge-event",
+        agentId: `pr-review:${existing.id}`,
+        title: `PR #${existing.prNumber} review`,
+      },
+    });
+    const updated = await this.options.store.update(existing.id, (current) => ({
+      ...current,
+      reviewedHeadSha: promptInput.headSha,
+      requestActive: true,
+      updatedAt: this.timestamp(),
+    }));
+    return updated ?? existing;
   }
 
   /** Keeps the review's slot until its reviewer goes idle. */
@@ -394,6 +434,23 @@ export class PrReviewService {
   private timestamp(): string {
     return new Date(this.now()).toISOString();
   }
+}
+
+function toReviewPromptInput(
+  project: PersistedProjectRecord,
+  pullRequest: PullRequestSummary,
+): ReviewPromptInput {
+  return {
+    prNumber: pullRequest.number,
+    prUrl: pullRequest.url,
+    title: pullRequest.title,
+    author: pullRequest.author ?? null,
+    baseRefName: pullRequest.baseRefName,
+    headSha: pullRequest.headSha ?? null,
+    // Unknown counts as a fork: only a confirmed same-repo PR gets checked out.
+    isCrossRepository: pullRequest.isCrossRepository !== false,
+    postReviews: project.prAutomation?.postReviews ?? false,
+  };
 }
 
 function budgetKey(agentId: string): string {

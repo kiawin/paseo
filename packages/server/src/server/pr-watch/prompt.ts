@@ -1,8 +1,7 @@
 import type { CheckDetails, PullRequestTimelineItem } from "../../services/forge-service.js";
 import { PR_WATCH_COMMENT_MARKER, type PrWatchCiFailure } from "./detect.js";
+import { escapeAttribute, wrapUntrusted } from "./untrusted.js";
 
-/** Cap per untrusted block, so a huge log or comment can't crowd out the rest of the prompt. */
-const MAX_UNTRUSTED_CHARS = 8_000;
 const CI_TAG = "untrusted-ci-output";
 const COMMENT_TAG = "untrusted-review-comment";
 
@@ -111,24 +110,4 @@ function formatCheckDetails(details: CheckDetails): string {
     if (job.logTail) parts.push(`Log tail of failed job "${job.name}":\n${job.logTail}`);
   }
   return parts.join("\n\n");
-}
-
-/** Keeps untrusted text from closing its block early and posing as instructions. */
-function wrapUntrusted(params: {
-  tag: string;
-  attribute: string;
-  notice: string;
-  text: string;
-}): string[] {
-  const { tag } = params;
-  const body = truncate(params.text, MAX_UNTRUSTED_CHARS).replaceAll(`</${tag}`, `<\\/${tag}`);
-  return [`<${tag} ${params.attribute}>`, params.notice, body, `</${tag}>`];
-}
-
-function truncate(text: string, limit: number): string {
-  return text.length <= limit ? text : `${text.slice(0, limit)}\n[truncated]`;
-}
-
-function escapeAttribute(value: string): string {
-  return value.replace(/[&<>"]/g, (character) => `&#${character.charCodeAt(0)};`);
 }

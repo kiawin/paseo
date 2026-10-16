@@ -57,8 +57,15 @@ skip the budget.
 
 ## Untrusted input
 
-CI output, review comments and PR content reach agents inside delimited `<untrusted-…>` blocks;
-the closing tag is neutralized inside the text. Fork PRs are never prompted for auto-fix (the watch
-pauses) and never reviewed automatically, and a reviewer of a fork PR is told not to run its code.
-These are prompt-level guardrails; the workspace automation gate (`untrustedSource`) is what blocks
-setup scripts in fork worktrees.
+CI output, review comments and PR titles reach agents inside delimited `<untrusted-…>` blocks
+(`pr-watch/untrusted.ts`); the closing tag is neutralized inside the text. Fork PRs are never
+prompted for auto-fix (the watch pauses) and never reviewed automatically.
+
+A fork PR you review by hand is not checked out. Providers load instructions, settings and hooks
+from the working directory (`CLAUDE.md`, `.claude/settings.json`, `AGENTS.md`), so a reviewer
+started inside a fork checkout would take orders from the PR before it reads the prompt. The
+reviewer runs in the project's own checkout and reads the PR with `gh pr diff`. Such a review
+records `ownsWorktree: false`, so the checkout is never archived when the PR ends.
+
+The workspace automation gate (`untrustedSource`) blocks setup scripts in fork worktrees; it
+doesn't stop a provider from reading files in them.

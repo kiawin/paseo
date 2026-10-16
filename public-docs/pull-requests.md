@@ -51,7 +51,7 @@ Everything else is listed for you to review by hand.
 
 By default the reviewer writes its findings in Paseo, and you decide what to post. Turn on **Post reviews to GitHub** to let it post one comment-only review, marked `<!-- paseo-autoreview -->`. A reviewer never approves a PR, requests changes, or pushes commits.
 
-Reviewers treat the PR's description, code, and comments as untrusted. On a fork PR, the reviewer is told not to run any of its code. See [Security](/docs/security) for how Paseo handles untrusted input.
+Reviewers treat the PR's title, description, code, and comments as untrusted. A fork PR is never checked out: its reviewer runs in the project's own checkout, reads the PR with `gh pr diff`, and is told not to run any of its code. See [Security](/docs/security) for how Paseo handles untrusted input.
 
 ## From the CLI
 

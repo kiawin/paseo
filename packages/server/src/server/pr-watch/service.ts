@@ -34,8 +34,6 @@ export const PR_WATCH_MAX_ATTEMPTS_PER_HEAD = 3;
 export const PR_WATCH_MAX_CONSECUTIVE_FAILED_HEADS = 3;
 /** How long to wait for a head's other checks to finish after its first failure. */
 export const PR_WATCH_SETTLE_TIMEOUT_MS = 10 * 60_000;
-/** Least time between checks for a PR an agent opened, per agent; each forces a forge read. */
-export const PR_WATCH_AUTO_WATCH_INTERVAL_MS = 60_000;
 
 export interface PrWatchSendPromptParams {
   agentId: string;
@@ -74,6 +72,11 @@ interface WatchRuntime {
   ciReady: boolean;
   /** Review comments not yet sent, by id. */
   comments: Map<string, PullRequestTimelineItem>;
+  /**
+   * PR activity time the pending comments were read at. It becomes the stored
+   * cursor only once they're sent, so a restart before then reads them again.
+   */
+  commentsUpdatedAt: string | null;
   /** A conflict on this head not yet reported. */
   conflict: { headSha: string; baseRefName: string } | null;
   /** Repo identity from the last poll; GitHub addresses check runs and timelines by owner and name. */
@@ -107,7 +110,9 @@ export class PrWatchService {
   private readonly readyQueue: string[] = [];
   /** Agents with an auto-fix turn holding a budget slot. */
   private readonly activeTurns = new Set<string>();
-  private readonly lastAutoWatchCheck = new Map<string, number>();
+  /** Agents seen mid-turn; the next idle state ends the turn. */
+  private readonly runningAgents = new Set<string>();
+  private readonly autoWatchChecks = new Set<Promise<void>>();
   /** Agents whose send was refused; retried on their next state change, not in a loop. */
   private readonly deferred = new Set<string>();
   private unsubscribeAgents: (() => void) | null = null;
@@ -158,13 +163,13 @@ export class PrWatchService {
     this.readyQueue.length = 0;
     this.activeTurns.clear();
     this.deferred.clear();
-    this.lastAutoWatchCheck.clear();
+    this.runningAgents.clear();
   }
 
   /** Resolves once queued work for every watch has finished. */
   async whenIdle(): Promise<void> {
-    while (this.locks.size > 0) {
-      await Promise.all(this.locks.values());
+    while (this.locks.size > 0 || this.autoWatchChecks.size > 0) {
+      await Promise.all([...this.locks.values(), ...this.autoWatchChecks]);
     }
   }
 
@@ -352,6 +357,10 @@ export class PrWatchService {
       this.logger.warn({ err: error, agentId: record.agentId }, "pr-watch.timeline.failed");
       return;
     }
+    if (runtime.comments.size > 0) {
+      runtime.commentsUpdatedAt = updatedAt;
+      return;
+    }
     await this.options.store.update(record.agentId, (current) => ({
       ...current,
       review: { ...current.review, lastUpdatedAt: updatedAt },
@@ -401,14 +410,8 @@ export class PrWatchService {
       return;
     }
 
-    const failures = runtime.ciReady ? [...runtime.pending.values()] : [];
-    if (failures.length > 0) this.resetCi(runtime);
-    const comments = [...runtime.comments.values()];
-    runtime.comments.clear();
-    const conflict = runtime.conflict;
-    runtime.conflict = null;
-    // Each fix push makes a new head; count a head as failed once, on its first CI prompt.
-    const isFirstCiPromptOnHead = failures.length > 0 && record.ci.seenFailureKeys.length === 0;
+    const batch = this.takeBatch(runtime);
+    const { failures, comments, conflict } = batch;
     const prompt = buildAutoFixPrompt({
       prNumber: record.prNumber,
       prUrl: record.prUrl,
@@ -440,16 +443,48 @@ export class PrWatchService {
     } catch (error) {
       // Busy, or the agent couldn't load: keep everything for the next idle moment.
       runtime.turnInFlight = false;
-      for (const failure of failures) runtime.pending.set(failure.key, failure);
-      if (failures.length > 0) runtime.ciReady = true;
-      for (const comment of comments) runtime.comments.set(comment.id, comment);
-      runtime.conflict ??= conflict;
+      this.returnBatch(runtime, batch);
       this.releaseTurn(agentId);
       this.deferred.add(agentId);
       this.logger.info({ err: error, agentId }, "pr-watch.dispatch.deferred");
       return;
     }
+    await this.recordSent(agentId, batch, record);
+  }
 
+  /** Takes what's ready to send out of the runtime: settled CI failures, comments, a conflict. */
+  private takeBatch(runtime: WatchRuntime): TurnBatch {
+    const failures = runtime.ciReady ? [...runtime.pending.values()] : [];
+    if (failures.length > 0) this.resetCi(runtime);
+    const batch: TurnBatch = {
+      failures,
+      comments: [...runtime.comments.values()],
+      commentsUpdatedAt: runtime.commentsUpdatedAt,
+      conflict: runtime.conflict,
+    };
+    runtime.comments.clear();
+    runtime.commentsUpdatedAt = null;
+    runtime.conflict = null;
+    return batch;
+  }
+
+  private returnBatch(runtime: WatchRuntime, batch: TurnBatch): void {
+    for (const failure of batch.failures) runtime.pending.set(failure.key, failure);
+    if (batch.failures.length > 0) runtime.ciReady = true;
+    for (const comment of batch.comments) runtime.comments.set(comment.id, comment);
+    runtime.commentsUpdatedAt ??= batch.commentsUpdatedAt;
+    runtime.conflict ??= batch.conflict;
+  }
+
+  /** Records a sent turn, so a restart or the next poll doesn't send the same things again. */
+  private async recordSent(
+    agentId: string,
+    batch: TurnBatch,
+    record: PrWatchRecord,
+  ): Promise<void> {
+    const { failures, comments, commentsUpdatedAt, conflict } = batch;
+    // Each fix push makes a new head; count a head as failed once, on its first CI prompt.
+    const isFirstCiPromptOnHead = failures.length > 0 && record.ci.seenFailureKeys.length === 0;
     await this.options.store.update(agentId, (current) => ({
       ...current,
       ci: {
@@ -463,6 +498,7 @@ export class PrWatchService {
       },
       review: {
         ...current.review,
+        lastUpdatedAt: commentsUpdatedAt ?? current.review.lastUpdatedAt,
         seenCommentIds: [
           ...current.review.seenCommentIds,
           ...comments.map((comment) => comment.id),
@@ -532,41 +568,53 @@ export class PrWatchService {
     }
     if (this.deferred.delete(agentId)) this.markReady(agentId);
     if (this.readyQueue.length > 0) this.pump();
-    if (!this.options.agentManager.hasInFlightRun(agentId)) void this.maybeAutoWatch(agentId);
+    if (this.options.agentManager.hasInFlightRun(agentId)) {
+      this.runningAgents.add(agentId);
+    } else if (this.runningAgents.delete(agentId)) {
+      const check = this.maybeAutoWatch(agentId).finally(() => this.autoWatchChecks.delete(check));
+      this.autoWatchChecks.add(check);
+    }
   }
 
   /**
    * Starts a watch for a PR an agent opened, when its project turns on
-   * "Auto-fix PRs opened by agents". Runs when the agent's turn ends: the agent
-   * runs `gh pr create` in a turn, so the PR exists by then. Only agents in a
+   * "Auto-fix PRs opened by agents". Runs once per finished turn, since each
+   * check forces a forge read; the agent runs `gh pr create` in a turn, so the
+   * PR exists by then. Only agents in a
    * Paseo worktree count; a user's own branch in the main checkout is theirs.
    */
   private async maybeAutoWatch(agentId: string): Promise<void> {
-    const last = this.lastAutoWatchCheck.get(agentId);
-    if (last !== undefined && this.now() - last < PR_WATCH_AUTO_WATCH_INTERVAL_MS) return;
-    this.lastAutoWatchCheck.set(agentId, this.now());
     try {
-      // Any record, stopped ones included: turning auto-fix off for a PR sticks.
-      if (await this.options.store.get(agentId)) return;
-      const agent = await this.options.agentStorage.get(agentId);
-      if (!agent || agent.archivedAt || !agent.workspaceId) return;
-      if (agent.labels?.[PR_REVIEW_AGENT_LABEL]) return;
-      const workspace = await this.options.workspaceRegistry.get(agent.workspaceId);
-      if (!workspace || workspace.kind !== "worktree" || workspace.untrustedSource) return;
-      const project = await this.options.projectRegistry.get(workspace.projectId);
-      if (!project?.prAutomation?.autoFixAgentPullRequests) return;
-      const snapshot = await this.options.workspaceGitService.getSnapshot(agent.cwd, {
+      const existing = await this.options.store.get(agentId);
+      if (existing?.state.kind === "active") return;
+      const cwd = await this.autoWatchCwd(agentId);
+      if (!cwd) return;
+      const snapshot = await this.options.workspaceGitService.getSnapshot(cwd, {
         force: true,
         reason: "pr-watch-auto",
       });
       const pullRequest = snapshot.forge.pullRequest;
       if (!pullRequest || pullRequest.isMerged || pullRequest.state !== "open") return;
-      if (await this.options.store.get(agentId)) return;
+      // A watch that ended or was turned off for this PR stays that way; a new
+      // PR from the same agent gets a new watch.
+      if (existing && existing.prNumber === (pullRequest.number ?? null)) return;
+      if ((await this.options.store.get(agentId))?.state.kind === "active") return;
       await this.setWatch({ agentId, enabled: true });
       this.logger.info({ agentId, prNumber: pullRequest.number }, "pr-watch.auto-watch.started");
     } catch (error) {
       this.logger.info({ err: error, agentId }, "pr-watch.auto-watch.skipped");
     }
+  }
+
+  /** The agent's cwd when its PRs qualify for auto-watching, else null. */
+  private async autoWatchCwd(agentId: string): Promise<string | null> {
+    const agent = await this.options.agentStorage.get(agentId);
+    if (!agent || agent.archivedAt || !agent.workspaceId) return null;
+    if (agent.labels?.[PR_REVIEW_AGENT_LABEL]) return null;
+    const workspace = await this.options.workspaceRegistry.get(agent.workspaceId);
+    if (!workspace || workspace.kind !== "worktree" || workspace.untrustedSource) return null;
+    const project = await this.options.projectRegistry.get(workspace.projectId);
+    return project?.prAutomation?.autoFixAgentPullRequests ? agent.cwd : null;
   }
 
   private releaseTurn(agentId: string): void {
@@ -601,6 +649,7 @@ export class PrWatchService {
         pendingHeadSha: null,
         ciReady: false,
         comments: new Map(),
+        commentsUpdatedAt: null,
         conflict: null,
         repo: {},
         firstFailureAt: null,
@@ -642,6 +691,13 @@ export class PrWatchService {
     });
     return next;
   }
+}
+
+interface TurnBatch {
+  failures: PrWatchCiFailure[];
+  comments: PullRequestTimelineItem[];
+  commentsUpdatedAt: string | null;
+  conflict: WatchRuntime["conflict"];
 }
 
 function turnKey(agentId: string): string {
