@@ -271,6 +271,7 @@ function buildAgentManagerSpies() {
     getAgent: vi.fn(),
     listAgents: vi.fn().mockReturnValue([]),
     getTimeline: vi.fn().mockReturnValue([]),
+    fetchTimeline: vi.fn().mockReturnValue({ epoch: "test-epoch", rows: [] }),
     resumeAgentFromPersistence: vi.fn(),
     hydrateTimelineFromProvider: vi.fn().mockResolvedValue(undefined),
     appendTimelineItem: vi.fn().mockResolvedValue(undefined),
@@ -733,7 +734,7 @@ function createPaseoWorktreeForMcpTest(options: {
   createdWorkspaceIds?: string[];
   workspaceRecords?: Map<string, PersistedWorkspaceRecord>;
   generateWorkspaceName?: () => Promise<GeneratedWorkspaceName | null>;
-  startedAgentSetupIds?: string[];
+  runSetupValues?: Array<boolean | undefined>;
 }): CreatePaseoWorktreeWorkflowFn {
   const projects = new Map<string, PersistedProjectRecord>();
   const workspaces = options.workspaceRecords ?? new Map<string, PersistedWorkspaceRecord>();
@@ -832,15 +833,17 @@ function createPaseoWorktreeForMcpTest(options: {
     const result = await createPaseoWorktreeWorkflow(
       {
         paseoHome: options.paseoHome,
-        createPaseoWorktree: (workflowInput, workflowOptions) =>
-          createPaseoWorktreeService(workflowInput, {
+        createPaseoWorktree: (workflowInput, workflowOptions) => {
+          options.runSetupValues?.push(workflowInput.runSetup);
+          return createPaseoWorktreeService(workflowInput, {
             github,
             ...(workflowOptions?.resolveDefaultBranch
               ? { resolveDefaultBranch: workflowOptions.resolveDefaultBranch }
               : {}),
             workspaceGitService,
             workspaceProvisioning,
-          }),
+          });
+        },
         warmWorkspaceGitData: async () => {},
         autoNameWorkspaceBranchForFirstAgent: (autoNameInput) =>
           workspaceAutoName.scheduleForWorktree(autoNameInput),
@@ -7917,5 +7920,353 @@ describe("local durable finish subscription MCP wiring", () => {
       await mcp?.close();
       await removeAgentStateDir(manager, storage, workdir);
     }
+  });
+});
+
+describe("move_to_worktree MCP tool", () => {
+  const logger = createTestLogger();
+
+  it("hands the task to a new agent in a fresh worktree and leaves the shared checkout alone", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const tempDir = realpathSync.native(await mkdtemp(join(tmpdir(), "paseo-mcp-move-worktree-")));
+    const repoDir = join(tempDir, "repo");
+    const paseoHome = join(tempDir, ".paseo");
+    const createdWorkspaceIds: string[] = [];
+    const runSetupValues: Array<boolean | undefined> = [];
+    const workspaceRecords = new Map<string, PersistedWorkspaceRecord>([
+      [
+        "ws-shared",
+        createPersistedWorkspaceRecord({
+          workspaceId: "ws-shared",
+          projectId: "project-1",
+          cwd: repoDir,
+          kind: "local_checkout",
+          displayName: "main",
+          createdAt: "2026-10-16T00:00:00.000Z",
+          updatedAt: "2026-10-16T00:00:00.000Z",
+        }),
+      ],
+    ]);
+
+    try {
+      execFileSync("git", ["init", repoDir], { stdio: "pipe" });
+      for (const [key, value] of [
+        ["user.email", "test@example.com"],
+        ["user.name", "Test"],
+        ["commit.gpgsign", "false"],
+      ]) {
+        execFileSync("git", ["config", key, value], { cwd: repoDir, stdio: "pipe" });
+      }
+      await writeFile(join(repoDir, "README.md"), "hello\n");
+      execFileSync("git", ["add", "README.md"], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["branch", "-M", "main"], { cwd: repoDir, stdio: "pipe" });
+      await writeFile(join(repoDir, "README.md"), "hello\nwork in progress\n");
+      await writeFile(join(repoDir, "notes.txt"), "draft\n");
+      await writeFile(join(repoDir, "paseo.json"), '{"scripts":{}}\n');
+      const sharedStatusBefore = execFileSync("git", ["status", "--porcelain"], {
+        cwd: repoDir,
+      }).toString();
+
+      const callerAgent = createManagedAgent({
+        id: "agent-1",
+        provider: "codex",
+        cwd: repoDir,
+        workspaceId: "ws-shared",
+        config: { provider: "codex", cwd: repoDir, model: "gpt-5.4", title: "Retry work" },
+        currentModeId: "full-access",
+      });
+      const movedAgent = createManagedAgent({ id: "moved-agent", provider: "codex" });
+      spies.agentManager.getAgent.mockImplementation((agentId: string) =>
+        agentId === "agent-1" ? callerAgent : movedAgent,
+      );
+      spies.agentManager.createAgent.mockImplementation(async (config: { cwd: string }) => ({
+        ...movedAgent,
+        cwd: config.cwd,
+      }));
+
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        paseoHome,
+        createPaseoWorktree: createPaseoWorktreeForMcpTest({
+          paseoHome,
+          broadcasts: [],
+          createdWorkspaceIds,
+          workspaceRecords,
+          runSetupValues,
+        }),
+        callerAgentId: "agent-1",
+        logger,
+      });
+
+      const result = await registeredTool(server, "move_to_worktree").handler({
+        branchName: "feature/retry",
+        task: "Add the retry",
+        carryChanges: true,
+      });
+
+      const worktreeCwd = z.string().parse(result.structuredContent.cwd);
+      expect(result.structuredContent).toMatchObject({
+        workspaceId: createdWorkspaceIds[0],
+        branchName: "feature/retry",
+        baseBranch: "main",
+        agentId: "moved-agent",
+        carriedChanges: true,
+      });
+      expect(
+        execFileSync("git", ["branch", "--show-current"], { cwd: worktreeCwd }).toString().trim(),
+      ).toBe("feature/retry");
+      expect(await readFile(join(worktreeCwd, "README.md"), "utf8")).toBe(
+        "hello\nwork in progress\n",
+      );
+      expect(await readFile(join(worktreeCwd, "notes.txt"), "utf8")).toBe("draft\n");
+      expect(await readFile(join(worktreeCwd, "paseo.json"), "utf8")).toBe('{"scripts":{}}\n');
+      expect(
+        execFileSync("git", ["branch", "--show-current"], { cwd: repoDir }).toString().trim(),
+      ).toBe("main");
+      expect(execFileSync("git", ["status", "--porcelain"], { cwd: repoDir }).toString()).toBe(
+        sharedStatusBefore,
+      );
+      expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: "codex", model: "gpt-5.4", cwd: worktreeCwd }),
+        undefined,
+        {
+          labels: { [PARENT_AGENT_ID_LABEL]: "agent-1" },
+          workspaceId: createdWorkspaceIds[0],
+        },
+      );
+      // Setup is owned and scheduled by the workspace workflow. The lower-level
+      // worktree creation must not run a second synchronous setup pass.
+      expect(runSetupValues).toEqual([false]);
+      const sentPrompt = JSON.stringify(spies.agentManager.streamAgent.mock.calls[0]?.[1]);
+      expect(sentPrompt).toContain("Branch: feature/retry, created from main");
+      expect(sentPrompt).toContain("Task:\\nAdd the retry");
+    } finally {
+      await removeTempDir(tempDir);
+    }
+  });
+
+  it("carries an uncommitted subdirectory the caller works in to the same repository path", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const tempDir = realpathSync.native(await mkdtemp(join(tmpdir(), "paseo-mcp-move-subdir-")));
+    const repoDir = join(tempDir, "repo");
+    const apiDir = join(repoDir, "packages", "api");
+    const paseoHome = join(tempDir, ".paseo");
+    const workspaceRecords = new Map<string, PersistedWorkspaceRecord>([
+      [
+        "ws-api",
+        createPersistedWorkspaceRecord({
+          workspaceId: "ws-api",
+          projectId: "project-1",
+          cwd: apiDir,
+          kind: "local_checkout",
+          displayName: "main",
+          createdAt: "2026-10-16T00:00:00.000Z",
+          updatedAt: "2026-10-16T00:00:00.000Z",
+        }),
+      ],
+    ]);
+
+    try {
+      execFileSync("git", ["init", repoDir], { stdio: "pipe" });
+      for (const [key, value] of [
+        ["user.email", "test@example.com"],
+        ["user.name", "Test"],
+        ["commit.gpgsign", "false"],
+      ]) {
+        execFileSync("git", ["config", key, value], { cwd: repoDir, stdio: "pipe" });
+      }
+      await writeFile(join(repoDir, "README.md"), "hello\n");
+      execFileSync("git", ["add", "."], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["branch", "-M", "main"], { cwd: repoDir, stdio: "pipe" });
+      // The caller's folder exists only as uncommitted files, so the fresh branch
+      // lacks it until the carried changes land.
+      await mkdir(apiDir, { recursive: true });
+      await writeFile(join(apiDir, "new.ts"), "export const added = true;\n");
+
+      const callerAgent = createManagedAgent({
+        id: "agent-1",
+        provider: "codex",
+        cwd: apiDir,
+        workspaceId: "ws-api",
+        config: { provider: "codex", cwd: apiDir, model: "gpt-5.4" },
+      });
+      spies.agentManager.getAgent.mockImplementation((agentId: string) =>
+        agentId === "agent-1" ? callerAgent : createManagedAgent({ id: "moved-agent" }),
+      );
+      spies.agentManager.createAgent.mockImplementation(async (config: { cwd: string }) =>
+        createManagedAgent({ id: "moved-agent", cwd: config.cwd }),
+      );
+
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        paseoHome,
+        createPaseoWorktree: createPaseoWorktreeForMcpTest({
+          paseoHome,
+          broadcasts: [],
+          workspaceRecords,
+        }),
+        callerAgentId: "agent-1",
+        logger,
+      });
+
+      const result = await registeredTool(server, "move_to_worktree").handler({
+        branchName: "feature/api",
+        task: "Finish the API",
+        carryChanges: true,
+      });
+
+      const worktreeApiDir = z.string().parse(result.structuredContent.cwd);
+      expect(worktreeApiDir.endsWith(join("packages", "api"))).toBe(true);
+      expect(await readFile(join(worktreeApiDir, "new.ts"), "utf8")).toBe(
+        "export const added = true;\n",
+      );
+      await expect(access(join(worktreeApiDir, "packages"))).rejects.toThrow();
+    } finally {
+      await removeTempDir(tempDir);
+    }
+  });
+
+  it("refuses voice sessions, whose speak bridge and cwd belong to the caller", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({ id: "voice-agent", workspaceId: "ws-shared" }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: "voice-agent",
+      resolveCallerContext: () => ({ allowCustomCwd: false }),
+      logger,
+    });
+
+    await expect(
+      registeredTool(server, "move_to_worktree").handler({
+        branchName: "feature/retry",
+        task: "Add the retry",
+        carryChanges: false,
+      }),
+    ).rejects.toThrow("move_to_worktree is unavailable in voice sessions");
+  });
+
+  it("refuses agents a Hub execution owns, so the work stays under its control", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "hub-agent",
+        workspaceId: "ws-shared",
+        owner: { kind: "daemon", daemonId: "daemon-1", executionId: "execution-1" },
+      }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: "hub-agent",
+      logger,
+    });
+
+    await expect(
+      registeredTool(server, "move_to_worktree").handler({
+        branchName: "feature/retry",
+        task: "Add the retry",
+        carryChanges: false,
+      }),
+    ).rejects.toThrow("move_to_worktree is unavailable to agents run by a Hub execution");
+  });
+
+  it("refuses agents a schedule started, whose run archives their workspace", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "scheduled-agent",
+        workspaceId: "ws-scheduled",
+        labels: { "paseo.schedule-id": "schedule-1", "paseo.schedule-run": "run-1" },
+      }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: "scheduled-agent",
+      logger,
+    });
+
+    await expect(
+      registeredTool(server, "move_to_worktree").handler({
+        branchName: "feature/retry",
+        task: "Add the retry",
+        carryChanges: false,
+      }),
+    ).rejects.toThrow("move_to_worktree is unavailable to agents started by a schedule");
+  });
+
+  it("refuses a branch name that already exists instead of branching from it", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const tempDir = realpathSync.native(await mkdtemp(join(tmpdir(), "paseo-mcp-move-exists-")));
+    const repoDir = join(tempDir, "repo");
+    const createPaseoWorktree = vi.fn();
+
+    try {
+      execFileSync("git", ["init", repoDir], { stdio: "pipe" });
+      for (const [key, value] of [
+        ["user.email", "test@example.com"],
+        ["user.name", "Test"],
+        ["commit.gpgsign", "false"],
+      ]) {
+        execFileSync("git", ["config", key, value], { cwd: repoDir, stdio: "pipe" });
+      }
+      await writeFile(join(repoDir, "README.md"), "hello\n");
+      execFileSync("git", ["add", "."], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["branch", "-M", "main"], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["branch", "feature/retry"], { cwd: repoDir, stdio: "pipe" });
+      spies.agentManager.getAgent.mockReturnValue(
+        createManagedAgent({ id: "agent-1", cwd: repoDir, workspaceId: "ws-shared" }),
+      );
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        createPaseoWorktree,
+        callerAgentId: "agent-1",
+        logger,
+      });
+
+      await expect(
+        registeredTool(server, "move_to_worktree").handler({
+          branchName: "feature/retry",
+          task: "Add the retry",
+          carryChanges: false,
+        }),
+      ).rejects.toThrow("Branch feature/retry already exists. Pick another branch name.");
+      expect(createPaseoWorktree).not.toHaveBeenCalled();
+    } finally {
+      await removeTempDir(tempDir);
+    }
+  });
+
+  it("requires an agent-scoped session", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+
+    await expect(
+      registeredTool(server, "move_to_worktree").handler({
+        branchName: "feature/retry",
+        task: "Add the retry",
+        carryChanges: false,
+      }),
+    ).rejects.toThrow("move_to_worktree requires an agent-scoped session");
   });
 });
