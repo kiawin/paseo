@@ -152,6 +152,10 @@ import type {
   ArtifactRecordPayload,
   ArtifactSearchMatch,
   NoteRecordPayload,
+  PrWatchPayload,
+  PrReviewPayload,
+  ProjectPrAutomation,
+  ReviewRequestPayload,
   NoteSearchMatch,
   MutableDaemonConfig,
   MutableDaemonConfigPatch,
@@ -5712,6 +5716,97 @@ export class DaemonClient {
     });
     if (!payload.success) throw new Error(payload.error ?? "Failed to search artifacts.");
     return payload.matches;
+  }
+
+  /**
+   * Turns PR auto-fix on or off for an agent's current PR. Turning it on resets its
+   * attempt counters. Gate on `server_info.features.prAutoFix` before calling.
+   */
+  async setAgentPrWatch(agentId: string, enabled: boolean): Promise<PrWatchPayload | null> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "agent.pr_watch.set.request", agentId, enabled, requestId },
+      responseType: "agent.pr_watch.set.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to update PR auto-fix.");
+    return payload.watch;
+  }
+
+  /** Gate on `server_info.features.prAutoFix` before calling. */
+  async listAgentPrWatches(agentId?: string): Promise<PrWatchPayload[]> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "agent.pr_watch.list.request",
+        ...(agentId ? { agentId } : {}),
+        requestId,
+      },
+      responseType: "agent.pr_watch.list.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to list PR auto-fix watches.");
+    return payload.watches;
+  }
+
+  /** Gate on `server_info.features.prAutoFix` before calling. */
+  async setProjectPrAutomation(
+    projectId: string,
+    settings: ProjectPrAutomation,
+  ): Promise<ProjectPrAutomation> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "project.pr_automation.set.request", projectId, settings, requestId },
+      responseType: "project.pr_automation.set.response",
+    });
+    if (!payload.accepted || !payload.settings) {
+      throw new Error(payload.error ?? "Failed to save pull request automation.");
+    }
+    return payload.settings;
+  }
+
+  /** Gate on `server_info.features.prAutoFix` before calling. */
+  async listReviewRequests(projectId?: string): Promise<{
+    reviewRequests: ReviewRequestPayload[];
+    errors: { projectId: string; message: string }[];
+  }> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "project.review_requests.list.request",
+        ...(projectId ? { projectId } : {}),
+        requestId,
+      },
+      responseType: "project.review_requests.list.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Failed to list review requests.");
+    return { reviewRequests: payload.reviewRequests, errors: payload.errors };
+  }
+
+  /** Gate on `server_info.features.prAutoFix` before calling. */
+  async startPrReview(input: {
+    projectId: string;
+    prNumber: number;
+    provider?: string;
+  }): Promise<PrReviewPayload> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: {
+        type: "project.review_requests.review.request",
+        projectId: input.projectId,
+        prNumber: input.prNumber,
+        ...(input.provider ? { provider: input.provider } : {}),
+        requestId,
+      },
+      responseType: "project.review_requests.review.response",
+    });
+    if (!payload.success || !payload.review) {
+      throw new Error(payload.error ?? "Failed to start the review.");
+    }
+    return payload.review;
   }
 
   /** Gate on `server_info.features.notes` before calling. */
