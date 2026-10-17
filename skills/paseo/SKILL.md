@@ -96,6 +96,10 @@ If no profile fits, or no profiles are configured, use the provider discovery to
 
 Only set feature IDs returned by `inspect_provider`. For Codex fast mode, look for `fast_mode` and pass `settings: { features: { "fast_mode": true } }` to `create_agent` or `update_agent`.
 
+## Pull requests
+
+**`watch_pull_request`** — after you open a PR for your branch, call it to turn on auto-fix. Paseo then prompts you when CI fails, the PR starts conflicting with its base branch, or (GitHub) someone with repo access leaves a review comment. At most 3 auto-fix turns per commit. End every comment you post on the PR with `<!-- paseo-autofix -->`, or your own reply wakes you again. **`unwatch_pull_request`** turns it off.
+
 ## Schedules and heartbeats
 
 **`create_schedule`** — starts a new agent on a cron cadence. Required: `prompt`, `cron`, `provider`. Optional: `timezone`, `name`, `cwd`, `maxRuns`, `expiresIn`. Use when the recurring work should live in fresh agents.
