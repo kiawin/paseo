@@ -1303,6 +1303,7 @@ export const ptBR: TranslationResources = {
       sessions: "Histórico",
       search: "Buscar",
       schedules: "Agendamentos",
+      pullRequests: "Pull requests",
     },
     worktreeSetup: {
       title: "Configurar scripts de worktree",
@@ -3273,6 +3274,38 @@ export const ptBR: TranslationResources = {
         externalRemovalNote:
           "Arquivar um espaço de trabalho deixa o worktree no disco. Remova-o você mesmo com git worktree remove.",
         saveFailed: "Não foi possível alterar o local do worktree",
+      },
+      prAutomation: {
+        title: "Automação de pull requests",
+        info: "O que o Paseo faz com os pull requests deste projeto neste host",
+        autoFix: "Corrigir automaticamente PRs abertos por agentes",
+        autoFixHint:
+          "O Paseo acompanha um PR assim que um agente o abre em um dos worktrees deste projeto e avisa o agente quando a CI falha, um revisor comenta ou o PR tem conflitos.",
+        autoReview: "Revisar automaticamente quando minha revisão for solicitada",
+        autoReviewHint:
+          "Somente GitHub. O Paseo revisa solicitações diretas em PRs do mesmo repositório; PRs de forks e rascunhos ficam listados para você revisar.",
+        autoReviewOwn: "Revisar meus PRs automaticamente",
+        autoReviewOwnHint:
+          "Somente GitHub. O Paseo revisa uma vez cada PR do mesmo repositório que você abre, incluindo os que seus agentes abrem com sua conta. PRs de forks e rascunhos são ignorados.",
+        ownReviewRounds: "Revisões por PR",
+        ownReviewRoundsHint:
+          "Inclui a primeira revisão. Com Revisar novamente em A cada novo commit, cada novo commit no seu PR inicia outra revisão até chegar a este número.",
+        reviewer: "Revisor",
+        reviewerProfileHint: "Usa o perfil de agente {{name}}",
+        reviewerHint: "O provedor e o modelo que revisam pull requests",
+        postReviews: "Publicar revisões no GitHub",
+        postReviewsHint:
+          "Os revisores aprovam ou pedem alterações. Nos seus PRs e em PRs de forks, só comentam. Desligado, as descobertas ficam no Paseo.",
+        reReview: "Revisar novamente",
+        reReviewHint: "Quando um revisor olha de novo um PR que já revisou",
+        reReviewOnRequest: "Quando minha revisão for solicitada novamente",
+        reReviewOnPush: "A cada novo commit",
+        reviewInstructions: "Instruções de revisão",
+        reviewInstructionsHint:
+          "Diretrizes que todo revisor recebe para os PRs deste projeto, como o que verificar ou ignorar. Até 4000 caracteres.",
+        reviewInstructionsPlaceholder: "Verifique se toda migração tem rollback.",
+        reviewInstructionsSave: "Salvar instruções",
+        saveFailed: "Não foi possível salvar a automação de pull requests",
       },
       worktree: {
         title: "Hooks de ciclo de vida do worktree",

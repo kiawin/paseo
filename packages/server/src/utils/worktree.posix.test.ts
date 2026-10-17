@@ -29,6 +29,7 @@ import {
   writePaseoWorktreeRuntimeMetadata,
   writePaseoWorktreeFirstAgentBranchAutoNameMetadata,
 } from "./worktree-metadata.js";
+import { prHeadCheckoutCommand } from "../server/pr-review/prompt.js";
 import {
   getCheckoutDiff,
   getCheckoutStatus,
@@ -471,6 +472,63 @@ describe.skipIf(isPlatform("win32"))("worktree POSIX-only", () => {
       const metadataPath = await getPaseoWorktreeMetadataPath(result.worktreePath);
       const metadata = JSON.parse(readFileSync(metadataPath, "utf8"));
       expect(metadata).toMatchObject({ baseRefName: "main" });
+    });
+
+    it("checks out a PR whose branch another worktree has checked out, and follows its new heads", async () => {
+      const remoteDir = join(tempDir, "remote.git");
+      const authorDir = join(tempDir, "author");
+      execFileSync("git", ["clone", "--bare", repoDir, remoteDir]);
+      execFileSync("git", ["remote", "add", "origin", remoteDir], { cwd: repoDir });
+      // The agent that opened the PR keeps its branch checked out in its own worktree.
+      execFileSync("git", ["worktree", "add", "-b", "feature/own", authorDir], { cwd: repoDir });
+      const commitAndPublish = (content: string): string => {
+        writeFileSync(join(authorDir, "file.txt"), content);
+        execFileSync("git", ["add", "file.txt"], { cwd: authorDir });
+        execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", content], {
+          cwd: authorDir,
+        });
+        execFileSync("git", ["push", "origin", "feature/own"], { cwd: authorDir });
+        const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: authorDir })
+          .toString()
+          .trim();
+        execFileSync("git", [`--git-dir=${remoteDir}`, "update-ref", "refs/pull/44/head", head]);
+        return head;
+      };
+      commitAndPublish("first\n");
+
+      const reviewer = await createLegacyWorktreeForTest({
+        cwd: repoDir,
+        worktreeSlug: "pr-44",
+        source: {
+          kind: "checkout-github-pr",
+          githubPrNumber: 44,
+          headRef: "feature/own",
+          baseRefName: "main",
+        },
+        runSetup: false,
+        paseoHome,
+      });
+      expect(reviewer.branchName).toBe("feature/own-1");
+      expect(readFileSync(join(reviewer.worktreePath, "file.txt"), "utf8")).toBe("first\n");
+
+      const secondHead = commitAndPublish("second\n");
+      // What `gh pr checkout 44` does: switch to the PR's branch, which git refuses.
+      expect(() =>
+        execFileSync("git", ["checkout", "feature/own"], {
+          cwd: reviewer.worktreePath,
+          stdio: "pipe",
+        }),
+      ).toThrow(/already (checked out|used by worktree)/);
+
+      execFileSync("sh", ["-c", prHeadCheckoutCommand(44)], {
+        cwd: reviewer.worktreePath,
+        stdio: "pipe",
+      });
+      expect(
+        execFileSync("git", ["rev-parse", "HEAD"], { cwd: reviewer.worktreePath })
+          .toString()
+          .trim(),
+      ).toBe(secondHead);
     });
 
     it("fetches a GitHub PR branch when the head ref contains uppercase letters and dots", async () => {
