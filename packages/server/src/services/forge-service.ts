@@ -28,6 +28,11 @@ export interface PullRequestSummary {
   headRefName: string;
   labels: string[];
   updatedAt: string;
+  /** Adapters that report it: the author's login, head commit, fork origin and draft state. */
+  author?: string;
+  headSha?: string;
+  isCrossRepository?: boolean;
+  isDraft?: boolean;
 }
 
 export interface PullRequestCheckoutTarget {
@@ -128,6 +133,10 @@ export interface CurrentPullRequestStatus {
   state: string;
   baseRefName: string;
   headRefName: string;
+  /** Commit the PR head points at; checks belong to this commit. */
+  headSha?: string;
+  /** Last activity on the PR (comments, reviews, pushes); a cheap signal to refetch the timeline. */
+  updatedAt?: string;
   isMerged: boolean;
   isDraft?: boolean;
   mergeable: PullRequestMergeable;
@@ -147,6 +156,13 @@ interface PullRequestTimelineItemBase {
   body: string;
   createdAt: number;
   url: string;
+  /**
+   * Server-only: the author's relation to the repo (GitHub `OWNER`, `MEMBER`,
+   * `COLLABORATOR`, ...). PR auto-fix acts only on comments from people with access.
+   */
+  authorAssociation?: string;
+  /** Server-only: true when the author is a bot account. */
+  authorIsBot?: boolean;
 }
 
 export type PullRequestTimelineItem =
