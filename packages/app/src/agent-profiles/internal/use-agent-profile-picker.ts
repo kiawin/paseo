@@ -23,7 +23,9 @@ export interface DraftAgentProfileControls {
 
 export type AgentProfileApplyTarget =
   | { kind: "agent"; agentId: string; availableModeIds: readonly string[] | null }
-  | { kind: "draft"; controls: DraftAgentProfileControls };
+  | { kind: "draft"; controls: DraftAgentProfileControls }
+  /** Picks a profile as a setting (a project's reviewer) instead of applying it to an agent. */
+  | { kind: "select"; onSelect: (profileId: string) => void };
 
 /** Everything the model picker renders for one profile. It never sees the profile itself. */
 export interface AgentProfilePickerRow {
@@ -132,6 +134,10 @@ export function useAgentProfilePicker(
     (profileId: string) => {
       const profile = applicableProfiles.find((entry) => entry.id === profileId);
       if (!profile) {
+        return;
+      }
+      if (target.kind === "select") {
+        target.onSelect(profile.id);
         return;
       }
       const resolved = materializeAgentProfile(profile);
