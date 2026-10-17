@@ -589,6 +589,7 @@ export class WorkspaceDirectory {
         projectCustomName: project.customName ?? null,
         projectCustomIconRevision: project.customIconRevision ?? null,
         projectWorktreeLocation: project.worktreeLocation ?? null,
+        projectPrAutomation: project.prAutomation ?? null,
         projectRootPath: project.rootPath,
         projectKind: project.kind,
       }));

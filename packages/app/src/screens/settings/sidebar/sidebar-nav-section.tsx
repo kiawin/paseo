@@ -8,6 +8,7 @@ import {
   Blocks,
   CalendarClock,
   Gauge,
+  GitPullRequest,
   History,
   Plus,
   Search,
@@ -44,6 +45,7 @@ const BUILTIN_ICONS: Record<BuiltinSidebarItemId, LucideIcon> = {
   history: History,
   search: Search,
   schedules: CalendarClock,
+  "pull-requests": GitPullRequest,
   usage: Gauge,
 };
 

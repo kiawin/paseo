@@ -16,7 +16,11 @@ import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager, ManagedAgent } from "../agent-manager.js";
-import { ActiveTurnBehaviorSchema, AgentProfileSchema } from "@getpaseo/protocol/messages";
+import {
+  ActiveTurnBehaviorSchema,
+  AgentProfileSchema,
+  PrWatchPayloadSchema,
+} from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import {
   AgentFeatureSchema,
@@ -65,6 +69,8 @@ import {
   ScheduleStateConflictError,
   type ScheduleService,
 } from "../../schedule/service.js";
+import { toPrWatchPayload } from "../../pr-watch/payload.js";
+import type { PrWatchService } from "../../pr-watch/service.js";
 import { localBranchExists } from "../../../utils/checkout-git.js";
 import { SCHEDULE_ID_LABEL } from "../../schedule/service.js";
 import {
@@ -146,6 +152,7 @@ export interface PaseoToolHostDependencies {
   terminalManager?: TerminalManager | null;
   getDaemonTcpPort?: () => number | null;
   scheduleService?: ScheduleService | null;
+  prWatchService?: PrWatchService | null;
   providerSnapshotManager: ProviderSnapshotManager;
   daemonConfigStore?: Pick<DaemonConfigStore, "get">;
   github?: ForgeService;
@@ -860,6 +867,7 @@ function createToolCatalog(
     terminalManager,
     workspaceScripts,
     scheduleService,
+    prWatchService,
     providerSnapshotManager,
     daemonConfigStore,
     callerAgentId,
@@ -3426,6 +3434,50 @@ function createToolCatalog(
         content: [],
         structuredContent: ensureValidJson(toScheduleSummary(schedule)),
       };
+    },
+  );
+
+  registerTool(
+    "watch_pull_request",
+    {
+      title: "Watch pull request",
+      description:
+        "Turn on auto-fix for the open pull request on your branch (GitHub or GitLab). Paseo prompts you when its CI fails (once the checks finish), when it starts conflicting with its base branch, and, on GitHub, when someone with repo access leaves a review comment. Up to 3 auto-fix turns per commit. End any PR comment you post with <!-- paseo-autofix --> so it doesn't wake you. Turning it on again resets the turn count.",
+      inputSchema: {},
+      outputSchema: PrWatchPayloadSchema.shape,
+    },
+    async () => {
+      if (!prWatchService) {
+        throw new Error("PR auto-fix is not available on this daemon");
+      }
+      if (!callerAgentId) {
+        throw new Error("watch_pull_request requires an agent-scoped session");
+      }
+      const record = await prWatchService.setWatch({ agentId: callerAgentId, enabled: true });
+      if (!record) {
+        throw new Error("PR auto-fix did not start");
+      }
+      return { content: [], structuredContent: ensureValidJson(toPrWatchPayload(record)) };
+    },
+  );
+
+  registerTool(
+    "unwatch_pull_request",
+    {
+      title: "Unwatch pull request",
+      description: "Turn off auto-fix for your pull request.",
+      inputSchema: {},
+      outputSchema: { stopped: z.boolean() },
+    },
+    async () => {
+      if (!prWatchService) {
+        throw new Error("PR auto-fix is not available on this daemon");
+      }
+      if (!callerAgentId) {
+        throw new Error("unwatch_pull_request requires an agent-scoped session");
+      }
+      const record = await prWatchService.setWatch({ agentId: callerAgentId, enabled: false });
+      return { content: [], structuredContent: { stopped: record !== null } };
     },
   );
 

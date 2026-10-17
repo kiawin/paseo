@@ -6,6 +6,7 @@ import {
   CircleDashed,
   Folder,
   FolderPlus,
+  GitPullRequest,
   History,
   Home,
   Import,
@@ -28,6 +29,7 @@ import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import { clearCommandCenterFocusRestoreElement } from "@/utils/command-center-focus-restore";
 import {
   buildOpenProjectRoute,
+  buildPullRequestsRoute,
   buildSchedulesRoute,
   buildSessionsRoute,
   buildSettingsRoute,
@@ -45,6 +47,9 @@ const ThemedHistory = withUnistyles(History, (theme) => ({
   color: theme.colors.foregroundMuted,
 }));
 const ThemedCalendarClock = withUnistyles(CalendarClock, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedGitPullRequest = withUnistyles(GitPullRequest, (theme) => ({
   color: theme.colors.foregroundMuted,
 }));
 const ThemedKeyboard = withUnistyles(Keyboard, (theme) => ({
@@ -83,6 +88,10 @@ function SchedulesIcon({ size }: CommandCenterIconProps) {
   return <ThemedCalendarClock size={size} strokeWidth={2.2} />;
 }
 
+function PullRequestsIcon({ size }: CommandCenterIconProps) {
+  return <ThemedGitPullRequest size={size} strokeWidth={2.2} />;
+}
+
 function KeyboardIcon({ size }: CommandCenterIconProps) {
   return <ThemedKeyboard size={size} strokeWidth={2.2} />;
 }
@@ -118,6 +127,7 @@ export function CommandCenterRootActions() {
   const homeRoute = useMemo<Href>(() => buildOpenProjectRoute(), []);
   const sessionsRoute = useMemo<Href>(() => buildSessionsRoute(), []);
   const schedulesRoute = useMemo<Href>(() => buildSchedulesRoute(), []);
+  const pullRequestsRoute = useMemo<Href>(() => buildPullRequestsRoute(), []);
   const setShortcutsDialogOpen = useKeyboardShortcutsStore((state) => state.setShortcutsDialogOpen);
   // Narrow selector on purpose: a whole-store subscription would re-register every root action
   // each time host filters are reconciled.
@@ -246,6 +256,25 @@ export function CommandCenterRootActions() {
         },
       },
       {
+        id: "pull-requests",
+        group: "actions",
+        groupRank: 0,
+        // Sits between Schedules (5) and Settings (6), matching the sidebar order.
+        rank: 5.5,
+        keywords: ["pull requests", "auto-fix"],
+        visibility: "always",
+        run: () => {
+          clearCommandCenterFocusRestoreElement();
+          router.push(pullRequestsRoute);
+        },
+        presentation: {
+          kind: "action",
+          title: t("sidebar.sections.pullRequests"),
+          sectionTitle: t("shell.commandCenter.actions"),
+          icon: PullRequestsIcon,
+        },
+      },
+      {
         id: "settings",
         group: "actions",
         groupRank: 0,
@@ -337,6 +366,7 @@ export function CommandCenterRootActions() {
     openAddProject,
     openImportSession,
     overrides,
+    pullRequestsRoute,
     schedulesRoute,
     sessionsRoute,
     setGroupMode,
