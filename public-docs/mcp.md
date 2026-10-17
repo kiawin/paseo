@@ -114,6 +114,15 @@ Paseo agents receive finish, error, and permission notifications by default; set
 
 For worktree isolation, `create_workspace` accepts the same useful choices as the app: branch off from a base, check out an existing branch, or check out a pull request. The worktree remains an implementation detail of the workspace lifecycle.
 
+### Pull requests
+
+| Tool                   | Function                                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `watch_pull_request`   | Agent-scoped. Turn on auto-fix for the open PR on your branch (GitHub or GitLab): Paseo prompts you when CI fails, the PR conflicts with its base, or, on GitHub, a reviewer with repo access comments. |
+| `unwatch_pull_request` | Agent-scoped. Turn auto-fix off for your PR.                                                                                                                                                            |
+
+End every comment you post on the PR with `<!-- paseo-autofix -->` so it doesn't wake you. See [Pull requests](/docs/pull-requests) for limits and the review features.
+
 ### Workspace scripts
 
 These tools manage scripts configured in a workspace's `paseo.json`. Each requires an explicit `workspaceId`; start and stop also require the configured `scriptName`.
