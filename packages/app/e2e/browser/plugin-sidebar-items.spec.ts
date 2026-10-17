@@ -72,6 +72,10 @@ async function boxOf(locator: Locator) {
   return result!;
 }
 
+async function scrollTop(locator: Locator): Promise<number> {
+  return locator.evaluate((element) => element.scrollTop);
+}
+
 /** The open screen's header title; a pushed screen keeps the one below it mounted. */
 function screenTitle(page: Page): Locator {
   return page.locator('[data-testid="plugin-surface-title"]:visible').last();
@@ -520,7 +524,11 @@ test.describe("Plugin sidebar items", () => {
       await page.setViewportSize(COMPACT);
       await page.getByRole("button", { name: "Open menu", exact: true }).first().click();
       await expect(botRow(page, "bot-1")).toBeInViewport();
-      await expect(botRow(page, "status")).toBeInViewport();
+      const nav = visibleTestId(page, "sidebar-nav-scroll");
+      const initialScrollTop = await scrollTop(nav);
+      await status.scrollIntoViewIfNeeded();
+      await expect(status).toBeInViewport();
+      expect(await scrollTop(nav)).toBeGreaterThan(initialScrollTop);
       await qaScreenshot(page, "phase6-compact-sidebar-bots");
     });
   });
