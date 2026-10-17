@@ -3226,6 +3226,89 @@ export const NoteDeleteRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Gate on server_info.features.prAutoFix before sending.
+export const AgentPrWatchSetRequestSchema = z.object({
+  type: z.literal("agent.pr_watch.set.request"),
+  agentId: z.string(),
+  /** True watches the PR for the agent's branch; false stops watching. */
+  enabled: z.boolean(),
+  requestId: z.string(),
+});
+
+export const AgentPrWatchListRequestSchema = z.object({
+  type: z.literal("agent.pr_watch.list.request"),
+  /** Omit to list every watch on the daemon. */
+  agentId: z.string().optional(),
+  requestId: z.string(),
+});
+
+/**
+ * Per-project pull request automation, stored on the host that owns the
+ * project. New fields must be optional.
+ */
+export const ProjectPrAutomationSchema = z.object({
+  /** Start a reviewer agent when someone requests your review directly. */
+  autoReview: z.boolean(),
+  /** `provider` or `provider/model` for reviewer agents; null until chosen. */
+  reviewProvider: z.string().nullable(),
+  /**
+   * Agent profile for reviewer agents: provider, model, mode, thinking and
+   * features together. Takes precedence over reviewProvider when set.
+   */
+  reviewProfileId: z.string().nullable().optional(),
+  /** Let reviewers post a comment-only review; otherwise findings stay in Paseo. */
+  postReviews: z.boolean(),
+  /** Watch PRs that agents open from this project's worktrees for auto-fix. */
+  autoFixAgentPullRequests: z.boolean(),
+  /**
+   * When a reviewer looks at a PR again: "request" when your review is
+   * requested again, "push" on every new commit. Open string; absent means "request".
+   */
+  reReviewOn: z.string().optional(),
+  /**
+   * Review open PRs you authored, which can't request your review. Gate on
+   * server_info.features.prAutoReviewOwn before sending.
+   */
+  autoReviewOwn: z.boolean().optional(),
+  /**
+   * Reviews of one of your own PRs, counting the first, after which new
+   * commits stop starting reviews. Absent means 3.
+   */
+  maxOwnReviewRounds: z.number().optional(),
+  /**
+   * The project's own review guidelines, added to every reviewer prompt. An
+   * empty string clears them. Gate on server_info.features.prReviewInstructions
+   * before sending.
+   */
+  reviewInstructions: z.string().optional(),
+});
+
+// Gate on server_info.features.prAutoFix before sending.
+export const ProjectPrAutomationSetRequestSchema = z.object({
+  type: z.literal("project.pr_automation.set.request"),
+  projectId: z.string(),
+  settings: ProjectPrAutomationSchema,
+  requestId: z.string(),
+});
+
+// Gate on server_info.features.prAutoFix before sending.
+export const ProjectReviewRequestsListRequestSchema = z.object({
+  type: z.literal("project.review_requests.list.request"),
+  /** Omit to list review requests for every GitHub project on the daemon. */
+  projectId: z.string().optional(),
+  requestId: z.string(),
+});
+
+// Gate on server_info.features.prAutoFix before sending.
+export const ProjectReviewRequestsReviewRequestSchema = z.object({
+  type: z.literal("project.review_requests.review.request"),
+  projectId: z.string(),
+  prNumber: z.number().int().positive(),
+  /** Overrides the project's reviewer provider for this review. */
+  provider: z.string().optional(),
+  requestId: z.string(),
+});
+
 export const ProjectIconRequestSchema = z.object({
   type: z.literal("project_icon_request"),
   cwd: z.string(),
@@ -3773,6 +3856,11 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   NotePinSetRequestSchema,
   NoteSearchRequestSchema,
   NoteDeleteRequestSchema,
+  AgentPrWatchSetRequestSchema,
+  AgentPrWatchListRequestSchema,
+  ProjectPrAutomationSetRequestSchema,
+  ProjectReviewRequestsListRequestSchema,
+  ProjectReviewRequestsReviewRequestSchema,
   FileEntryDownloadRequestSchema,
   FileEntryUploadRequestSchema,
   FileTransferAckSchema,
@@ -4041,6 +4129,12 @@ export const ServerInfoStatusPayloadSchema = z
         notePin: z.boolean().optional(),
         // COMPAT(noteSearch): added in v0.11.x, remove after 2028-04-18.
         noteSearch: z.boolean().optional(),
+        // COMPAT(prAutoFix): added in v0.12.x, remove gate after 2028-10-17.
+        prAutoFix: z.boolean().optional(),
+        // COMPAT(prAutoReviewOwn): added in v0.12.x, remove gate after 2028-10-18.
+        prAutoReviewOwn: z.boolean().optional(),
+        // COMPAT(prReviewInstructions): added in v0.12.x, remove gate after 2028-10-18.
+        prReviewInstructions: z.boolean().optional(),
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the
         // feature gate and checkoutGithubSetAutoMerge fallback after 2027-01-17
         // once the supported daemon floor is >= v0.2.0.
@@ -4710,6 +4804,9 @@ export const WorkspaceProjectDescriptorPayloadSchema = z.object({
   // COMPAT(projectWorktreeLocation): added in v0.8.0, remove optional after 2027-09-02.
   // Absent or null means "managed".
   projectWorktreeLocation: WorktreeLocationSchema.nullable().optional(),
+  // COMPAT(prAutoFix): added in v0.12.x, remove optional after 2028-10-17.
+  // Absent or null means every automation is off.
+  projectPrAutomation: ProjectPrAutomationSchema.nullable().optional(),
   // COMPAT(directorySync): sequence of this latest directory projection.
   syncSeq: z.number().int().positive().optional(),
 });
@@ -6748,6 +6845,110 @@ export const NoteDeleteResponseSchema = z.object({
   }),
 });
 
+// Reasons stay open strings so a daemon can add one without breaking older clients.
+export const PrWatchStatePayloadSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("active") }),
+  z.object({ kind: z.literal("paused"), reason: z.string(), at: z.string() }),
+  z.object({ kind: z.literal("stopped"), reason: z.string(), at: z.string() }),
+]);
+
+export const PrWatchPayloadSchema = z.object({
+  agentId: z.string(),
+  cwd: z.string(),
+  forge: z.string(),
+  prNumber: z.number().int().nullable(),
+  prUrl: z.string().nullable(),
+  state: PrWatchStatePayloadSchema,
+  headSha: z.string().nullable(),
+  attemptsForHead: z.number().int().nonnegative(),
+  maxAttemptsPerHead: z.number().int().positive(),
+  updatedAt: z.string(),
+});
+
+export const AgentPrWatchSetResponseSchema = z.object({
+  type: z.literal("agent.pr_watch.set.response"),
+  payload: z.object({
+    watch: PrWatchPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const AgentPrWatchListResponseSchema = z.object({
+  type: z.literal("agent.pr_watch.list.response"),
+  payload: z.object({
+    watches: z.array(PrWatchPayloadSchema),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const ProjectPrAutomationSetResponseSchema = z.object({
+  type: z.literal("project.pr_automation.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    projectId: z.string(),
+    accepted: z.boolean(),
+    settings: ProjectPrAutomationSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+/** A review Paseo started for a PR: the reviewer agent and its worktree. */
+export const PrReviewPayloadSchema = z.object({
+  projectId: z.string(),
+  prNumber: z.number().int(),
+  prUrl: z.string(),
+  agentId: z.string(),
+  workspaceId: z.string().nullable(),
+  /** Head commit the latest review covered. */
+  reviewedHeadSha: z.string().nullable(),
+  /** Open string: "active" or "archived" today. */
+  state: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const ReviewRequestPayloadSchema = z.object({
+  projectId: z.string(),
+  number: z.number().int(),
+  title: z.string(),
+  url: z.string(),
+  author: z.string().nullable(),
+  baseRefName: z.string(),
+  headRefName: z.string(),
+  headSha: z.string().nullable(),
+  isDraft: z.boolean(),
+  /** True for PRs from forks; Paseo never reviews these automatically. */
+  isCrossRepository: z.boolean(),
+  updatedAt: z.string(),
+  review: PrReviewPayloadSchema.nullable(),
+});
+
+export const ProjectReviewRequestsListResponseSchema = z.object({
+  type: z.literal("project.review_requests.list.response"),
+  payload: z.object({
+    requestId: z.string(),
+    reviewRequests: z.array(ReviewRequestPayloadSchema),
+    /** Projects whose requests couldn't be read, with the reason. */
+    errors: z.array(z.object({ projectId: z.string(), message: z.string() })),
+    success: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const ProjectReviewRequestsReviewResponseSchema = z.object({
+  type: z.literal("project.review_requests.review.response"),
+  payload: z.object({
+    requestId: z.string(),
+    review: PrReviewPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
 export const NoteChangedMessageSchema = z.object({
   type: z.literal("note.changed"),
   payload: z.object({
@@ -7761,6 +7962,11 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   NoteSearchResponseSchema,
   NoteDeleteResponseSchema,
   NoteChangedMessageSchema,
+  AgentPrWatchSetResponseSchema,
+  AgentPrWatchListResponseSchema,
+  ProjectPrAutomationSetResponseSchema,
+  ProjectReviewRequestsListResponseSchema,
+  ProjectReviewRequestsReviewResponseSchema,
   FileEntryDownloadResponseSchema,
   FileEntryUploadResponseSchema,
   FileTransferAckSchema,
@@ -8261,6 +8467,28 @@ export type NoteSearchResponse = z.infer<typeof NoteSearchResponseSchema>;
 export type NoteSearchMatch = z.infer<typeof NoteSearchMatchSchema>;
 export type NoteDeleteRequest = z.infer<typeof NoteDeleteRequestSchema>;
 export type NoteDeleteResponse = z.infer<typeof NoteDeleteResponseSchema>;
+export type AgentPrWatchSetRequest = z.infer<typeof AgentPrWatchSetRequestSchema>;
+export type AgentPrWatchSetResponse = z.infer<typeof AgentPrWatchSetResponseSchema>;
+export type AgentPrWatchListRequest = z.infer<typeof AgentPrWatchListRequestSchema>;
+export type AgentPrWatchListResponse = z.infer<typeof AgentPrWatchListResponseSchema>;
+export type PrWatchPayload = z.infer<typeof PrWatchPayloadSchema>;
+export type ProjectPrAutomation = z.infer<typeof ProjectPrAutomationSchema>;
+export type ProjectPrAutomationSetRequest = z.infer<typeof ProjectPrAutomationSetRequestSchema>;
+export type ProjectPrAutomationSetResponse = z.infer<typeof ProjectPrAutomationSetResponseSchema>;
+export type ProjectReviewRequestsListRequest = z.infer<
+  typeof ProjectReviewRequestsListRequestSchema
+>;
+export type ProjectReviewRequestsListResponse = z.infer<
+  typeof ProjectReviewRequestsListResponseSchema
+>;
+export type ProjectReviewRequestsReviewRequest = z.infer<
+  typeof ProjectReviewRequestsReviewRequestSchema
+>;
+export type ProjectReviewRequestsReviewResponse = z.infer<
+  typeof ProjectReviewRequestsReviewResponseSchema
+>;
+export type PrReviewPayload = z.infer<typeof PrReviewPayloadSchema>;
+export type ReviewRequestPayload = z.infer<typeof ReviewRequestPayloadSchema>;
 export type NoteChangedMessage = z.infer<typeof NoteChangedMessageSchema>;
 export type FileEntryDownloadRequest = z.infer<typeof FileEntryDownloadRequestSchema>;
 export type FileEntryDownloadResponse = z.infer<typeof FileEntryDownloadResponseSchema>;

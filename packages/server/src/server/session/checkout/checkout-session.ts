@@ -1484,5 +1484,7 @@ function isValidGitHubRepoSegment(value: string): boolean {
 function toPullRequestTimelinePayloadItem(
   item: PullRequestTimelineItem,
 ): PullRequestTimelinePayloadItem {
-  return item;
+  // Author facts are for PR auto-fix filtering; the wire item doesn't carry them.
+  const { authorAssociation: _association, authorIsBot: _isBot, ...payload } = item;
+  return payload;
 }
