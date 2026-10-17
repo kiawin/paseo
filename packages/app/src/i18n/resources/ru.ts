@@ -1279,6 +1279,7 @@ export const ru: TranslationResources = {
       sessions: "История",
       search: "Поиск",
       schedules: "Расписания",
+      pullRequests: "Пул-реквесты",
     },
     worktreeSetup: {
       title: "Настроить скрипты worktree",
@@ -3067,6 +3068,27 @@ export const ru: TranslationResources = {
         externalRemovalNote:
           "После архивирования рабочего пространства его каталог worktree остаётся на диске. Удалите каталог вручную командой git worktree remove.",
         saveFailed: "Не удалось изменить расположение worktree",
+      },
+      prAutomation: {
+        title: "Автоматизация pull request",
+        info: "Что Paseo делает с pull request этого проекта на этом хосте",
+        autoFix: "Автоисправление PR, открытых агентами",
+        autoFixHint:
+          "Paseo начинает следить за PR, как только агент открывает его из worktree этого проекта, и сообщает агенту, когда падает CI, рецензент оставляет комментарий или в PR возникает конфликт.",
+        autoReview: "Автоматически проверять, когда запрошен мой ревью",
+        autoReviewHint:
+          "Только GitHub. Paseo проверяет прямые запросы в PR из того же репозитория; PR из форков и черновики показываются в списке для ручной проверки.",
+        reviewer: "Рецензент",
+        reviewerProfileHint: "Использует профиль агента {{name}}",
+        reviewerHint: "Провайдер и модель, которые проверяют pull request",
+        postReviews: "Публиковать ревью в GitHub",
+        postReviewsHint:
+          "Рецензенты публикуют ревью только с комментариями и никогда не одобряют и не запрашивают изменения. Если выключено, замечания остаются в Paseo.",
+        reReview: "Повторная проверка",
+        reReviewHint: "Когда ревьюер снова смотрит PR, который уже проверял",
+        reReviewOnRequest: "Когда мой ревью запрашивают снова",
+        reReviewOnPush: "При каждом новом коммите",
+        saveFailed: "Не удалось сохранить автоматизацию pull request",
       },
       worktree: {
         title: "Хуки жизненного цикла worktree",

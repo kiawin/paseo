@@ -2,7 +2,9 @@ import { z } from "zod";
 import {
   AgentStatusSchema,
   AgentTimelineItemPayloadSchema,
+  ProjectPrAutomationSchema,
   WorkspaceGitHubRuntimePayloadSchema,
+  WorktreeLocationSchema,
 } from "@getpaseo/protocol/messages";
 import type { NoteRecordPayload } from "@getpaseo/protocol/messages";
 import { AgentProviderSchema } from "@getpaseo/protocol/provider-manifest";
@@ -339,6 +341,9 @@ const StoredProjectSchema = z.strictObject({
   projectDisplayName: z.string(),
   projectCustomName: z.string().nullable(),
   projectCustomIconRevision: z.string().nullable(),
+  // Host-local project settings. Optional so rows cached before they existed still load.
+  projectWorktreeLocation: WorktreeLocationSchema.nullable().optional(),
+  projectPrAutomation: ProjectPrAutomationSchema.nullable().optional(),
   projectIconRevision: z.string().optional(),
   projectRootPath: z.string(),
   projectKind: z.enum(["git", "non_git", "directory"]),
@@ -772,6 +777,8 @@ function serializeProject(project: ProjectDescriptor): StoredProject {
     projectDisplayName: project.projectDisplayName,
     projectCustomName: project.projectCustomName,
     projectCustomIconRevision: project.projectCustomIconRevision ?? null,
+    projectWorktreeLocation: project.projectWorktreeLocation ?? null,
+    projectPrAutomation: project.projectPrAutomation ?? null,
     projectIconRevision: project.projectIconRevision,
     projectRootPath: project.projectRootPath,
     projectKind: project.projectKind,
