@@ -1,4 +1,4 @@
-import type { WorktreeLocation } from "@getpaseo/protocol/messages";
+import type { ProjectPrAutomation, WorktreeLocation } from "@getpaseo/protocol/messages";
 import type { ProjectDescriptor, WorkspaceDescriptor } from "@/stores/session-store";
 import type { HostProjectListItem } from "@/projects/host-project-model";
 import { buildWorkspaceStructureProjects } from "@/projects/workspace-structure";
@@ -31,6 +31,7 @@ export interface ProjectHostEntry {
   githubRuntime?: WorkspaceDescriptor["githubRuntime"];
   customIconRevision?: string | null;
   worktreeLocation?: WorktreeLocation | null;
+  prAutomation?: ProjectPrAutomation | null;
   iconRevision?: string;
 }
 
@@ -95,6 +96,7 @@ interface HostGroup {
   workspaces: WorkspaceDescriptor[];
   customIconRevision?: string | null;
   worktreeLocation?: WorktreeLocation | null;
+  prAutomation?: ProjectPrAutomation | null;
   iconRevision?: string;
   // The project record exists before its first workspace. Keep its editable
   // root at the project boundary instead of deriving it from child rows.
@@ -115,6 +117,7 @@ function findProjectMetadata(
   customName: string | null;
   displayName: string;
   worktreeLocation: WorktreeLocation | null;
+  prAutomation: ProjectPrAutomation | null;
 } | null {
   for (const project of host.projects) {
     if (project.projectId === projectId) {
@@ -122,10 +125,21 @@ function findProjectMetadata(
         customName: project.projectCustomName ?? null,
         displayName: project.projectDisplayName,
         worktreeLocation: project.projectWorktreeLocation ?? null,
+        prAutomation: project.projectPrAutomation ?? null,
       };
     }
   }
   return null;
+}
+
+/** Host-local project settings the daemon sends on the project descriptor. */
+function hostProjectSettings(
+  metadata: ReturnType<typeof findProjectMetadata>,
+): Pick<HostGroup, "worktreeLocation" | "prAutomation"> {
+  return {
+    worktreeLocation: metadata?.worktreeLocation ?? null,
+    prAutomation: metadata?.prAutomation ?? null,
+  };
 }
 
 function buildHostProjectEntries(hosts: ProjectHost[]): HostProjectListItem[] {
@@ -193,6 +207,7 @@ function toHostEntry(group: HostGroup): ProjectHostEntry {
     githubRuntime: canonical?.githubRuntime,
     customIconRevision: canonical?.projectCustomIconRevision ?? group.customIconRevision,
     worktreeLocation: group.worktreeLocation ?? null,
+    prAutomation: group.prAutomation ?? null,
     iconRevision: group.iconRevision,
   };
 }
@@ -258,7 +273,7 @@ function addHostProjects(
         isOnline: host.isOnline,
         workspaces: [],
         customIconRevision: placement.customIconRevision,
-        worktreeLocation: customName?.worktreeLocation ?? null,
+        ...hostProjectSettings(customName),
         iconRevision: placement.iconRevision,
         projectRoot: repoRootByProjectId.get(projectId) ?? "",
       });
