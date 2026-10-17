@@ -96,6 +96,7 @@ import {
   type PushNotifications,
   type PushNotificationSender,
 } from "./push/index.js";
+import type { PrWatchRecord } from "./pr-watch/store.js";
 import type { ScriptHealthState } from "./script-health-monitor.js";
 import type { ServiceProxySubsystem } from "./service-proxy.js";
 import { type NoteChange, type NoteStore } from "./note-store.js";
@@ -3037,6 +3038,29 @@ export class VoiceAssistantWebSocketServer {
       focusedTerminalId: activity.focusedTerminalId,
       lastActivityAtMs: activity.lastActivityAt.getTime(),
     };
+  }
+
+  /** Tells the user auto-fix stopped trying, so they can take over the PR. */
+  notifyPrWatchPaused(record: PrWatchRecord): void {
+    const agent = this.agentManager.getAgent(record.agentId);
+    const pr = record.prNumber !== null ? `PR #${record.prNumber}` : "the PR";
+    const body =
+      record.state.kind === "paused" && record.state.reason === "untrusted_workspace"
+        ? `Auto-fix won't prompt an agent in a workspace from an untrusted fork. Open the agent to take over ${pr}.`
+        : `CI still fails on ${pr} after the auto-fix attempts. Open the agent to take over.`;
+    void this.pushNotificationSender
+      .send({
+        title: "Auto-fix paused",
+        body,
+        data: {
+          serverId: this.serverId,
+          agentId: record.agentId,
+          ...(agent?.workspaceId ? { workspaceId: agent.workspaceId } : {}),
+        },
+      })
+      .catch((err) => {
+        this.logger.warn({ err, agentId: record.agentId }, "Failed to send PR auto-fix push");
+      });
   }
 
   private async broadcastAgentAttention(params: {

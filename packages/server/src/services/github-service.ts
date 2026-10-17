@@ -174,6 +174,10 @@ const GitHubPullRequestSummarySchema = z.object({
   headRefName: z.string().catch(""),
   labels: z.array(LabelSchema).catch([]),
   updatedAt: z.string().catch(""),
+  author: z.object({ login: z.string().optional() }).nullable().optional().catch(null),
+  headRefOid: z.string().optional().catch(undefined),
+  isCrossRepository: z.boolean().optional().catch(undefined),
+  isDraft: z.boolean().optional().catch(undefined),
 });
 
 const GitHubRepositoryListItemSchema = z.object({
@@ -360,7 +364,7 @@ const CurrentPullRequestStatusSchema = z.object({
   baseRefName: z.string().catch(""),
   headRefName: z.string().catch(""),
   headRefOid: z.string().optional(),
-  updatedAt: z.string().optional(),
+  updatedAt: z.string().optional().catch(undefined),
   mergedAt: z.string().nullable().optional(),
   statusCheckRollup: z.unknown().optional(),
   reviewDecision: z.unknown().optional(),
@@ -370,6 +374,7 @@ const CurrentPullRequestStatusSchema = z.object({
 
 const TimelineAuthorSchema = z
   .object({
+    __typename: z.string().optional(),
     login: z.string().optional(),
     url: z.string().nullable().optional(),
     avatarUrl: z.string().nullable().optional(),
@@ -384,6 +389,7 @@ const PullRequestTimelineReviewNodeSchema = z.object({
   bodyHTML: z.string().nullable().catch(null),
   url: z.string().catch(""),
   submittedAt: z.string().nullable().catch(null),
+  authorAssociation: z.string().optional().catch(undefined),
   author: TimelineAuthorSchema,
 });
 
@@ -393,6 +399,7 @@ const PullRequestTimelineCommentNodeSchema = z.object({
   bodyHTML: z.string().nullable().catch(null),
   url: z.string().catch(""),
   createdAt: z.string().nullable().catch(null),
+  authorAssociation: z.string().optional().catch(undefined),
   author: TimelineAuthorSchema,
 });
 
@@ -586,7 +593,9 @@ query PullRequestTimeline($owner: String!, $name: String!, $number: Int!) {
           bodyHTML
           url
           submittedAt
+          authorAssociation
           author {
+            __typename
             login
             url
             avatarUrl
@@ -603,7 +612,9 @@ query PullRequestTimeline($owner: String!, $name: String!, $number: Int!) {
           bodyHTML
           url
           createdAt
+          authorAssociation
           author {
+            __typename
             login
             url
             avatarUrl
@@ -628,7 +639,9 @@ query PullRequestTimeline($owner: String!, $name: String!, $number: Int!) {
               bodyHTML
               url
               createdAt
+              authorAssociation
               author {
+                __typename
                 login
                 url
                 avatarUrl
@@ -659,7 +672,7 @@ const BatchPollPrNodeSchema = z.object({
   baseRefName: z.string().catch(""),
   headRefName: z.string().catch(""),
   headRefOid: z.string().catch(""),
-  updatedAt: z.string().optional(),
+  updatedAt: z.string().optional().catch(undefined),
   mergedAt: z.string().nullable().optional(),
   mergeable: PullRequestMergeableSchema.optional().default("UNKNOWN"),
   reviewDecision: z.unknown().optional(),
@@ -2326,7 +2339,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
               "--search",
               input.query ?? "",
               "--json",
-              "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+              "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
               "--limit",
               String(input.limit ?? 20),
             ],
@@ -2379,7 +2392,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
               "view",
               String(input.number),
               "--json",
-              "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+              "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
             ],
             { cwd: input.cwd },
             GitHubPullRequestSummarySchema,
@@ -3747,7 +3760,7 @@ function toBatchCurrentPullRequestItem(
     baseRefName: node.baseRefName,
     headRefName: node.headRefName,
     ...(node.headRefOid ? { headRefOid: node.headRefOid } : {}),
-    updatedAt: node.updatedAt,
+    ...(node.updatedAt ? { updatedAt: node.updatedAt } : {}),
     mergedAt: node.mergedAt ?? null,
     ...(statusCheckRollup ? { statusCheckRollup } : {}),
     reviewDecision: node.reviewDecision,
@@ -3945,6 +3958,10 @@ function toPullRequestSummary(
     headRefName: item.headRefName,
     labels: item.labels.map((label) => label.name ?? "").filter((name) => name.length > 0),
     updatedAt: item.updatedAt,
+    ...(item.author?.login ? { author: item.author.login } : {}),
+    ...(item.headRefOid ? { headSha: item.headRefOid } : {}),
+    ...(item.isCrossRepository !== undefined ? { isCrossRepository: item.isCrossRepository } : {}),
+    ...(item.isDraft !== undefined ? { isDraft: item.isDraft } : {}),
   };
 }
 
@@ -4013,6 +4030,7 @@ function toPullRequestTimelineReviewItem(
       body: normalizeGitHubTimelineBody(review.body ?? "", review.bodyHTML ?? ""),
       createdAt: parseOptionalTime(review.submittedAt ?? null),
       url: review.url,
+      ...toTimelineAuthorFacts(review),
       reviewState,
     },
   ];
@@ -4030,6 +4048,17 @@ function toPullRequestTimelineCommentItem(
     body: normalizeGitHubTimelineBody(comment.body ?? "", comment.bodyHTML ?? ""),
     createdAt: parseOptionalTime(comment.createdAt ?? null),
     url: comment.url,
+    ...toTimelineAuthorFacts(comment),
+  };
+}
+
+function toTimelineAuthorFacts(node: {
+  authorAssociation?: string;
+  author?: z.infer<typeof TimelineAuthorSchema>;
+}): Pick<PullRequestTimelineItem, "authorAssociation" | "authorIsBot"> {
+  return {
+    ...(node.authorAssociation ? { authorAssociation: node.authorAssociation } : {}),
+    ...(node.author?.__typename ? { authorIsBot: node.author.__typename === "Bot" } : {}),
   };
 }
 
@@ -4376,6 +4405,7 @@ function toCurrentPullRequestStatus(
     baseRefName: item.baseRefName,
     headRefName: item.headRefName || fallbackHeadRefName,
     ...(item.headRefOid ? { headSha: item.headRefOid } : {}),
+    ...(item.updatedAt ? { updatedAt: item.updatedAt } : {}),
     isMerged: mergedAt !== null,
     isDraft: item.isDraft ?? false,
     mergeable: item.mergeable,

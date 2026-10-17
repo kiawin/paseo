@@ -291,6 +291,12 @@ export interface SendPromptToAgentParams {
   unarchive?: boolean;
   /** See {@link StartAgentRunOptions.clearPendingPermissions}. */
   clearPendingPermissions?: boolean;
+  /**
+   * Default true: a busy agent's current turn is replaced. False makes the send
+   * fail with "already has an active run" instead, for automated prompts that
+   * must never cut off a turn the user started.
+   */
+  replaceRunning?: boolean;
   logger: Logger;
 }
 
@@ -369,7 +375,13 @@ async function resolvePromptSource(
   manager: Pick<AgentManager, "getAgent">,
   storage: AgentStorage,
 ): Promise<AgentPromptSource | undefined> {
-  if (!source || source.kind === "change-request-update" || source.title) return source;
+  if (
+    !source ||
+    source.kind === "change-request-update" ||
+    source.kind === "forge-event" ||
+    source.title
+  )
+    return source;
   const title = (
     manager.getAgent(source.agentId)?.config.title ?? (await storage.get(source.agentId))?.title
   )?.trim();
@@ -460,7 +472,7 @@ export async function sendPreparedPromptToAgent(
     throw new Error("Queued agent message was withdrawn");
   }
   return await startAgentRun(params.agentManager, params.agentId, params.prompt, params.logger, {
-    replaceRunning: !params.idleOnly,
+    replaceRunning: params.idleOnly ? false : (params.replaceRunning ?? true),
     idleOnly: params.idleOnly,
     admit: params.admit,
     onDispatch: params.onDispatch,
