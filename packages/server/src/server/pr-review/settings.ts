@@ -1,0 +1,66 @@
+import type { AgentProfile, ProjectPrAutomation } from "@getpaseo/protocol/messages";
+
+export type NormalizedPrAutomation =
+  | { ok: true; settings: ProjectPrAutomation }
+  | { ok: false; error: string };
+
+/**
+ * Checks a project's PR automation before it is stored. A reviewer profile may
+ * be named by id or by name; it is stored by id so renaming it keeps working.
+ */
+export function normalizePrAutomation(
+  input: ProjectPrAutomation,
+  profiles: readonly AgentProfile[],
+): NormalizedPrAutomation {
+  const reviewProvider = input.reviewProvider?.trim() || null;
+  const profileRef = input.reviewProfileId?.trim() || null;
+  const profile = profileRef
+    ? (profiles.find((entry) => entry.id === profileRef) ??
+      profiles.find((entry) => entry.name === profileRef))
+    : null;
+  if (profileRef && !profile) {
+    return { ok: false, error: `No agent profile named ${profileRef}` };
+  }
+  if ((input.autoReview || input.autoReviewOwn) && !reviewProvider && !profile) {
+    return { ok: false, error: "Choose a reviewer provider to review automatically" };
+  }
+  // Empty clears them: the stored settings are merged under each update, so an
+  // omitted field can't.
+  const { reviewInstructions: rawInstructions, ...rest } = input;
+  const reviewInstructions = rawInstructions?.trim() ?? "";
+  const error = findOptionError(input, reviewInstructions);
+  if (error) {
+    return { ok: false, error };
+  }
+  return {
+    ok: true,
+    settings: {
+      ...rest,
+      reviewProvider,
+      reviewProfileId: profile?.id ?? null,
+      ...(reviewInstructions ? { reviewInstructions } : {}),
+    },
+  };
+}
+
+/** Every reviewer prompt carries them, so they stay short enough not to crowd out the PR. */
+const MAX_REVIEW_INSTRUCTIONS_LENGTH = 4000;
+
+/** Checks the options that don't depend on the reviewer. */
+function findOptionError(input: ProjectPrAutomation, reviewInstructions: string): string | null {
+  const { reReviewOn } = input;
+  if (reReviewOn !== undefined && reReviewOn !== "request" && reReviewOn !== "push") {
+    return `Unknown re-review option: ${reReviewOn}`;
+  }
+  if (input.maxOwnReviewRounds !== undefined && !isRoundLimit(input.maxOwnReviewRounds)) {
+    return "Review rounds must be a whole number from 1 to 10";
+  }
+  if (reviewInstructions.length > MAX_REVIEW_INSTRUCTIONS_LENGTH) {
+    return `Review instructions must be ${MAX_REVIEW_INSTRUCTIONS_LENGTH} characters or fewer`;
+  }
+  return null;
+}
+
+function isRoundLimit(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= 10;
+}
