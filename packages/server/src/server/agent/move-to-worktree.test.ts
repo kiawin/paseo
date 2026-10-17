@@ -28,6 +28,8 @@ describe("move-to-worktree", () => {
     git(repoDir, ["config", "user.email", "test@example.com"]);
     git(repoDir, ["config", "user.name", "Test"]);
     git(repoDir, ["config", "commit.gpgsign", "false"]);
+    // Windows runners set core.autocrlf, which would check files out with CRLF.
+    git(repoDir, ["config", "core.autocrlf", "false"]);
     await writeFile(join(repoDir, "README.md"), "hello\n");
     git(repoDir, ["add", "README.md"]);
     git(repoDir, ["commit", "-m", "init"]);
