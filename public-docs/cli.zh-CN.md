@@ -153,6 +153,18 @@ paseo --host devbox:6767 project create /srv/repos/api
 
 远程 daemon 会在它自己的机器上解释这个路径。项目如何对工作目录和会话分组，见[工作区](/docs/workspaces)。
 
+## 拉取请求 {#pull-requests}
+
+```bash
+paseo agent autofix <agent-id> [on|off|status]
+paseo project autoreview <project-id> <on|off> [--provider <provider>] [--post-reviews | --no-post-reviews] [--profile <profile>] [--rereview <request|push>]
+paseo project review-instructions <project-id> [text] [--file <path>] [--clear]
+paseo project autofix <project-id> <on|off>
+paseo project review <project-id> <pr-number> [--provider <provider>]
+```
+
+`agent autofix` 监视该 Agent 分支上的 PR，并在 CI 失败、审查者发表评论或 PR 出现冲突时给 Agent 发送提示词。`project autoreview` 在有人直接请求你审查时启动一个审查 Agent；`--provider` 接受 `provider` 或 `provider/model`，`--profile` 则改为接受 Agent 配置的名称或 ID；`--rereview push` 让审查者查看每个新提交，而不是等待再次请求。`project review-instructions` 设置项目 PR 的每个审查者都会收到的准则，内容来自参数或 `--file`；`--clear` 会移除它们。`project autofix` 为 Agent 从项目 worktree 开的每个 PR 开启自动修复。`project review` 在一个 GitHub PR 上启动审查 Agent，效果与 Review 按钮相同。参见[拉取请求](/docs/pull-requests)。
+
 ## 工作区 {#workspaces}
 
 如果你想在启动 Agent 之前先准备好文件，可以单独创建工作区：
