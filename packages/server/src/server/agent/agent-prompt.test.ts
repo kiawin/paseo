@@ -16,7 +16,11 @@ import { join } from "node:path";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
-import { setupFinishNotification, waitForAgentRunStartWithTimeout } from "./agent-prompt.js";
+import {
+  sendPromptToAgent,
+  setupFinishNotification,
+  waitForAgentRunStartWithTimeout,
+} from "./agent-prompt.js";
 import type { AgentManagerEvent, ManagedAgent } from "./agent-manager.js";
 import type {
   AgentClient,
@@ -860,4 +864,59 @@ test("a human pasting an agent envelope stays a human message through provider r
     messageId: "provider-echo",
     clientMessageId: "human-submission",
   });
+});
+
+test("watcher envelopes reach the agent and show as a message from the watcher", () => {
+  const message = {
+    id: "delivery-2",
+    source: { kind: "forge-event" as const, agentId: "pr-watch:agent-1", title: "PR #42 auto-fix" },
+    text: "CI failed on PR #42.",
+  };
+  const encoded = formatAgentMessage(message);
+
+  expect(parseAgentMessage(encoded)).toEqual(message);
+  expect(projectAgentMessage({ type: "user_message", text: encoded })).toMatchObject({
+    type: "tool_call",
+    agentMessage: {
+      event: "message",
+      sender: { id: "pr-watch:agent-1", title: "PR #42 auto-fix" },
+      text: "CI failed on PR #42.",
+    },
+  });
+});
+
+test("an automated send fails instead of replacing a busy agent's turn", async () => {
+  const busyAgent: ManagedAgent = Object.create(null);
+  Reflect.set(busyAgent, "id", "busy-agent");
+  Reflect.set(busyAgent, "lifecycle", "running");
+  Reflect.set(busyAgent, "config", { title: "Busy Agent" });
+  Reflect.set(busyAgent, "pendingPermissions", new Map());
+  const agentManager = new AgentManager({ clients: {}, logger: createTestLogger() });
+  const replaceAgentRunSpy = vi.fn(() => (async function* noop() {})());
+  Reflect.set(agentManager, "getAgent", vi.fn().mockReturnValue(busyAgent));
+  Reflect.set(agentManager, "hasInFlightRun", vi.fn().mockReturnValue(true));
+  Reflect.set(agentManager, "tryRunOutOfBand", vi.fn().mockReturnValue(false));
+  Reflect.set(agentManager, "replaceAgentRun", replaceAgentRunSpy);
+  Reflect.set(
+    agentManager,
+    "streamAgent",
+    vi.fn(() => {
+      throw new Error("Agent busy-agent already has an active run");
+    }),
+  );
+  const agentStorage = { get: vi.fn().mockResolvedValue(null) } as unknown as AgentStorage;
+
+  await expect(
+    sendPromptToAgent({
+      agentManager,
+      agentStorage,
+      agentId: "busy-agent",
+      prompt: "CI failed on PR #42.",
+      source: { kind: "forge-event", agentId: "pr-watch:busy-agent", title: "PR #42 auto-fix" },
+      unarchive: false,
+      replaceRunning: false,
+      logger: createTestLogger(),
+    }),
+  ).rejects.toThrow("already has an active run");
+  expect(replaceAgentRunSpy).not.toHaveBeenCalled();
 });

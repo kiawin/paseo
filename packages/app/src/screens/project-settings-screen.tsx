@@ -32,6 +32,10 @@ import { SettingsGroup } from "@/components/settings/headings/settings-group";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { CopyFromHostSection } from "@/screens/settings/copy-from-host-section";
 import {
+  PrAutomationSection,
+  type PrAutomationSectionProps,
+} from "@/screens/settings/pr-automation-section";
+import {
   WorktreeLocationSection,
   type WorktreeLocationSectionProps,
 } from "@/screens/settings/worktree-location-section";
@@ -248,6 +252,23 @@ function ProjectSettingsBody({
         : null,
     [supportsWorktreeLocation, client, selectedHost],
   );
+  const supportsPrAutomation = useHostFeature(selectedHost.serverId, "prAutoFix");
+  // COMPAT(prAutoReviewOwn): added in v0.12.x, remove gate after 2028-10-18.
+  const supportsOwnReviews = useHostFeature(selectedHost.serverId, "prAutoReviewOwn");
+  const prAutomationProps = useMemo<PrAutomationSectionProps | null>(
+    () =>
+      supportsPrAutomation
+        ? {
+            client,
+            serverId: selectedHost.serverId,
+            projectId: selectedHost.projectId,
+            repoRoot: selectedHost.repoRoot,
+            settings: selectedHost.prAutomation ?? null,
+            supportsOwnReviews,
+          }
+        : null,
+    [supportsPrAutomation, supportsOwnReviews, client, selectedHost],
+  );
   const customIconRevision = selectedHost.customIconRevision ?? null;
   const projectIconTargets = useMemo(() => {
     const target = createProjectIconTarget({
@@ -324,6 +345,7 @@ function ProjectSettingsBody({
 
       {renderContent({
         worktreeLocationProps,
+        prAutomationProps,
         readQuery,
         loadedConfig,
         loadedRevision,
@@ -345,6 +367,7 @@ function ProjectSettingsBody({
 
 interface RenderContentInput {
   worktreeLocationProps: WorktreeLocationSectionProps | null;
+  prAutomationProps: PrAutomationSectionProps | null;
   readQuery: ReturnType<typeof useQuery<ReadProjectConfigData>>;
   loadedConfig: PaseoConfigRaw | null;
   loadedRevision: PaseoConfigRevision | null;
@@ -361,6 +384,7 @@ interface RenderContentInput {
 
 function renderContent({
   worktreeLocationProps,
+  prAutomationProps,
   readQuery,
   loadedConfig,
   loadedRevision,
@@ -412,6 +436,7 @@ function renderContent({
     <ProjectConfigForm
       key={formKey}
       worktreeLocation={worktreeLocationProps}
+      prAutomation={prAutomationProps}
       baseConfig={loadedConfig}
       revision={loadedRevision}
       hasUncommittedWorktreeSetupChanges={hasUncommittedWorktreeSetupChanges}
@@ -494,6 +519,7 @@ function errorToDetail(error: unknown): string | null {
 
 interface ProjectConfigFormProps {
   worktreeLocation: WorktreeLocationSectionProps | null;
+  prAutomation: PrAutomationSectionProps | null;
   baseConfig: PaseoConfigRaw;
   revision: PaseoConfigRevision | null;
   hasUncommittedWorktreeSetupChanges: boolean;
@@ -505,6 +531,7 @@ interface ProjectConfigFormProps {
 
 function ProjectConfigForm({
   worktreeLocation,
+  prAutomation,
   baseConfig,
   revision,
   hasUncommittedWorktreeSetupChanges,
@@ -717,6 +744,7 @@ function ProjectConfigForm({
   return (
     <View>
       {worktreeLocation ? <WorktreeLocationSection {...worktreeLocation} /> : null}
+      {prAutomation ? <PrAutomationSection {...prAutomation} /> : null}
 
       <SettingsGroup
         title={t("settings.project.worktree.title")}

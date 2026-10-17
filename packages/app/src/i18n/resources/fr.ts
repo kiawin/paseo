@@ -1291,6 +1291,7 @@ export const fr: TranslationResources = {
       sessions: "Historique",
       search: "Recherche",
       schedules: "Planifications",
+      pullRequests: "Pull requests",
     },
     worktreeSetup: {
       title: "Configurer les scripts de worktree",
@@ -3084,6 +3085,33 @@ export const fr: TranslationResources = {
         externalRemovalNote:
           "Archiver un espace de travail laisse son worktree sur le disque. Supprimez-le vous-même avec git worktree remove.",
         saveFailed: "Impossible de changer l'emplacement du worktree",
+      },
+      prAutomation: {
+        title: "Automatisation des pull requests",
+        info: "Ce que Paseo fait des pull requests de ce projet sur cet hôte",
+        autoFix: "Corriger automatiquement les PR ouvertes par des agents",
+        autoFixHint:
+          "Paseo surveille une PR dès qu'un agent l'ouvre depuis l'un des worktrees de ce projet, et relance l'agent quand la CI échoue, qu'un relecteur commente ou que la PR est en conflit.",
+        autoReview: "Relire automatiquement quand ma relecture est demandée",
+        autoReviewHint:
+          "GitHub uniquement. Paseo relit les demandes directes sur les PR du même dépôt ; les PR de forks et les brouillons sont listées pour que vous les relisiez.",
+        autoReviewOwn: "Relire automatiquement mes PR",
+        autoReviewOwnHint:
+          "GitHub uniquement. Paseo relit une fois chaque PR du même dépôt que vous ouvrez, y compris celles que vos agents ouvrent avec votre compte. Les PR de forks et les brouillons sont ignorées.",
+        ownReviewRounds: "Relectures par PR",
+        ownReviewRoundsHint:
+          "La première relecture compte. Si Relire à nouveau est réglé sur À chaque nouveau commit, chaque nouveau commit sur votre PR lance une autre relecture jusqu’à atteindre ce nombre.",
+        reviewer: "Relecteur",
+        reviewerProfileHint: "Utilise le profil d'agent {{name}}",
+        reviewerHint: "Le fournisseur et le modèle qui relisent les pull requests",
+        postReviews: "Publier les relectures sur GitHub",
+        postReviewsHint:
+          "Les relecteurs publient une relecture en commentaire uniquement ; ils n'approuvent jamais et ne demandent jamais de modifications. Désactivé, les constats restent dans Paseo.",
+        reReview: "Relire à nouveau",
+        reReviewHint: "Quand un relecteur revient sur une PR qu'il a déjà relue",
+        reReviewOnRequest: "Quand ma relecture est de nouveau demandée",
+        reReviewOnPush: "À chaque nouveau commit",
+        saveFailed: "Impossible d'enregistrer l'automatisation des pull requests",
       },
       worktree: {
         title: "Hooks de cycle de vie des worktrees",
