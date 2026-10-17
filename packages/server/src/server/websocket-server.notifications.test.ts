@@ -285,6 +285,34 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
     expect(getLastAssistantMessage).toHaveBeenCalledWith("agent-1");
   });
 
+  it("pushes a notice that opens the agent when PR auto-fix pauses", async () => {
+    const { server, pushNotifications } = createServer();
+
+    server.notifyPrWatchPaused({
+      agentId: "agent-1",
+      cwd: "/tmp/worktree",
+      forge: "github",
+      headRef: "feature/retry",
+      prNumber: 42,
+      prUrl: "https://github.com/acme/widgets/pull/42",
+      state: { kind: "paused", reason: "attempt_limit", at: "2026-10-17T00:00:00.000Z" },
+      ci: { headSha: "head-1", seenFailureKeys: [], attemptsForHead: 3, consecutiveFailedHeads: 1 },
+      review: { since: "2026-10-17T00:00:00.000Z", lastUpdatedAt: null, seenCommentIds: [] },
+      conflict: { notifiedHeadSha: null },
+      createdAt: "2026-10-17T00:00:00.000Z",
+      updatedAt: "2026-10-17T00:00:00.000Z",
+    });
+    await Promise.resolve();
+
+    expect(pushNotifications.sent).toEqual([
+      {
+        title: "Auto-fix paused",
+        body: "CI still fails on PR #42 after the auto-fix attempts. Open the agent to take over.",
+        data: { serverId: "srv-test", agentId: "agent-1", workspaceId: WORKSPACE_ID },
+      },
+    ]);
+  });
+
   it("sends push notifications regardless of UI label presence", async () => {
     const getLastAssistantMessage = vi.fn(async () => "Done.");
     const { server, pushNotifications } = createServer({
