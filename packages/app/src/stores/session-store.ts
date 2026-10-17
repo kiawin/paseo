@@ -2,7 +2,7 @@ import equal from "fast-deep-equal";
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { clearUnarchiveAgentPendingForServer } from "./unarchive-agent-store";
-import type { WorktreeLocation } from "@getpaseo/protocol/messages";
+import type { ProjectPrAutomation, WorktreeLocation } from "@getpaseo/protocol/messages";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { ViewedTimelineOwner } from "@/timeline/viewed-timeline-sync";
 import type { AgentDirectoryEntry } from "@/types/agent-directory";
@@ -206,6 +206,7 @@ export interface ProjectDescriptor {
   projectCustomName: string | null;
   projectCustomIconRevision?: string | null;
   projectWorktreeLocation?: WorktreeLocation | null;
+  projectPrAutomation?: ProjectPrAutomation | null;
   projectIconRevision?: string;
   projectRootPath: string;
   projectKind: WorkspaceDescriptorPayload["projectKind"];
@@ -221,6 +222,7 @@ export function normalizeProjectDescriptor(
     projectCustomName: payload.projectCustomName ?? null,
     projectCustomIconRevision: payload.projectCustomIconRevision ?? null,
     projectWorktreeLocation: payload.projectWorktreeLocation ?? null,
+    projectPrAutomation: payload.projectPrAutomation ?? null,
     projectIconRevision: payload.projectIconRevision,
     projectRootPath: payload.projectRootPath,
     projectKind: payload.projectKind,

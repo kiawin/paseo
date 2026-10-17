@@ -873,7 +873,10 @@ describe("ForgeService", () => {
 
   it("populates repoOwner/repoName from a GitHub Enterprise PR URL", async () => {
     const runner = createRunner([
-      currentPullRequestJson({ url: "https://github.acme.internal/acme/repo/pull/42" }),
+      currentPullRequestJson({
+        url: "https://github.acme.internal/acme/repo/pull/42",
+        updatedAt: "2026-10-17T01:00:00Z",
+      }),
     ]);
     const service = createGitHubService({
       runner: runner.runner,
@@ -890,6 +893,8 @@ describe("ForgeService", () => {
       repoOwner: "acme",
       repoName: "repo",
       url: "https://github.acme.internal/acme/repo/pull/42",
+      headSha: "1111111111111111111111111111111111111111",
+      updatedAt: "2026-10-17T01:00:00Z",
     });
   });
 
@@ -1189,6 +1194,7 @@ describe("ForgeService", () => {
             url: "https://github.com/acme/gadgets/pull/52",
             headRefName: "feat-b",
             headRefOid: "oid-b",
+            updatedAt: "2026-10-17T02:00:00Z",
           }),
         ]),
       }),
@@ -1253,11 +1259,13 @@ describe("ForgeService", () => {
     expect(runner.calls[0]?.args[3]).toContain('t1: repository(owner: "acme", name: "gadgets")');
     expect(runner.calls[0]?.args[3]).toContain('headRefName: "feat-a"');
     expect(runner.calls[0]?.args[3]).toContain('headRefName: "feat-b"');
+    expect(runner.calls[0]?.args[3]).toContain("updatedAt");
     expect(runner.calls[1]?.args[3]).toContain("pullRequest(number: 41)");
     expect(runner.calls[1]?.args[3]).toContain("pullRequest(number: 52)");
     expect(statusesA).toEqual([
       expect.objectContaining({
         number: 41,
+        headSha: "oid-a",
         state: "merged",
         isMerged: true,
         checksStatus: "success",
@@ -1265,7 +1273,12 @@ describe("ForgeService", () => {
       }),
     ]);
     expect(statusesB).toEqual([
-      expect.objectContaining({ number: 52, state: "merged", checksStatus: "success" }),
+      expect.objectContaining({
+        number: 52,
+        state: "merged",
+        checksStatus: "success",
+        updatedAt: "2026-10-17T02:00:00Z",
+      }),
     ]);
 
     // Merged PR checks are frozen: the second cycle reuses the cached rollup
@@ -2119,6 +2132,56 @@ describe("ForgeService", () => {
         },
       ],
     });
+  });
+
+  it("reports each timeline author's repo access and whether it is a bot", async () => {
+    const runner = createRunner([
+      pullRequestTimelineJson({
+        reviews: { nodes: [], pageInfo: { hasNextPage: false } },
+        comments: {
+          nodes: [
+            {
+              id: "IC_member",
+              body: "Please add a test.",
+              bodyHTML: "<p>Please add a test.</p>",
+              url: "https://github.com/parentOwner/parentRepo/pull/42#issuecomment-5",
+              createdAt: "2026-04-02T13:57:00Z",
+              authorAssociation: "MEMBER",
+              author: { __typename: "User", login: "maintainer" },
+            },
+            {
+              id: "IC_bot",
+              body: "Coverage dropped.",
+              bodyHTML: "<p>Coverage dropped.</p>",
+              url: "https://github.com/parentOwner/parentRepo/pull/42#issuecomment-6",
+              createdAt: "2026-04-02T13:58:00Z",
+              authorAssociation: "NONE",
+              author: { __typename: "Bot", login: "codecov" },
+            },
+          ],
+          pageInfo: { hasNextPage: false },
+        },
+      }),
+    ]);
+    const service = createGitHubService({
+      runner: runner.runner,
+      resolveGhPath: async () => "/usr/bin/gh",
+      now: () => 100,
+    });
+
+    const timeline = await service.getPullRequestTimeline({
+      cwd: "/repo",
+      prNumber: 42,
+      repoOwner: "parentOwner",
+      repoName: "parentRepo",
+    });
+
+    expect(runner.calls[0]?.args[3]).toContain("authorAssociation");
+    expect(runner.calls[0]?.args[3]).toContain("__typename");
+    expect(timeline.items).toEqual([
+      expect.objectContaining({ id: "IC_member", authorAssociation: "MEMBER", authorIsBot: false }),
+      expect.objectContaining({ id: "IC_bot", authorAssociation: "NONE", authorIsBot: true }),
+    ]);
   });
 
   it("rewrites GitHub attachment image URLs in timeline comments", async () => {
@@ -4532,7 +4595,7 @@ describe("ForgeService", () => {
         "--search",
         "",
         "--json",
-        "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+        "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
         "--limit",
         "20",
       ],
@@ -4606,7 +4669,7 @@ describe("ForgeService", () => {
           "--search",
           "cache",
           "--json",
-          "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+          "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
           "--limit",
           "5",
         ],
@@ -4645,7 +4708,7 @@ describe("ForgeService", () => {
         "--search",
         "793",
         "--json",
-        "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+        "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
         "--limit",
         "5",
       ],
@@ -4684,7 +4747,7 @@ describe("ForgeService", () => {
         "--search",
         "https://gitlab.com/getpaseo/paseo/issues/793",
         "--json",
-        "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+        "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
         "--limit",
         "5",
       ],
@@ -4723,7 +4786,7 @@ describe("ForgeService", () => {
         "--search",
         "793",
         "--json",
-        "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+        "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
         "--limit",
         "5",
       ],
@@ -4774,7 +4837,7 @@ describe("ForgeService", () => {
           "--search",
           "cache",
           "--json",
-          "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
+          "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt,author,headRefOid,isCrossRepository,isDraft",
           "--limit",
           "5",
         ],

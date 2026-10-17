@@ -27,6 +27,13 @@ const sourceSchema = z.discriminatedUnion("kind", [
     // "message" reports a child that ended its turn but has not finished its work.
     event: z.enum(["message", "finished", "errored", "permission-required", "closed"]),
   }),
+  z.object({
+    // Sent by a daemon-side watcher, not an agent: agentId names the watcher.
+    kind: z.literal("forge-event"),
+    agentId: agentIdSchema,
+    serverId: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+  }),
 ]);
 export type AgentPromptSource = z.infer<typeof sourceSchema>;
 
@@ -226,7 +233,7 @@ function projectAgentMessage(item: AgentTimelineItem): AgentTimelineItem | null 
     type: "tool_call",
     callId: `paseo-agent-message:${message.id}`,
     agentMessage: {
-      event: source.kind === "agent-message" ? "message" : source.event,
+      event: source.kind === "agent-notification" ? source.event : "message",
       sender: {
         id: source.agentId,
         ...(source.serverId ? { serverId: source.serverId } : {}),
