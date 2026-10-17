@@ -2,7 +2,7 @@ import type { JsonValue } from "@getpaseo/protocol/agent-types";
 
 import type { Logger } from "pino";
 import { z } from "zod";
-import { WorktreeLocationSchema } from "@getpaseo/protocol/messages";
+import { ProjectPrAutomationSchema, WorktreeLocationSchema } from "@getpaseo/protocol/messages";
 
 import { ArchivableFileBackedRegistry } from "./file-backed-registry.js";
 import { areEquivalentPaths } from "../utils/path.js";
@@ -52,6 +52,12 @@ const PersistedProjectRecordSchema = z.object({
   customIconRevision: z
     .string()
     .nullable()
+    .optional()
+    .transform((value) => value ?? null),
+  // Pull request automation for this project. Machine-local: it starts agents
+  // on this host, so it doesn't belong in the committed paseo.json.
+  // COMPAT(prAutoFix): added in v0.12.x, remove optional after 2028-10-17.
+  prAutomation: ProjectPrAutomationSchema.nullable()
     .optional()
     .transform((value) => value ?? null),
   createdAt: z.string(),
