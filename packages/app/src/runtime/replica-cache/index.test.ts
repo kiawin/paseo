@@ -468,6 +468,34 @@ describe("ReplicaCache", () => {
     expect(restoredTimeline).toEqual(timeline());
   });
 
+  it("keeps a project's host-local settings through the cache", async () => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const value = directory();
+    const project = normalizeProjectDescriptor({
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo/paseo",
+      projectKind: "git",
+      projectWorktreeLocation: { mode: "sibling" },
+      projectPrAutomation: {
+        autoReview: true,
+        reviewProvider: "codex",
+        postReviews: false,
+        autoFixAgentPullRequests: true,
+      },
+    });
+    commitDirectory(writer, SERVER_ID, { ...value, projects: new Map([["project-1", project]]) });
+    await writer.flush();
+
+    const restored = await createCache(storage).readDirectory(SERVER_ID);
+
+    expect(restored.projects.get("project-1")).toMatchObject({
+      projectWorktreeLocation: { mode: "sibling" },
+      projectPrAutomation: { autoReview: true, reviewProvider: "codex" },
+    });
+  });
+
   it("round-trips note metadata without caching bodies or crossing project baselines", async () => {
     const storage = new MemoryStorage();
     const writer = createCache(storage);
