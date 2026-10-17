@@ -1,10 +1,8 @@
 import { useCallback, useMemo, useState, type ReactElement } from "react";
-import { Text, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
 import { PickerAnchor, PullRequestKebab } from "@/components/pull-requests/pull-request-row";
+import { PullRequestRowFrame } from "@/components/pull-requests/pull-request-row-frame";
 import { Button } from "@/components/ui/button";
 import { MenuItem, MenuLabel, MenuRoot, MenuSurface } from "@/components/ui/menu";
-import { StatusBadge } from "@/components/ui/status-badge";
 import type { StartReviewInput } from "@/hooks/use-review-requests";
 import {
   buildReviewRequestMeta,
@@ -12,8 +10,9 @@ import {
   type ReviewRequestRow as ReviewRequestRowModel,
   type ReviewRequestTarget,
 } from "@/pull-requests/review-request-rows";
-import { settingsStyles } from "@/styles/settings";
 import { toErrorMessage } from "@/utils/error-messages";
+import { useOpenForgeLink } from "@/utils/use-link-behavior";
+import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 
 interface ReviewRequestRowProps {
   row: ReviewRequestRowModel;
@@ -28,6 +27,10 @@ interface ReviewRequestRowProps {
  * Fork and Draft pills, a trailing action, and a kebab that opens it on GitHub. The
  * action opens the reviewer's workspace, or starts a reviewer and then opens it. When
  * several hosts have the project, Review first asks which host runs the reviewer.
+ *
+ * Pressing the row opens the reviewer's workspace like an in-progress row opens its own.
+ * Before a reviewer exists it opens the pull request instead: a stray tap must not start
+ * an agent, so starting one stays on the Review button.
  */
 export function ReviewRequestRow({
   row,
@@ -39,6 +42,13 @@ export function ReviewRequestRow({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { activeReview } = row;
+  const workspaceKey = activeReview
+    ? buildWorkspaceTabPersistenceKey({
+        serverId: activeReview.target.serverId,
+        workspaceId: activeReview.workspaceId,
+      })
+    : null;
+  const openForgeLink = useOpenForgeLink(workspaceKey);
 
   const handleOpen = useCallback(() => {
     if (activeReview) {
@@ -48,6 +58,14 @@ export function ReviewRequestRow({
       });
     }
   }, [activeReview, onOpenWorkspace]);
+
+  const handleRowPress = useCallback(() => {
+    if (activeReview) {
+      handleOpen();
+      return;
+    }
+    openForgeLink(row.url);
+  }, [activeReview, handleOpen, openForgeLink, row.url]);
 
   const startReview = useCallback(
     async (target: ReviewRequestTarget) => {
@@ -75,7 +93,6 @@ export function ReviewRequestRow({
     [startReview],
   );
 
-  const badges = describeReviewRequestBadges(row);
   const linkTarget = useMemo(
     () => ({ key: row.key, forge: "github", url: row.url }),
     [row.key, row.url],
@@ -114,41 +131,25 @@ export function ReviewRequestRow({
   }
 
   return (
-    <View
-      style={[settingsStyles.row, styles.row, !isFirst && settingsStyles.rowBorder]}
+    <PullRequestRowFrame
       testID={`review-request-row-${row.key}`}
-    >
-      <View style={styles.textGroup}>
-        <Text style={settingsStyles.rowTitle} numberOfLines={1}>
-          {row.title}
-        </Text>
-        <Text style={settingsStyles.rowHint} numberOfLines={1}>
-          {buildReviewRequestMeta(row, showHostLabel)}
-        </Text>
-        {badges.length > 0 ? (
-          <View style={styles.badges}>
-            {badges.map((badge) => (
-              <StatusBadge
-                key={badge.label}
-                label={badge.label}
-                variant={badge.variant}
-                size="xs"
-              />
-            ))}
-          </View>
-        ) : null}
-        {error ? (
-          <Text style={settingsStyles.rowError} testID={`review-request-error-${row.key}`}>
-            {error}
-          </Text>
-        ) : null}
-      </View>
-
-      <View style={styles.trailing}>
-        {action}
-        <PullRequestKebab row={linkTarget} />
-      </View>
-    </View>
+      isFirst={isFirst}
+      title={row.title}
+      meta={buildReviewRequestMeta(row, showHostLabel)}
+      badges={describeReviewRequestBadges(row)}
+      error={error}
+      errorTestID={`review-request-error-${row.key}`}
+      accessibilityLabel={
+        activeReview ? `Open review of ${row.title}` : `Open pull request ${row.title}`
+      }
+      onPress={handleRowPress}
+      trailing={
+        <>
+          {action}
+          <PullRequestKebab row={linkTarget} workspaceKey={workspaceKey} />
+        </>
+      }
+    />
   );
 }
 
@@ -243,24 +244,3 @@ function ReviewHostItem({
     </MenuItem>
   );
 }
-
-const styles = StyleSheet.create((theme) => ({
-  row: {
-    gap: theme.spacing[3],
-  },
-  textGroup: {
-    flex: 1,
-    minWidth: 0,
-  },
-  badges: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing[1],
-    marginTop: theme.spacing[2],
-  },
-  trailing: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-  },
-}));
