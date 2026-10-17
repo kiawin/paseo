@@ -1284,6 +1284,7 @@ export const ko: TranslationResources = {
       sessions: "기록",
       search: "검색",
       schedules: "일정",
+      pullRequests: "풀 리퀘스트",
     },
     worktreeSetup: {
       title: "워크트리 스크립트 설정",
@@ -3270,6 +3271,38 @@ export const ko: TranslationResources = {
         externalRemovalNote:
           "워크스페이스를 보관해도 워크트리는 디스크에 남습니다. git worktree remove로 직접 삭제하세요.",
         saveFailed: "워크트리 위치를 변경하지 못했습니다",
+      },
+      prAutomation: {
+        title: "풀 리퀘스트 자동화",
+        info: "이 호스트에서 이 프로젝트의 풀 리퀘스트에 Paseo가 하는 일",
+        autoFix: "에이전트가 연 PR 자동 수정",
+        autoFixHint:
+          "이 프로젝트의 워크트리에서 에이전트가 PR을 열면 Paseo가 바로 지켜보고, CI 실패, 리뷰어 댓글, PR 충돌이 생기면 에이전트에게 알립니다.",
+        autoReview: "내 리뷰가 요청되면 자동으로 리뷰",
+        autoReviewHint:
+          "GitHub 전용. 같은 저장소 PR에 대한 직접 요청은 Paseo가 리뷰합니다. 포크 PR과 초안은 직접 리뷰할 수 있도록 목록에 표시됩니다.",
+        autoReviewOwn: "내 PR 자동 리뷰",
+        autoReviewOwnHint:
+          "GitHub 전용. 내가 연 같은 저장소의 PR(내 계정으로 에이전트가 연 PR 포함)을 한 번씩 리뷰합니다. 포크 PR과 초안은 건너뜁니다.",
+        ownReviewRounds: "PR당 리뷰 횟수",
+        ownReviewRoundsHint:
+          "첫 리뷰를 포함합니다. ‘다시 리뷰’가 ‘새 커밋마다’로 설정되어 있으면 이 횟수에 도달할 때까지 PR에 새 커밋이 올라올 때마다 다시 리뷰합니다.",
+        reviewer: "리뷰어",
+        reviewerProfileHint: "{{name}} 에이전트 프로필 사용",
+        reviewerHint: "풀 리퀘스트를 리뷰할 제공자와 모델",
+        postReviews: "GitHub에 리뷰 게시",
+        postReviewsHint:
+          "리뷰어는 승인하거나 변경을 요청합니다. 내 PR과 포크 PR에는 댓글만 남깁니다. 끄면 결과는 Paseo에만 남습니다.",
+        reReview: "다시 리뷰",
+        reReviewHint: "이미 리뷰한 PR을 리뷰어가 다시 보는 시점",
+        reReviewOnRequest: "리뷰가 다시 요청될 때",
+        reReviewOnPush: "새 커밋마다",
+        reviewInstructions: "리뷰 지침",
+        reviewInstructionsHint:
+          "이 프로젝트의 PR을 리뷰하는 모든 리뷰어가 받는 지침입니다. 확인하거나 건너뛸 항목 등을 적으세요. 최대 4000자.",
+        reviewInstructionsPlaceholder: "모든 마이그레이션에 롤백이 있는지 확인하세요.",
+        reviewInstructionsSave: "지침 저장",
+        saveFailed: "풀 리퀘스트 자동화를 저장하지 못했습니다",
       },
       worktree: {
         title: "워크트리 수명 주기 훅",

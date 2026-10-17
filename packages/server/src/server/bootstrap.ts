@@ -163,6 +163,11 @@ import {
 } from "./workspace-registry.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
+import { PR_WATCH_MAX_CONCURRENT_TURNS, PrWatchService } from "./pr-watch/service.js";
+import { AutomationTurnBudget } from "./pr-watch/turn-budget.js";
+import { PrReviewService } from "./pr-review/service.js";
+import { PrReviewStore } from "./pr-review/store.js";
+import { PrWatchStore } from "./pr-watch/store.js";
 import { DaemonConfigStore, type MutableDaemonConfig } from "./daemon-config-store.js";
 import { createOrchestrationSkills } from "./orchestration-skills/index.js";
 import {
@@ -998,6 +1003,7 @@ export async function createPaseoDaemon(
   });
   const artifactStore = new ArtifactStore(path.join(config.paseoHome, "artifacts"), logger);
   const noteStore = new NoteStore(path.join(config.paseoHome, "notes"), logger);
+  const prWatchStore = new PrWatchStore(config.paseoHome, logger);
   const github = createGitHubService();
   const workspaceGitService = new WorkspaceGitServiceImpl({
     logger,
@@ -1517,11 +1523,94 @@ export async function createPaseoDaemon(
   });
   await scheduleService.start();
 
+  const prAutomationTurnBudget = new AutomationTurnBudget(PR_WATCH_MAX_CONCURRENT_TURNS);
+  const prWatchService = new PrWatchService({
+    store: prWatchStore,
+    workspaceGitService,
+    agentManager,
+    agentStorage,
+    workspaceRegistry,
+    projectRegistry,
+    turnBudget: prAutomationTurnBudget,
+    sendPrompt: async ({ agentId, prompt, source }) => {
+      await sendPromptToAgent({
+        agentManager,
+        agentStorage,
+        agentId,
+        prompt,
+        source,
+        unarchive: false,
+        replaceRunning: false,
+        logger,
+      });
+    },
+    onWatchPaused: (record) => wsServer?.notifyPrWatchPaused(record),
+    logger,
+  });
+  await prWatchService.start();
+  const prReviewService = new PrReviewService({
+    store: new PrReviewStore(config.paseoHome, logger),
+    projectRegistry,
+    workspaceGitService,
+    agentManager,
+    agentStorage,
+    turnBudget: prAutomationTurnBudget,
+    getAgentProfile: (profileId) =>
+      daemonConfigStore.get().agentProfiles?.find((profile) => profile.id === profileId) ?? null,
+    createReviewer: async ({ cwd, prNumber, checkout, reviewer, title, prompt, labels }) => {
+      const result = await createAgent({
+        kind: "mcp",
+        provider: reviewer.provider,
+        ...(reviewer.modeId ? { mode: reviewer.modeId } : {}),
+        ...(reviewer.thinkingOptionId ? { thinking: reviewer.thinkingOptionId } : {}),
+        ...(reviewer.featureValues ? { features: reviewer.featureValues } : {}),
+        title,
+        initialPrompt: prompt,
+        cwd,
+        ...(checkout
+          ? { worktree: { action: "checkout" as const, githubPrNumber: prNumber } }
+          : {}),
+        labels,
+        // Nobody watches a reviewer: without a profile mode, start it in the
+        // provider's unattended mode (or ACP auto-accept) instead of its default.
+        unattended: true,
+        notifyOnFinish: false,
+      });
+      return {
+        agentId: result.snapshot.id,
+        workspaceId:
+          result.createdWorktree?.workspace.workspaceId ?? result.liveSnapshot.workspaceId ?? null,
+        promptStarted: result.initialPromptStarted,
+      };
+    },
+    sendPrompt: async ({ agentId, prompt, source }) => {
+      await sendPromptToAgent({
+        agentManager,
+        agentStorage,
+        agentId,
+        prompt,
+        source,
+        unarchive: false,
+        replaceRunning: false,
+        logger,
+      });
+    },
+    archiveWorkspace: async (workspaceId) => {
+      await archiveWorkspaceByIdExternal(workspaceId, `pr-review-${workspaceId}`);
+    },
+    logger,
+  });
+  prReviewService.start();
   agentManager.setAgentArchivedCallback(async (agentId) => {
     try {
       await scheduleService.completeForAgent(agentId);
     } catch (error) {
       logger.warn({ err: error, agentId }, "Failed to complete schedules for archived agent");
+    }
+    try {
+      await prWatchService.stopForAgent(agentId, "agent_archived");
+    } catch (error) {
+      logger.warn({ err: error, agentId }, "Failed to stop PR watch for archived agent");
     }
   });
   logger.info({ elapsed: elapsed() }, "Schedule service initialized");
@@ -1597,6 +1686,7 @@ export async function createPaseoDaemon(
     terminalManager,
     getDaemonTcpPort: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.port : null),
     scheduleService,
+    prWatchService,
     providerSnapshotManager,
     daemonConfigStore,
     github,
@@ -1948,6 +2038,8 @@ export async function createPaseoDaemon(
               workspaceLabelService,
               artifactStore,
               noteStore,
+              prWatchService,
+              prReviewService,
             );
             pluginRuntime.bindPaseoSessionHost(wsServer);
             await pluginRuntime.start();
@@ -2042,6 +2134,11 @@ export async function createPaseoDaemon(
     scriptHealthMonitor.stop();
     unsubscribeIdleRuntimeCleanup();
     await idleRuntimeCleanup.close();
+    // Stop PR auto-fix before agents close, so it can't prompt one mid-shutdown.
+    prWatchService.stop();
+    prReviewService.stop();
+    await prWatchService.whenIdle().catch(() => undefined);
+    await prReviewService.whenIdle().catch(() => undefined);
     // Freeze both ingress and registration before taking the agent closure snapshot.
     wsServer?.prepareForShutdown();
     await finishSubscriptions.close();

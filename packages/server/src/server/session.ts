@@ -192,6 +192,11 @@ import { WorkspaceFilesSession } from "./session/files/workspace-files-session.j
 import { ArtifactsSession } from "./session/artifacts/artifacts-session.js";
 import type { ArtifactStore } from "./artifact-store.js";
 import { NotesSession } from "./session/notes/notes-session.js";
+import { PrWatchSession } from "./session/pr-watch/pr-watch-session.js";
+import { normalizePrAutomation } from "./pr-review/settings.js";
+import { PrReviewSession } from "./session/pr-review/pr-review-session.js";
+import type { PrReviewService } from "./pr-review/service.js";
+import type { PrWatchService } from "./pr-watch/service.js";
 import type { NoteChange, NoteStore } from "./note-store.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
 import { ProjectConfigSession } from "./session/project-config/project-config-session.js";
@@ -495,6 +500,8 @@ export interface SessionOptions {
   workspaceLabelService?: WorkspaceLabelService;
   artifactStore?: ArtifactStore;
   noteStore?: NoteStore;
+  prWatchService?: PrWatchService;
+  prReviewService?: PrReviewService;
   filesystem?: SessionFileSystem;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
@@ -845,6 +852,8 @@ export class Session {
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly artifactsSession: ArtifactsSession;
   private readonly notesSession: NotesSession;
+  private readonly prWatchSession: PrWatchSession;
+  private readonly prReviewSession: PrReviewSession;
   private readonly agentConfigSession: AgentConfigSession;
   private readonly projectConfigSession: ProjectConfigSession;
   private readonly daemonSession: DaemonSession;
@@ -882,6 +891,8 @@ export class Session {
       workspaceLabelService,
       artifactStore,
       noteStore,
+      prWatchService,
+      prReviewService,
       filesystem,
       scheduleService,
       checkoutDiffManager,
@@ -962,6 +973,8 @@ export class Session {
     });
     this.artifactsSession = this.createArtifactsSession(artifactStore);
     this.notesSession = this.createNotesSession(noteStore);
+    this.prWatchSession = this.createPrWatchSession(prWatchService);
+    this.prReviewSession = this.createPrReviewSession(prReviewService);
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry;
@@ -2553,6 +2566,7 @@ export class Session {
     (msg, source) => this.dispatchWorkspaceFileMessage(msg, source),
     (msg, source) => this.dispatchArtifactMessage(msg, source),
     (msg, source) => this.dispatchNoteMessage(msg, source),
+    (msg, source) => this.dispatchPrWatchMessage(msg, source),
     (msg) => this.dispatchProviderMessage(msg),
     (msg) => this.dispatchOrchestrationSkillsMessage(msg),
     (msg) => this.dispatchPluginDirectoryMessage(msg),
@@ -3202,6 +3216,8 @@ export class Session {
     switch (msg.type) {
       case "project.worktree.location.set.request":
         return this.handleProjectWorktreeLocationSetRequest(msg);
+      case "project.pr_automation.set.request":
+        return this.handleProjectPrAutomationSetRequest(msg);
       case "workspace.worktree.remove.request":
         return this.handleWorkspaceWorktreeRemoveRequest(msg);
       case "workspace.label.list.request":
@@ -3232,6 +3248,22 @@ export class Session {
         },
       },
       artifactStore ?? null,
+      this.sessionLogger,
+    );
+  }
+
+  private createPrReviewSession(prReviewService: PrReviewService | undefined): PrReviewSession {
+    return new PrReviewSession(
+      { emit: (msg, source) => this.emitForSource(msg, source) },
+      prReviewService ?? null,
+      this.sessionLogger,
+    );
+  }
+
+  private createPrWatchSession(prWatchService: PrWatchService | undefined): PrWatchSession {
+    return new PrWatchSession(
+      { emit: (msg, source) => this.emitForSource(msg, source) },
+      prWatchService ?? null,
       this.sessionLogger,
     );
   }
@@ -3300,6 +3332,24 @@ export class Session {
         return this.notesSession.handleArchiveSetRequest(msg, source);
       case "note.search.request":
         return this.notesSession.handleSearchRequest(msg, source);
+      default:
+        return undefined;
+    }
+  }
+
+  private dispatchPrWatchMessage(
+    msg: SessionInboundMessage,
+    source?: object,
+  ): Promise<void> | undefined {
+    switch (msg.type) {
+      case "agent.pr_watch.set.request":
+        return this.prWatchSession.handleSetRequest(msg, source);
+      case "agent.pr_watch.list.request":
+        return this.prWatchSession.handleListRequest(msg, source);
+      case "project.review_requests.list.request":
+        return this.prReviewSession.handleListRequest(msg, source);
+      case "project.review_requests.review.request":
+        return this.prReviewSession.handleReviewRequest(msg, source);
       default:
         return undefined;
     }
@@ -3949,6 +3999,53 @@ export class Session {
         "session: project.worktree.location.set.request error",
       );
       respond(false, null, getErrorMessageOr(error, "Failed to set worktree location"));
+    }
+  }
+
+  private async handleProjectPrAutomationSetRequest(
+    request: Extract<SessionInboundMessage, { type: "project.pr_automation.set.request" }>,
+  ): Promise<void> {
+    const respond = (error: string | null, settings = request.settings) =>
+      this.emit({
+        type: "project.pr_automation.set.response",
+        payload: {
+          requestId: request.requestId,
+          projectId: request.projectId,
+          accepted: error === null,
+          settings: error === null ? settings : null,
+          error,
+        },
+      });
+
+    try {
+      const stored = (await this.projectRegistry.get(request.projectId))?.prAutomation;
+      // Keep fields the client doesn't know: an older app sends only the ones it has.
+      const normalized = normalizePrAutomation(
+        { ...stored, ...request.settings },
+        this.daemonConfigStore.get().agentProfiles ?? [],
+      );
+      if (!normalized.ok) {
+        respond(normalized.error);
+        return;
+      }
+      const { settings } = normalized;
+      const updated = await this.projectRegistry.update(request.projectId, (existing) => ({
+        ...existing,
+        prAutomation: settings,
+        updatedAt: new Date().toISOString(),
+      }));
+      if (!updated) {
+        respond("Project not found");
+        return;
+      }
+      respond(null, settings);
+      await this.emitProjectUpdate({ kind: "upsert", project: updated });
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, projectId: request.projectId, requestId: request.requestId },
+        "session: project.pr_automation.set.request error",
+      );
+      respond(getErrorMessageOr(error, "Failed to save pull request automation"));
     }
   }
 
@@ -6451,6 +6548,7 @@ export class Session {
       projectCustomName: project.customName ?? null,
       projectCustomIconRevision: project.customIconRevision ?? null,
       projectWorktreeLocation: project.worktreeLocation ?? null,
+      projectPrAutomation: project.prAutomation ?? null,
       projectIconRevision: icon.revision,
       projectRootPath: project.rootPath,
       projectKind: project.kind,

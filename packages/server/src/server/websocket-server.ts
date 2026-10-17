@@ -120,6 +120,9 @@ import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.
 import type { WorkspaceLabelService } from "./workspace-labels/index.js";
 import type { ArtifactStore } from "./artifact-store.js";
 import type { NoteStore } from "./note-store.js";
+import type { PrWatchService } from "./pr-watch/service.js";
+import type { PrReviewService } from "./pr-review/service.js";
+import type { PrWatchRecord } from "./pr-watch/store.js";
 import {
   APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
   ApplicationSocketLease,
@@ -343,6 +346,7 @@ function createNoopProjectRegistry(): ProjectRegistry {
       customName: null,
       worktreeLocation: null,
       customIconRevision: null,
+      prAutomation: null,
       createdAt: input.timestamp,
       updatedAt: input.timestamp,
       archivedAt: null,
@@ -570,6 +574,8 @@ export class VoiceAssistantWebSocketServer {
   private readonly workspaceLabelService: WorkspaceLabelService | null;
   private readonly artifactStore: ArtifactStore | undefined;
   private readonly noteStore: NoteStore | undefined;
+  private readonly prWatchService: PrWatchService | undefined;
+  private readonly prReviewService: PrReviewService | undefined;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: ForgeService;
@@ -696,6 +702,8 @@ export class VoiceAssistantWebSocketServer {
     workspaceLabelService?: WorkspaceLabelService,
     artifactStore?: ArtifactStore,
     noteStore?: NoteStore,
+    prWatchService?: PrWatchService,
+    prReviewService?: PrReviewService,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.workspaceSetupRuntime = workspaceSetupRuntime;
@@ -752,6 +760,8 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceLabelService = workspaceLabelService ?? null;
     this.artifactStore = artifactStore;
     this.noteStore = noteStore;
+    this.prWatchService = prWatchService;
+    this.prReviewService = prReviewService;
     this.subscribeToArtifactChanges();
     this.subscribeToNoteChanges();
     const requiredServices = requireWebSocketServices({
@@ -1647,6 +1657,8 @@ export class VoiceAssistantWebSocketServer {
       workspaceLabelService: this.workspaceLabelService ?? undefined,
       artifactStore: this.artifactStore,
       noteStore: this.noteStore,
+      prWatchService: this.prWatchService,
+      prReviewService: this.prReviewService,
       directorySync: this.directorySync,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
@@ -2029,6 +2041,12 @@ export class VoiceAssistantWebSocketServer {
         ...(this.noteStore ? { noteSearch: true } : {}),
         // COMPAT(noteArchive): added in v0.14.x, remove after 2028-10-29.
         ...(this.noteStore ? { noteArchive: true } : {}),
+        // COMPAT(prAutoFix): added in v0.12.x, remove gate after 2028-10-17.
+        ...(this.prWatchService ? { prAutoFix: true } : {}),
+        // COMPAT(prAutoReviewOwn): added in v0.12.x, remove gate after 2028-10-18.
+        ...(this.prWatchService ? { prAutoReviewOwn: true } : {}),
+        // COMPAT(prReviewInstructions): added in v0.12.x, remove gate after 2028-10-18.
+        ...(this.prWatchService ? { prReviewInstructions: true } : {}),
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
         providersSnapshot: true,
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
@@ -2858,6 +2876,29 @@ export class VoiceAssistantWebSocketServer {
       focusedTerminalId: activity.focusedTerminalId,
       lastActivityAtMs: activity.lastActivityAt.getTime(),
     };
+  }
+
+  /** Tells the user auto-fix stopped trying, so they can take over the PR. */
+  notifyPrWatchPaused(record: PrWatchRecord): void {
+    const agent = this.agentManager.getAgent(record.agentId);
+    const pr = record.prNumber !== null ? `PR #${record.prNumber}` : "the PR";
+    const body =
+      record.state.kind === "paused" && record.state.reason === "untrusted_workspace"
+        ? `Auto-fix won't prompt an agent in a workspace from an untrusted fork. Open the agent to take over ${pr}.`
+        : `CI still fails on ${pr} after the auto-fix attempts. Open the agent to take over.`;
+    void this.pushNotificationSender
+      .send({
+        title: "Auto-fix paused",
+        body,
+        data: {
+          serverId: this.serverId,
+          agentId: record.agentId,
+          ...(agent?.workspaceId ? { workspaceId: agent.workspaceId } : {}),
+        },
+      })
+      .catch((err) => {
+        this.logger.warn({ err, agentId: record.agentId }, "Failed to send PR auto-fix push");
+      });
   }
 
   private async broadcastAgentAttention(params: {
