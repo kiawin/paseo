@@ -43,6 +43,9 @@ describe("project commands", () => {
       "ls",
       "rename",
       "delete",
+      "review",
+      "autoreview",
+      "autofix",
     ]);
   });
 

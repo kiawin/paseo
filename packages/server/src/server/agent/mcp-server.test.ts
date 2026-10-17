@@ -67,6 +67,7 @@ import type { ForgeService } from "../../services/forge-service.js";
 import { areEquivalentPaths } from "../../utils/path.js";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import type { PrWatchService } from "../pr-watch/service.js";
 import { MutableDaemonConfigSchema, type AgentProfile } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../daemon-config-store.js";
 import type { BrowserToolsBroker, BrowserToolsExecuteInput } from "../browser-tools/broker.js";
@@ -8386,6 +8387,8 @@ describe("move_to_worktree MCP tool", () => {
         ["user.email", "test@example.com"],
         ["user.name", "Test"],
         ["commit.gpgsign", "false"],
+        // Windows runners set core.autocrlf, which would check files out with CRLF.
+        ["core.autocrlf", "false"],
       ]) {
         execFileSync("git", ["config", key, value], { cwd: repoDir, stdio: "pipe" });
       }
@@ -8507,6 +8510,8 @@ describe("move_to_worktree MCP tool", () => {
         ["user.email", "test@example.com"],
         ["user.name", "Test"],
         ["commit.gpgsign", "false"],
+        // Windows runners set core.autocrlf, which would check files out with CRLF.
+        ["core.autocrlf", "false"],
       ]) {
         execFileSync("git", ["config", key, value], { cwd: repoDir, stdio: "pipe" });
       }
@@ -8651,6 +8656,8 @@ describe("move_to_worktree MCP tool", () => {
         ["user.email", "test@example.com"],
         ["user.name", "Test"],
         ["commit.gpgsign", "false"],
+        // Windows runners set core.autocrlf, which would check files out with CRLF.
+        ["core.autocrlf", "false"],
       ]) {
         execFileSync("git", ["config", key, value], { cwd: repoDir, stdio: "pipe" });
       }
@@ -8700,5 +8707,80 @@ describe("move_to_worktree MCP tool", () => {
         carryChanges: false,
       }),
     ).rejects.toThrow("move_to_worktree requires an agent-scoped session");
+  });
+});
+
+describe("PR auto-fix MCP tools", () => {
+  const logger = createTestLogger();
+  const record = {
+    agentId: "agent-1",
+    cwd: "/repo/worktree",
+    forge: "github",
+    headRef: "feature/retry",
+    prNumber: 42,
+    prUrl: "https://github.com/acme/widgets/pull/42",
+    state: { kind: "active" as const },
+    ci: { headSha: "head-1", seenFailureKeys: [], attemptsForHead: 0, consecutiveFailedHeads: 0 },
+    review: { since: "2026-10-17T00:00:00.000Z", lastUpdatedAt: null, seenCommentIds: [] },
+    conflict: { notifiedHeadSha: null },
+    createdAt: "2026-10-17T00:00:00.000Z",
+    updatedAt: "2026-10-17T00:00:00.000Z",
+  };
+
+  async function serverWith(options: { callerAgentId?: string; withService?: boolean }) {
+    const { agentManager, agentStorage } = createTestDeps();
+    const setWatch = vi.fn(async ({ enabled }: { agentId: string; enabled: boolean }) =>
+      enabled
+        ? record
+        : {
+            ...record,
+            state: { kind: "stopped" as const, reason: "user_disabled" as const, at: "now" },
+          },
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      ...(options.callerAgentId ? { callerAgentId: options.callerAgentId } : {}),
+      ...(options.withService === false
+        ? {}
+        : { prWatchService: { setWatch } as unknown as PrWatchService }),
+      logger,
+    });
+    return { server, setWatch };
+  }
+
+  it("turns on auto-fix for the calling agent's PR", async () => {
+    const { server, setWatch } = await serverWith({ callerAgentId: "agent-1" });
+
+    const result = await registeredTool(server, "watch_pull_request").handler({});
+
+    expect(setWatch).toHaveBeenCalledWith({ agentId: "agent-1", enabled: true });
+    expect(result.structuredContent).toMatchObject({
+      agentId: "agent-1",
+      prNumber: 42,
+      state: { kind: "active" },
+      maxAttemptsPerHead: 3,
+    });
+  });
+
+  it("turns it off", async () => {
+    const { server, setWatch } = await serverWith({ callerAgentId: "agent-1" });
+
+    const result = await registeredTool(server, "unwatch_pull_request").handler({});
+
+    expect(setWatch).toHaveBeenCalledWith({ agentId: "agent-1", enabled: false });
+    expect(result.structuredContent).toEqual({ stopped: true });
+  });
+
+  it("needs an agent-scoped session and a daemon with auto-fix", async () => {
+    const topLevel = await serverWith({});
+    await expect(registeredTool(topLevel.server, "watch_pull_request").handler({})).rejects.toThrow(
+      "watch_pull_request requires an agent-scoped session",
+    );
+    const withoutService = await serverWith({ callerAgentId: "agent-1", withService: false });
+    await expect(
+      registeredTool(withoutService.server, "watch_pull_request").handler({}),
+    ).rejects.toThrow("PR auto-fix is not available on this daemon");
   });
 });
