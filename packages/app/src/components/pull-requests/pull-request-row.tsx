@@ -1,7 +1,8 @@
 import { Bot, ExternalLink, MoreVertical } from "lucide-react-native";
 import { useCallback, useState, type ReactElement } from "react";
-import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
+import { Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { PullRequestRowFrame } from "@/components/pull-requests/pull-request-row-frame";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,9 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MenuItem, MenuLabel, MenuRoot, MenuSurface, useMenuContext } from "@/components/ui/menu";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { Switch } from "@/components/ui/switch";
-import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
 import { getForgePresentation } from "@/git/forge";
 import type { PullRequestListRow } from "@/hooks/use-pull-requests";
@@ -20,10 +19,10 @@ import {
   describePullRequestBadges,
   type PullRequestAgentOption,
 } from "@/pull-requests/pull-request-rows";
-import { settingsStyles } from "@/styles/settings";
 import type { Theme } from "@/styles/theme";
-import { openExternalUrl } from "@/utils/open-external-url";
 import { toErrorMessage } from "@/utils/error-messages";
+import { useOpenForgeLink } from "@/utils/use-link-behavior";
+import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 
 // Module-scope themed icons: only the icon re-renders on theme change. See docs/unistyles.md.
 const ThemedKebab = withUnistyles(MoreVertical);
@@ -64,9 +63,6 @@ function buildMeta(row: PullRequestListRow, showHostLabel: boolean): string {
  * One open pull request as a card row: title, repository and workspace, status pills,
  * and a trailing Auto-fix switch plus a kebab for opening the PR on its forge. Pressing
  * the row opens the workspace.
- *
- * Hover lives on the outer plain View (docs/hover.md); the switch and kebab are nested
- * Pressables that stop propagation, so they never fire the row press.
  */
 export function PullRequestRow({
   row,
@@ -75,12 +71,8 @@ export function PullRequestRow({
   onOpen,
   onSetAutoFix,
 }: PullRequestRowProps): ReactElement {
-  const isCompact = useIsCompactFormFactor();
-  const [isHovered, setIsHovered] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const handlePointerEnter = useCallback(() => setIsHovered(true), []);
-  const handlePointerLeave = useCallback(() => setIsHovered(false), []);
   const handlePress = useCallback(() => onOpen(row), [onOpen, row]);
 
   const runSetAutoFix = useCallback(
@@ -94,18 +86,6 @@ export function PullRequestRow({
     [onSetAutoFix, row.serverId],
   );
 
-  const rowStyle = useCallback(
-    ({ pressed }: PressableStateCallbackType) => [
-      settingsStyles.row,
-      styles.row,
-      !isFirst && settingsStyles.rowBorder,
-      isHovered && !isCompact && styles.rowHovered,
-      pressed && styles.rowPressed,
-    ],
-    [isFirst, isHovered, isCompact],
-  );
-
-  const badges = describePullRequestBadges(row);
   const { binding } = row;
   let note: string | null = null;
   if (binding.kind === "no-agent") note = NO_AGENT_HINT;
@@ -114,51 +94,30 @@ export function PullRequestRow({
   }
 
   return (
-    <View
-      style={styles.rowContainer}
-      onPointerEnter={handlePointerEnter}
-      onPointerLeave={handlePointerLeave}
-    >
-      <Pressable
-        style={rowStyle}
-        onPress={handlePress}
-        accessibilityRole="button"
-        accessibilityLabel={`Open workspace ${row.workspaceName}`}
-        testID={`pull-request-row-${row.key}`}
-      >
-        <View style={styles.textGroup}>
-          <Text style={settingsStyles.rowTitle} numberOfLines={1}>
-            {row.title}
-          </Text>
-          <Text style={settingsStyles.rowHint} numberOfLines={1}>
-            {buildMeta(row, showHostLabel)}
-          </Text>
-          {badges.length > 0 ? (
-            <View style={styles.badges}>
-              {badges.map((badge) => (
-                <StatusBadge
-                  key={badge.label}
-                  label={badge.label}
-                  variant={badge.variant}
-                  size="xs"
-                />
-              ))}
-            </View>
-          ) : null}
-          {note ? <Text style={settingsStyles.rowHint}>{note}</Text> : null}
-          {error ? (
-            <Text style={settingsStyles.rowError} testID={`pull-request-error-${row.key}`}>
-              {error}
-            </Text>
-          ) : null}
-        </View>
-
-        <View style={styles.trailing}>
+    <PullRequestRowFrame
+      testID={`pull-request-row-${row.key}`}
+      isFirst={isFirst}
+      title={row.title}
+      meta={buildMeta(row, showHostLabel)}
+      badges={describePullRequestBadges(row)}
+      note={note}
+      error={error}
+      errorTestID={`pull-request-error-${row.key}`}
+      accessibilityLabel={`Open workspace ${row.workspaceName}`}
+      onPress={handlePress}
+      trailing={
+        <>
           <AutoFixControl row={row} pending={pending} onToggle={runSetAutoFix} />
-          <PullRequestKebab row={row} />
-        </View>
-      </Pressable>
-    </View>
+          <PullRequestKebab
+            row={row}
+            workspaceKey={buildWorkspaceTabPersistenceKey({
+              serverId: row.serverId,
+              workspaceId: row.workspaceId,
+            })}
+          />
+        </>
+      }
+    />
   );
 }
 
@@ -305,11 +264,18 @@ export interface PullRequestLinkTarget {
 }
 
 /** Row kebab whose one item opens the pull request on its forge. */
-export function PullRequestKebab({ row }: { row: PullRequestLinkTarget }): ReactElement {
+export function PullRequestKebab({
+  row,
+  workspaceKey = null,
+}: {
+  row: PullRequestLinkTarget;
+  workspaceKey?: string | null;
+}): ReactElement {
   const brand = getForgePresentation(row.forge).brandLabel;
+  const openForgeLink = useOpenForgeLink(workspaceKey);
   const handleOpen = useCallback(() => {
-    void openExternalUrl(row.url);
-  }, [row.url]);
+    openForgeLink(row.url);
+  }, [openForgeLink, row.url]);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -341,33 +307,6 @@ function kebabTriggerStyle({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  rowContainer: {
-    position: "relative",
-  },
-  row: {
-    gap: theme.spacing[3],
-  },
-  rowHovered: {
-    backgroundColor: theme.colors.surface2,
-  },
-  rowPressed: {
-    backgroundColor: theme.colors.surface3,
-  },
-  textGroup: {
-    flex: 1,
-    minWidth: 0,
-  },
-  badges: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing[1],
-    marginTop: theme.spacing[2],
-  },
-  trailing: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-  },
   autoFix: {
     flexDirection: "row",
     alignItems: "center",
