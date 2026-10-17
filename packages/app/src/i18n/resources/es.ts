@@ -1298,6 +1298,7 @@ export const es: TranslationResources = {
       sessions: "Historial",
       search: "Buscar",
       schedules: "Horarios",
+      pullRequests: "Solicitudes de extracción",
     },
     worktreeSetup: {
       title: "Configurar secuencias de comandos del árbol de trabajo",
@@ -3077,6 +3078,27 @@ export const es: TranslationResources = {
         externalRemovalNote:
           "Archivar un espacio de trabajo deja su worktree en el disco. Elimínalo tú con git worktree remove.",
         saveFailed: "No se pudo cambiar la ubicación del worktree",
+      },
+      prAutomation: {
+        title: "Automatización de pull requests",
+        info: "Qué hace Paseo con los pull requests de este proyecto en este host",
+        autoFix: "Corregir automáticamente los PR abiertos por agentes",
+        autoFixHint:
+          "Paseo vigila un PR en cuanto un agente lo abre desde uno de los worktrees de este proyecto, y avisa al agente cuando falla la CI, un revisor comenta o el PR tiene conflictos.",
+        autoReview: "Revisar automáticamente cuando se solicite mi revisión",
+        autoReviewHint:
+          "Solo GitHub. Paseo revisa las solicitudes directas en PR del mismo repositorio; los PR de forks y los borradores se listan para que los revises tú.",
+        reviewer: "Revisor",
+        reviewerProfileHint: "Usa el perfil de agente {{name}}",
+        reviewerHint: "El proveedor y el modelo que revisan los pull requests",
+        postReviews: "Publicar revisiones en GitHub",
+        postReviewsHint:
+          "Los revisores publican una revisión solo con comentarios; nunca aprueban ni solicitan cambios. Desactivado, los hallazgos se quedan en Paseo.",
+        reReview: "Revisar de nuevo",
+        reReviewHint: "Cuándo vuelve un revisor a mirar un PR que ya revisó",
+        reReviewOnRequest: "Cuando vuelvan a pedir mi revisión",
+        reReviewOnPush: "En cada commit nuevo",
+        saveFailed: "No se pudo guardar la automatización de pull requests",
       },
       worktree: {
         title: "Ganchos del ciclo de vida del árbol de trabajo",

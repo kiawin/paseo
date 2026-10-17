@@ -278,6 +278,7 @@ describe("createGitLabService", () => {
       state: "open",
       baseRefName: "main",
       headRefName: "release/v0.4.0",
+      headSha: "1111111111111111111111111111111111111111",
       isMerged: false,
       isDraft: false,
       mergeable: "MERGEABLE",

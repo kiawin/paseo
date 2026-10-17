@@ -73,6 +73,8 @@ $PASEO_HOME/
 ├── plugins/
 │   ├── sources.json                      # Managed kind and Git acquisition remote
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
+├── pr-watches.json                      # PR auto-fix watches, one per agent
+├── pr-reviews.json                      # Reviews Paseo started, one per project and PR
 └── push-tokens.json                     # Expo push notification tokens
 ```
 
@@ -457,18 +459,20 @@ One file per schedule. ID is 8 hex characters.
 
 Array of project records.
 
-| Field                | Type                        | Description                                                                                                                                |
-| -------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `projectId`          | `string`                    | Host-local primary key; new records use opaque `prj_<16 hex>` IDs                                                                          |
-| `projectKey`         | `string \| null`            | Persisted opaque cross-host grouping key; reconciliation backfills absent values                                                           |
-| `rootPath`           | `string`                    | Exact lexically normalized selected root; never realpathed                                                                                 |
-| `kind`               | `"git" \| "non_git"`        | Mutable Git observation about `rootPath`, never a membership key                                                                           |
-| `displayName`        | `string`                    | Selected-root basename, stable across remote and Git changes                                                                               |
-| `customName`         | `string \| null`            | User-set override layered over `displayName`. Null means "use the derived name".                                                           |
-| `customIconRevision` | `string \| null`            | Identifies the host-local custom icon stored under `projects/icons/`. Null means the icon is discovered by scanning the project directory. |
-| `createdAt`          | `string` (ISO 8601)         |                                                                                                                                            |
-| `updatedAt`          | `string` (ISO 8601)         |                                                                                                                                            |
-| `archivedAt`         | `string \| null` (ISO 8601) | Soft-delete timestamp; required nullable                                                                                                   |
+| Field                | Type                          | Description                                                                                                                                |
+| -------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `projectId`          | `string`                      | Host-local primary key; new records use opaque `prj_<16 hex>` IDs                                                                          |
+| `projectKey`         | `string \| null`              | Persisted opaque cross-host grouping key; reconciliation backfills absent values                                                           |
+| `rootPath`           | `string`                      | Exact lexically normalized selected root; never realpathed                                                                                 |
+| `kind`               | `"git" \| "non_git"`          | Mutable Git observation about `rootPath`, never a membership key                                                                           |
+| `displayName`        | `string`                      | Selected-root basename, stable across remote and Git changes                                                                               |
+| `customName`         | `string \| null`              | User-set override layered over `displayName`. Null means "use the derived name".                                                           |
+| `customIconRevision` | `string \| null`              | Identifies the host-local custom icon stored under `projects/icons/`. Null means the icon is discovered by scanning the project directory. |
+| `worktreeLocation`   | `WorktreeLocation \| null`    | Where the next Paseo worktree is cut. Null means managed. Machine-local; see the comment on the schema.                                    |
+| `prAutomation`       | `ProjectPrAutomation \| null` | Auto-review, reviewer provider, review posting, and auto-fix for agent PRs. Null means all off. See [pr-automation.md](pr-automation.md).  |
+| `createdAt`          | `string` (ISO 8601)           |                                                                                                                                            |
+| `updatedAt`          | `string` (ISO 8601)           |                                                                                                                                            |
+| `archivedAt`         | `string \| null` (ISO 8601)   | Soft-delete timestamp; required nullable                                                                                                   |
 
 Uploading a file and pasting a website or image URL are two ways of _acquiring_ the same custom
 icon. The client fetches URL imports and sends their bytes through the upload RPC. The daemon never
@@ -560,7 +564,24 @@ Simple set of Expo push notification tokens. Loaded with permissive parsing (fil
 
 ---
 
-## 7. Daemon meta files
+## 7. PR automation stores
+
+**Paths:** `$PASEO_HOME/pr-watches.json`, `$PASEO_HOME/pr-reviews.json`
+
+`pr-watches.json` holds one auto-fix watch per agent, keyed by `agentId`: the PR it follows, its
+state (`active`, `paused` with a reason, `stopped` with a reason), and counters for the current
+head commit. `pr-reviews.json` holds one record per review Paseo started, keyed by
+`${projectId}:${prNumber}`: the reviewer agent, its workspace, the head it reviewed, and whether
+the review request is still open. Schemas live in `packages/server/src/server/pr-watch/store.ts`
+and `packages/server/src/server/pr-review/store.ts`.
+
+Both stores record a prompt as sent only after the send succeeds, so a restart neither drops nor
+repeats one. Pending work that hasn't been sent lives in memory and is rebuilt from the next poll.
+Why the records look the way they do is in [pr-automation.md](pr-automation.md).
+
+---
+
+## 8. Daemon meta files
 
 These small files are not validated as full Zod schemas but are persisted under `$PASEO_HOME` for daemon identity and runtime coordination.
 
