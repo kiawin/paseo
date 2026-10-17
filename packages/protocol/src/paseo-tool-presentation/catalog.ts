@@ -311,6 +311,14 @@ export const PASEO_TOOL_CATALOG = {
     context: field("id"),
     detail: { inputOrder: ["id"] },
   },
+  watch_pull_request: {
+    label: "Watch pull request",
+    detail: { outputFields: ["prNumber", "prUrl", "state", "attemptsForHead"] },
+  },
+  unwatch_pull_request: {
+    label: "Unwatch pull request",
+    detail: { outputFields: ["stopped"] },
+  },
 
   // Providers
   list_providers: { label: "List providers" },
