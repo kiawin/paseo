@@ -11,6 +11,7 @@ category: Orchestration
 Save the settings you use together as a named profile. Choose **UI work**, **Planning**, or **Review** when creating an agent instead of selecting its model, thinking level, and mode each time.
 
 - **For you:** one selection applies the saved provider, model, mode, thinking level, and available feature settings.
+- **For the agent you start:** profile instructions are added to its system prompt.
 - **For an orchestrating agent:** profile notes explain when to choose those settings for delegated work.
 
 ## Create a profile
@@ -19,7 +20,8 @@ Save the settings you use together as a named profile. Choose **UI work**, **Pla
 2. Select **New profile** and give it a name, such as **UI work**.
 3. Choose its provider, model, mode, thinking level, and any available features.
 4. Fill in **When to use** with the kind of work this profile should handle.
-5. Select **Save**.
+5. Optionally fill in **Instructions** with what every agent started from this profile should follow.
+6. Select **Save**.
 
 Profiles are saved on that host. The available settings depend on the provider and model you choose.
 
@@ -28,6 +30,16 @@ Profiles are saved on that host. The available settings depend on the provider a
 When creating an agent, open the model picker and select a saved profile under **Profiles**. Paseo applies its settings together; you can still adjust them before sending your prompt.
 
 Changing a saved profile affects future selections. It does not update agents you already launched.
+
+## Start agents with instructions
+
+**Instructions** are written for the agent you start, where **When to use** is written for the agent choosing a profile. When you select a profile with instructions for a new agent, the composer shows a **{profile} instructions** pill, and the instructions go into the new agent's system prompt when you send your first message. Select the pill to drop them.
+
+The instructions stay with the draft when you change its model or mode afterwards. Selecting another profile replaces them, or removes them if that profile has none.
+
+A system prompt is set only when an agent starts. Selecting a profile for a running agent applies its settings and leaves the agent's instructions unchanged.
+
+Use the host's **System prompt** under **Settings → your host → Orchestration** for text every agent on the host should get.
 
 ## Guide delegation with notes
 
