@@ -37,7 +37,7 @@ Changing a saved profile affects future selections. It does not update agents yo
 
 The instructions stay with the draft when you change its model or mode afterwards. Selecting another profile replaces them, or removes them if that profile has none.
 
-A system prompt is set only when an agent starts. Selecting a profile for a running agent applies its settings and leaves the agent's instructions unchanged.
+A system prompt is set only when an agent starts. Selecting a profile for a running agent applies its settings and leaves the agent's instructions unchanged. Pull request reviewers started from a profile also get its instructions.
 
 Use the host's **System prompt** under **Settings → your host → Orchestration** for text every agent on the host should get.
 

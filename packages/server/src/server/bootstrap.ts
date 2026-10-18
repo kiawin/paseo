@@ -1479,6 +1479,7 @@ export async function createPaseoDaemon(
         ...(reviewer.modeId ? { mode: reviewer.modeId } : {}),
         ...(reviewer.thinkingOptionId ? { thinking: reviewer.thinkingOptionId } : {}),
         ...(reviewer.featureValues ? { features: reviewer.featureValues } : {}),
+        ...(reviewer.systemPrompt ? { config: { systemPrompt: reviewer.systemPrompt } } : {}),
         title,
         initialPrompt: prompt,
         cwd,
