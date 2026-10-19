@@ -155,6 +155,10 @@ export function useAgentProfilePicker(
       if (!client) {
         return;
       }
+      if (reconciled.instructions) {
+        // A system prompt is creation-only, so a running agent keeps its own.
+        toast.show(t("modelSelector.profileInstructionsNotApplied", { name: reconciled.name }));
+      }
       void client
         .applyAgentConfig(target.agentId, toAgentConfigApply(reconciled))
         .then((notice) => showProviderNoticeToast(toast, notice))
@@ -163,7 +167,7 @@ export function useAgentProfilePicker(
           toast.error(toErrorMessage(error));
         });
     },
-    [applicableProfiles, client, persistSelection, target, toast],
+    [applicableProfiles, client, persistSelection, t, target, toast],
   );
 
   return useMemo(

@@ -7,6 +7,8 @@ import invariant from "tiny-invariant";
 import { Composer } from "@/composer";
 import { type ComposerEditingSession, useComposerFullscreen } from "@/composer/editing-session";
 import { ComposerImportPill } from "@/composer/draft/import-pill";
+import { ComposerProfileInstructionsPill } from "@/composer/draft/profile-instructions-pill";
+import type { ProfileInstructions } from "@/agent-profiles";
 import { COMPOSER_PILL_CLEARANCE } from "@/composer/pill-styles";
 import { composerWorkspaceAttachment } from "@/composer/attachments/workspace";
 import { useAgentInputDraft } from "@/composer/draft/input-draft";
@@ -118,6 +120,7 @@ async function submitDraftCreateRequest(input: {
     effectiveModelId: string | null;
     effectiveThinkingOptionId: string | null;
     featureValues: Record<string, unknown> | undefined;
+    profileInstructions: ProfileInstructions | null;
   };
   hostDisconnectedMessage: string;
   selectModelMessage: string;
@@ -157,6 +160,7 @@ async function submitDraftCreateRequest(input: {
     thinkingOptionId:
       autoSubmitConfig?.thinkingOptionId ?? (composerState.effectiveThinkingOptionId || undefined),
     featureValues: autoSubmitConfig?.featureValues ?? composerState.featureValues,
+    systemPrompt: composerState.profileInstructions?.text,
   });
 
   const attachmentsArray = Array.isArray(attachments) ? attachments : undefined;
@@ -256,6 +260,39 @@ interface WorkspaceDraftComposerProps {
   editingSession: ComposerEditingSession;
   onCreated: (snapshot: AgentSnapshotPayload) => void;
   onOpenImportSheet?: () => void;
+}
+
+/** The pills above the draft composer. Profile instructions hide once the draft is submitting. */
+function DraftComposerPills({
+  hidden,
+  isSubmitting,
+  onImportPress,
+  profileInstructions,
+  onRemoveProfileInstructions,
+}: {
+  hidden: boolean;
+  isSubmitting: boolean;
+  onImportPress: (() => void) | null;
+  profileInstructions: ProfileInstructions | null;
+  onRemoveProfileInstructions: () => void;
+}) {
+  const instructions = isSubmitting ? null : profileInstructions;
+  if (hidden || (!onImportPress && !instructions)) {
+    return null;
+  }
+  return (
+    <View style={styles.importPillRow}>
+      <View style={styles.importPillContent}>
+        {onImportPress ? <ComposerImportPill onPress={onImportPress} /> : null}
+        {instructions ? (
+          <ComposerProfileInstructionsPill
+            instructions={instructions}
+            onRemove={onRemoveProfileInstructions}
+          />
+        ) : null}
+      </View>
+    </View>
+  );
 }
 
 function resolveImportPillPress(
@@ -577,13 +614,13 @@ export function WorkspaceDraftComposer({
           </View>
         </View>
       ) : null}
-      {importPillPress && !isComposerFullscreen ? (
-        <View style={styles.importPillRow}>
-          <View style={styles.importPillContent}>
-            <ComposerImportPill onPress={importPillPress} />
-          </View>
-        </View>
-      ) : null}
+      <DraftComposerPills
+        hidden={isComposerFullscreen}
+        isSubmitting={isSubmitting}
+        onImportPress={importPillPress}
+        profileInstructions={composerState.profileInstructions}
+        onRemoveProfileInstructions={composerState.clearProfileInstructions}
+      />
       <Composer
         agentId={tabId}
         serverId={serverId}
@@ -645,6 +682,8 @@ const styles = StyleSheet.create((theme) => ({
     width: "100%",
     maxWidth: theme.contentMaxWidth,
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[2],
   },
   formError: {
     width: "100%",
