@@ -359,11 +359,30 @@ function OpenAgentProfileEditModal({
             placeholder={t("settings.host.agentProfiles.notesPlaceholder")}
             multiline
             numberOfLines={4}
-            style={styles.notesInput}
+            style={styles.multilineInput}
             editable={!state.isSubmitting}
             size={controlSize}
             accessibilityLabel={t("settings.host.agentProfiles.notesLabel")}
             testID="agent-profile-notes-input"
+          />
+        </Field>
+
+        <Field
+          label={t("settings.host.agentProfiles.instructionsLabel")}
+          hint={t("settings.host.agentProfiles.instructionsHint")}
+          testID="agent-profile-instructions-field"
+        >
+          <FormTextInput
+            initialValue={profile?.instructions ?? ""}
+            onChangeText={model.setInstructions}
+            placeholder={t("settings.host.agentProfiles.instructionsPlaceholder")}
+            multiline
+            numberOfLines={4}
+            style={styles.multilineInput}
+            editable={!state.isSubmitting}
+            size={controlSize}
+            accessibilityLabel={t("settings.host.agentProfiles.instructionsLabel")}
+            testID="agent-profile-instructions-input"
           />
         </Field>
 
@@ -538,7 +557,7 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
   },
-  notesInput: {
+  multilineInput: {
     minHeight: 88,
     textAlignVertical: "top",
   },
