@@ -24,24 +24,29 @@ describe("materializeAgentProfile", () => {
           modeId: "plan",
           thinkingOptionId: "think-hard",
           featureValues: { web_search: true },
+          instructions: " Review the diff. ",
         }),
       ),
     ).toEqual({
+      name: "UI work",
       provider: "claude",
       modelId: "claude-opus-5",
       modeId: "plan",
       thinkingOptionId: "think-hard",
       featureValues: { web_search: true },
+      instructions: "Review the diff.",
     });
   });
 
   it("treats omitted and blank fields the same", () => {
     expect(materializeAgentProfile(profile({ model: "   ", modeId: "" }))).toEqual({
+      name: "UI work",
       provider: "claude",
       modelId: "",
       modeId: "",
       thinkingOptionId: "",
       featureValues: {},
+      instructions: "",
     });
   });
 
@@ -89,6 +94,12 @@ describe("toAgentConfigApply", () => {
     expect(
       toAgentConfigApply(materializeAgentProfile(profile({ model: "claude-opus-5" }))),
     ).not.toHaveProperty("provider");
+  });
+
+  it("never carries instructions, which only take effect at creation", () => {
+    expect(
+      toAgentConfigApply(materializeAgentProfile(profile({ instructions: "Review the diff." }))),
+    ).toEqual({});
   });
 });
 
