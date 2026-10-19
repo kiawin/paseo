@@ -15,6 +15,8 @@ import { createNameId } from "mnemonic-id";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Composer } from "@/composer";
 import { ComposerDock } from "@/composer/dock";
+import { ComposerProfileInstructionsPill } from "@/composer/draft/profile-instructions-pill";
+import { COMPOSER_PILL_CLEARANCE } from "@/composer/pill-styles";
 import { useComposerEditingSession, useComposerFullscreen } from "@/composer/editing-session";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import {
@@ -469,6 +471,9 @@ async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<Su
       model: composerState.effectiveModelId || undefined,
       thinkingOptionId: composerState.effectiveThinkingOptionId || undefined,
       featureValues: composerState.featureValues,
+      ...(composerState.profileInstructions
+        ? { systemPrompt: composerState.profileInstructions.text }
+        : {}),
     },
     initialPrompt: text,
     clientMessageId: `${input.draftId}:initial-message`,
@@ -525,7 +530,15 @@ async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<Su
     retry: (request: CreateAgentRequestOptions) =>
       execute({
         ...initialAgent,
-        config: { ...request.config!, cwd },
+        // The retry config comes from the handed-off draft tab, which never saw the
+        // profile instructions this screen's composer held.
+        config: {
+          ...request.config!,
+          cwd,
+          ...(initialAgent.config?.systemPrompt
+            ? { systemPrompt: initialAgent.config.systemPrompt }
+            : {}),
+        },
         initialPrompt: request.initialPrompt ?? "",
         clientMessageId: initialAgent.clientMessageId,
         images: request.images,
@@ -1619,6 +1632,12 @@ export function NewWorkspaceScreen({
         formStack={formStack}
         onImportSession={importSession.open}
       >
+        <ProfileInstructionsPillRow
+          composerState={composerState}
+          isTerminalLaunch={isTerminalLaunch}
+          isPending={isPending}
+          fullscreen={isComposerFullscreen}
+        />
         {composer}
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
       </NewWorkspaceLayout>
@@ -1646,6 +1665,31 @@ function useNewWorkspaceComposerEditing() {
     isFullscreen: (isTerminalLaunch: boolean) =>
       isTerminalLaunch ? isTerminalFullscreen : isChatFullscreen,
   };
+}
+
+/** Profile instructions the chat draft will send, until it starts creating. */
+function ProfileInstructionsPillRow({
+  composerState,
+  isTerminalLaunch,
+  isPending,
+  fullscreen,
+}: {
+  composerState: NewWorkspaceComposerState | null;
+  isTerminalLaunch: boolean;
+  isPending: boolean;
+  fullscreen: boolean;
+}) {
+  if (!composerState?.profileInstructions || isTerminalLaunch || isPending || fullscreen) {
+    return null;
+  }
+  return (
+    <View style={styles.pillRow}>
+      <ComposerProfileInstructionsPill
+        instructions={composerState.profileInstructions}
+        onRemove={composerState.clearProfileInstructions}
+      />
+    </View>
+  );
 }
 
 function NewWorkspaceLayout({
@@ -1727,5 +1771,13 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     color: theme.colors.destructive,
     lineHeight: 20,
+  },
+  pillRow: {
+    flexDirection: "row",
+    paddingHorizontal: theme.spacing[4],
+    paddingBottom: {
+      xs: COMPOSER_PILL_CLEARANCE.compact,
+      md: COMPOSER_PILL_CLEARANCE.wide,
+    },
   },
 }));

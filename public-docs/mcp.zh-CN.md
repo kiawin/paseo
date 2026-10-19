@@ -174,6 +174,7 @@ MCP heartbeat 是临时的：只能创建或删除。要修改一个 heartbeat�
 | `modeId`                    | `settings.modeId`                                              |
 | `thinkingOptionId`          | `settings.thinkingOptionId`                                    |
 | `featureValues`             | `settings.features`                                            |
+| `instructions`              | `initialPrompt` 的开头，放在任务之前                           |
 | `notes`                     | 供编排者选择时参考；任务放在 `initialPrompt` 中                |
 
 省略不存在的可选设置。如果没有合适的配置，请用 Provider 发现来选择可用的设置。
