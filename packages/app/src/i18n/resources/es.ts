@@ -1739,6 +1739,9 @@ export const es: TranslationResources = {
     createProfileFromModel: "Crear perfil desde este modelo",
     editProfileLabel: "Editar {{name}}",
     editProfilesCount: "Editar perfiles ({{count}})",
+    profileInstructions: "Instrucciones de {{name}}",
+    removeProfileInstructions: "Quitar instrucciones de {{name}}",
+    profileInstructionsNotApplied: "Las instrucciones de {{name}} solo se aplican a agentes nuevos",
     modelCount: "{{count}} modelo",
     modelCountPlural: "{{count}} modelos",
     retry: "Rever",
@@ -2964,6 +2967,11 @@ export const es: TranslationResources = {
         notesLabel: "Cuándo usarlo",
         notesPlaceholder: "Úselo para trabajo de UI: componentes, diseño y tokens de diseño.",
         notesHint: "Ayuda a los agentes a elegir este perfil al iniciar otro agente.",
+        instructionsLabel: "Instrucciones",
+        instructionsPlaceholder:
+          "Siga los tokens de diseño de docs/design.md. No añada colores nuevos.",
+        instructionsHint:
+          "Se añaden al prompt del sistema de los agentes nuevos iniciados con este perfil.",
         save: "Guardar",
         saving: "Guardando...",
         remove: "Eliminar",

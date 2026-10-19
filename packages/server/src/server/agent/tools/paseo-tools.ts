@@ -3834,8 +3834,9 @@ function createToolCatalog(
         "List agent profiles: named provider/model/mode bundles a human configured for specific " +
         "kinds of work. Read each profile's `notes` to pick the one that fits the task you're " +
         "delegating, then copy its `provider`, `model`, `modeId`, `thinkingOptionId`, and " +
-        "`featureValues` into create_agent (there is no `profile` parameter). Returns an empty " +
-        "list if none are configured.",
+        "`featureValues` into create_agent (there is no `profile` parameter). When the profile " +
+        "has `instructions`, start the `initialPrompt` with them. Returns an empty list if none " +
+        "are configured.",
       inputSchema: {},
       outputSchema: {
         profiles: z.array(AgentProfileSchema),
