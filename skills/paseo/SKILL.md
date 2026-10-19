@@ -104,6 +104,7 @@ There is no `profile` parameter on `create_agent`. Materialize the selected prof
 - copy `modeId` to `settings.modeId`
 - copy `thinkingOptionId` to `settings.thinkingOptionId`
 - copy `featureValues` to `settings.features`
+- start `initialPrompt` with `instructions`, then the task
 
 Omit absent values. Do not remember a selected profile or infer drift later; a profile is only launch configuration.
 
