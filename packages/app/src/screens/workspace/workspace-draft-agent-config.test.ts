@@ -19,4 +19,17 @@ describe("workspace-draft-agent-config", () => {
       thinkingOptionId: "high",
     });
   });
+
+  it("sends profile instructions as the system prompt and omits a blank one", () => {
+    expect(
+      buildWorkspaceDraftAgentConfig({
+        provider: "claude",
+        cwd: "/tmp/project",
+        systemPrompt: "Review the diff.",
+      }),
+    ).toEqual({ provider: "claude", cwd: "/tmp/project", systemPrompt: "Review the diff." });
+    expect(
+      buildWorkspaceDraftAgentConfig({ provider: "claude", cwd: "/tmp/project", systemPrompt: "" }),
+    ).not.toHaveProperty("systemPrompt");
+  });
 });

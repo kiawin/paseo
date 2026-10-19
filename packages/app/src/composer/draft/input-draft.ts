@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
 import type { UserComposerAttachment } from "@/attachments/types";
+import type { ProfileInstructions } from "@/agent-profiles";
 import type { TextReplacement } from "@/composer/types";
 import type { DraftAgentControlsProps } from "@/composer/agent-controls";
 import type { DraftCommandTarget } from "@/agent-commands";
@@ -57,6 +58,9 @@ type DraftComposerState = UseAgentFormStateResult & {
   providerOptions: Record<string, unknown> | undefined;
   /** What plugins set on the agent this draft creates. */
   metadata: Record<string, JsonValue>;
+  /** Set by applying a profile that has instructions; sent as the new agent's system prompt. */
+  profileInstructions: ProfileInstructions | null;
+  clearProfileInstructions: () => void;
   agentControls: DraftAgentControlsProps;
   commandDraft: DraftCommandTarget;
 };
@@ -305,12 +309,20 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     initialOptions: composerOptions?.initialProviderOptions,
   });
 
+  const [profileInstructions, setProfileInstructions] = useState<ProfileInstructions | null>(null);
+  const clearProfileInstructions = useCallback(() => setProfileInstructions(null), []);
+
   const applyDraftAgentProfile = useCallback(
     (profile: Parameters<typeof formState.applyProfileFromUser>[0]) => {
       formState.applyProfileFromUser(profile);
-      applyProfileOptions({ provider: profile.provider, options: profile.options });
+      applyProfileOptions({ provider: profile.provider, options: profile.featureValues });
+      // A profile without instructions replaces the previous profile's, so the
+      // draft never sends instructions from a profile it no longer matches.
+      setProfileInstructions(
+        profile.instructions ? { profileName: profile.name, text: profile.instructions } : null,
+      );
     },
-    [applyProfileOptions, formState],
+    [applyProfileOptions, formState, setProfileInstructions],
   );
 
   const commandDraft = useMemo(
@@ -338,6 +350,8 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
       effectiveThinkingOptionId,
       providerOptions: draftOptions,
       metadata,
+      profileInstructions,
+      clearProfileInstructions,
       agentControls: buildDraftAgentControls({
         formState,
         optionControls: draftOptionControls,
@@ -361,9 +375,11 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     draftShownOptions,
     setDraftOption,
     applyDraftAgentProfile,
+    clearProfileInstructions,
     formState,
     metadata,
     setMetadata,
+    profileInstructions,
     workingDir,
   ]);
 
