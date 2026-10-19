@@ -183,6 +183,7 @@ Before delegating, read each profile's `notes` and choose the profile the user n
 | `modeId`                        | `settings.modeId`                                                           |
 | `thinkingOptionId`              | `settings.thinkingOptionId`                                                 |
 | `featureValues`                 | `settings.features`                                                         |
+| `instructions`                  | The start of `initialPrompt`, before the task                               |
 | `notes`                         | Selection guidance for the orchestrator; supply the task in `initialPrompt` |
 
 Omit absent optional settings. If no profile fits, use provider discovery to choose available settings.
