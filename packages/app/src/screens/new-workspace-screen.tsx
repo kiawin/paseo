@@ -14,6 +14,8 @@ import { createNameId } from "mnemonic-id";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Composer } from "@/composer";
 import { ComposerDock } from "@/composer/dock";
+import { ComposerProfileInstructionsPill } from "@/composer/draft/profile-instructions-pill";
+import { COMPOSER_PILL_CLEARANCE } from "@/composer/pill-styles";
 import { useComposerEditingSession, useComposerFullscreen } from "@/composer/editing-session";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import {
@@ -236,7 +238,6 @@ function useWorkspaceIsolation(input: {
   const { preferences } = useFormPreferences();
   const { manualIsolation, existingWorktreePath: chosenPath } = useNewWorkspaceSetupState(setup);
   const isolation = manualIsolation ?? preferences.isolation ?? "local";
-  // A worktree that left the list (removed since it was chosen) is no choice.
   const existingWorktreePath =
     canCreateWorktree && existingWorktrees.some((worktree) => worktree.path === chosenPath)
       ? chosenPath
@@ -380,11 +381,8 @@ async function createMultiplicityWorkspace(input: {
             ? { branchName: input.branchName }
             : {}),
         }
-      : {
-          kind: "directory",
-          path: input.sourceDirectory,
-          projectId,
-        },
+      : { kind: "directory", path: input.sourceDirectory, projectId },
+
     ...(firstAgentContext ? { firstAgentContext } : {}),
     ...(Object.keys(input.metadata).length > 0 ? { metadata: { ...input.metadata } } : {}),
   });
@@ -517,6 +515,9 @@ async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<Su
       model: composerState.effectiveModelId || undefined,
       thinkingOptionId: composerState.effectiveThinkingOptionId || undefined,
       providerOptions: composerState.providerOptions,
+      ...(composerState.profileInstructions
+        ? { systemPrompt: composerState.profileInstructions.text }
+        : {}),
     },
     ...(Object.keys(composerState.metadata).length > 0 ? { metadata: composerState.metadata } : {}),
     initialPrompt: text,
@@ -1210,7 +1211,12 @@ export function NewWorkspaceScreen({
   );
 
   const pluginScreen = useMemo<NewWorkspaceItemsScreen>(
-    () => ({ project: pluginProject, isolation: effectiveIsolation, baseItem, locked: isPending }),
+    () => ({
+      project: pluginProject,
+      isolation: effectiveIsolation === "worktree" ? "worktree" : "local",
+      baseItem,
+      locked: isPending,
+    }),
     [baseItem, effectiveIsolation, isPending, pluginProject],
   );
 
@@ -1704,6 +1710,12 @@ export function NewWorkspaceScreen({
         formStack={formStack}
         onImportSession={importSession.open}
       >
+        <ProfileInstructionsPillRow
+          composerState={composerState}
+          isTerminalLaunch={isTerminalLaunch}
+          isPending={isPending}
+          fullscreen={isComposerFullscreen}
+        />
         {composer}
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
       </NewWorkspaceLayout>
@@ -1792,6 +1804,31 @@ function useNewWorkspaceComposerEditing() {
   };
 }
 
+/** Profile instructions the chat draft will send, until it starts creating. */
+function ProfileInstructionsPillRow({
+  composerState,
+  isTerminalLaunch,
+  isPending,
+  fullscreen,
+}: {
+  composerState: NewWorkspaceComposerState | null;
+  isTerminalLaunch: boolean;
+  isPending: boolean;
+  fullscreen: boolean;
+}) {
+  if (!composerState?.profileInstructions || isTerminalLaunch || isPending || fullscreen) {
+    return null;
+  }
+  return (
+    <View style={styles.pillRow}>
+      <ComposerProfileInstructionsPill
+        instructions={composerState.profileInstructions}
+        onRemove={composerState.clearProfileInstructions}
+      />
+    </View>
+  );
+}
+
 function NewWorkspaceLayout({
   isCompact,
   fullscreen,
@@ -1871,6 +1908,14 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     color: theme.colors.destructive,
     lineHeight: 20,
+  },
+  pillRow: {
+    flexDirection: "row",
+    paddingHorizontal: theme.spacing[4],
+    paddingBottom: {
+      xs: COMPOSER_PILL_CLEARANCE.compact,
+      md: COMPOSER_PILL_CLEARANCE.wide,
+    },
   },
 }));
 
