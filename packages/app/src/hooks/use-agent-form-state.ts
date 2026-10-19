@@ -360,7 +360,7 @@ export function useAgentFormState(options: UseAgentFormStateOptions): UseAgentFo
           modelId: model,
           modeId,
           thinkingOptionId,
-          options: profile.options,
+          options: profile.featureValues,
         });
       }).catch((error) => {
         console.warn("[useAgentFormState] persist profile preference failed", error);

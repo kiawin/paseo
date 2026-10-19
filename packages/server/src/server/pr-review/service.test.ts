@@ -329,6 +329,7 @@ describe("PrReviewService", () => {
       modeId: "plan",
       thinkingOptionId: "max",
       featureValues: { fast_mode: true },
+      instructions: " Flag missing tests. ",
     });
     harness.settings = { ...harness.settings, reviewProfileId: "prof_review" };
     harness.requestDirectly(pr(7));
@@ -340,6 +341,7 @@ describe("PrReviewService", () => {
       modeId: "plan",
       thinkingOptionId: "max",
       featureValues: { fast_mode: true },
+      systemPrompt: "Flag missing tests.",
     });
   });
 
