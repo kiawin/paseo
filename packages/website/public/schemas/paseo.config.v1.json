@@ -188,6 +188,9 @@
               },
               "notes": {
                 "type": "string"
+              },
+              "instructions": {
+                "type": "string"
               }
             },
             "required": ["id", "name", "provider"],

@@ -20,7 +20,7 @@ describe("workspace-draft-agent-config", () => {
     });
   });
 
-  it("includes systemPrompt when set", () => {
+  it("includes nonblank systemPrompt and omits a blank one", () => {
     expect(
       buildWorkspaceDraftAgentConfig({
         provider: "codex",
@@ -32,5 +32,15 @@ describe("workspace-draft-agent-config", () => {
       cwd: "/tmp/project",
       systemPrompt: "Always write tests first.",
     });
+    expect(
+      buildWorkspaceDraftAgentConfig({
+        provider: "claude",
+        cwd: "/tmp/project",
+        systemPrompt: "Review the diff.",
+      }),
+    ).toEqual({ provider: "claude", cwd: "/tmp/project", systemPrompt: "Review the diff." });
+    expect(
+      buildWorkspaceDraftAgentConfig({ provider: "claude", cwd: "/tmp/project", systemPrompt: "" }),
+    ).not.toHaveProperty("systemPrompt");
   });
 });

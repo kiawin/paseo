@@ -5,6 +5,7 @@ import { StyleSheet } from "react-native-unistyles";
 import type { AgentProfile } from "@getpaseo/protocol/messages";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
+import { Field, FormTextInput } from "@/components/ui/form-field";
 import type { AgentProfileSeed, AgentProfileValue } from "../internal/profile-form-model";
 import {
   useAgentProfileFormSession,
@@ -233,6 +234,22 @@ function AgentProfileEditModalContent({
         state={state}
         collapsibleDefaults={collapsibleDefaults ?? mode === "create"}
       />
+      <Field
+        label={t("settings.host.agentProfiles.instructionsLabel")}
+        hint={t("settings.host.agentProfiles.instructionsHint")}
+        testID="agent-profile-instructions-field"
+      >
+        <FormTextInput
+          initialValue={profile?.instructions ?? ""}
+          onChangeText={model.setInstructions}
+          placeholder={t("settings.host.agentProfiles.instructionsPlaceholder")}
+          multiline
+          numberOfLines={4}
+          editable={!state.isSubmitting}
+          accessibilityLabel={t("settings.host.agentProfiles.instructionsLabel")}
+          testID="agent-profile-instructions-input"
+        />
+      </Field>
     </AdaptiveModalSheet>
   );
 }

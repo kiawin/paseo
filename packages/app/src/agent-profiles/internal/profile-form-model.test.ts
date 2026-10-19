@@ -172,6 +172,7 @@ describe("openAgentProfileForm", () => {
     model.setProvider("codex", { label: "Codex" });
     model.setSystemPrompt("   ");
     model.setNotes("   ");
+    model.setInstructions("\n ");
 
     // Codex declares no thinking options, so that key is genuinely absent —
     // model and mode are seeded, never left for the host to decide.
@@ -223,11 +224,14 @@ describe("openAgentProfileForm", () => {
         thinkingOptionId: "think-hard",
         options: { webSearch: true },
         notes: "Visual work only.",
+        instructions: "Match the design tokens.",
       },
     });
     const state = model.getState();
 
     expect(state.name).toBe("UI work");
+    expect(state.instructions).toBe("Match the design tokens.");
+    expect(state.submitValue).toMatchObject({ instructions: "Match the design tokens." });
     expect(state.icon).toBe("palette");
     // Ids double as labels until the catalog arrives.
     expect(state.modelDisplay).toEqual({ label: "claude-opus-5" });
