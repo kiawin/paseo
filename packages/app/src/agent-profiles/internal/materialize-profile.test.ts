@@ -25,15 +25,20 @@ describe("materializeAgentProfile", () => {
           thinkingOptionId: "think-hard",
           options: { web_search: true },
           systemPrompt: "  Focus on UI tokens.  ",
+          featureValues: { web_search: true },
+          instructions: " Review the diff. ",
         }),
       ),
     ).toEqual({
+      name: "UI work",
       provider: "claude",
       modelId: "claude-opus-5",
       modeId: "plan",
       thinkingOptionId: "think-hard",
       options: { web_search: true },
       systemPrompt: "Focus on UI tokens.",
+      featureValues: { web_search: true },
+      instructions: "Review the diff.",
     });
   });
 
@@ -41,12 +46,15 @@ describe("materializeAgentProfile", () => {
     expect(
       materializeAgentProfile(profile({ model: "   ", modeId: "", systemPrompt: "   " })),
     ).toEqual({
+      name: "UI work",
       provider: "claude",
       modelId: "",
       modeId: "",
       thinkingOptionId: "",
       options: {},
       systemPrompt: "",
+      featureValues: {},
+      instructions: "",
     });
   });
 
@@ -98,6 +106,12 @@ describe("toAgentConfigApply", () => {
     );
     expect(applied).not.toHaveProperty("provider");
     expect(applied).not.toHaveProperty("systemPrompt");
+  });
+
+  it("never carries instructions, which only take effect at creation", () => {
+    expect(
+      toAgentConfigApply(materializeAgentProfile(profile({ instructions: "Review the diff." }))),
+    ).toEqual({});
   });
 });
 

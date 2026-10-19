@@ -1933,6 +1933,9 @@ export const ptBR: TranslationResources = {
     undoProfileSave: "Desfazer salvamento do perfil",
     editProfileLabel: "Editar {{name}}",
     editProfilesCount: "Editar perfis ({{count}})",
+    profileInstructions: "Instruções de {{name}}",
+    removeProfileInstructions: "Remover instruções de {{name}}",
+    profileInstructionsNotApplied: "As instruções de {{name}} valem apenas para novos agentes",
     modelCount: "{{count}} modelo",
     modelCountPlural: "{{count}} modelos",
     retry: "Tentar novamente",
@@ -3453,6 +3456,11 @@ export const ptBR: TranslationResources = {
         notesLabel: "Quando usar",
         notesPlaceholder: "Use para trabalho de UI — componentes, layout e tokens de design.",
         notesHint: "Ajuda os agentes a escolher este perfil ao iniciar outro agente.",
+        instructionsLabel: "Instruções",
+        instructionsPlaceholder:
+          "Siga os tokens de design em docs/design.md. Nunca adicione cores novas.",
+        instructionsHint:
+          "Adicionadas ao prompt de sistema dos novos agentes iniciados com este perfil.",
         save: "Salvar",
         saving: "Salvando...",
         remove: "Remover",

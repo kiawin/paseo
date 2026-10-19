@@ -100,6 +100,7 @@ export interface AgentProfileFormState {
   color: string;
   systemPrompt: string;
   notes: string;
+  instructions: string;
   provider: string;
   modelId: string;
   modeId: string;
@@ -160,6 +161,7 @@ export interface AgentProfileFormModel {
   setAppearance: (value: { icon: string; color: string }) => void;
   setSystemPrompt: (value: string) => void;
   setNotes: (value: string) => void;
+  setInstructions: (value: string) => void;
   setProvider: (providerId: string, display: AgentProfileFormDisplay) => void;
   setProviderModel: (
     providerId: string,
@@ -483,6 +485,7 @@ function buildSubmitValue(state: AgentProfileFormState): AgentProfileValue | nul
   const name = state.name.trim();
   const systemPrompt = state.systemPrompt.trim();
   const notes = state.notes.trim();
+  const instructions = state.instructions.trim();
   if (!name || !state.provider) {
     return null;
   }
@@ -502,6 +505,7 @@ function buildSubmitValue(state: AgentProfileFormState): AgentProfileValue | nul
     // an older app and preserves the stored prompt; `""` explicitly clears it.
     systemPrompt,
     ...(notes ? { notes } : {}),
+    ...(instructions ? { instructions } : {}),
   };
 }
 
@@ -539,6 +543,7 @@ function buildInitialState(snapshot: AgentProfileFormSnapshot): AgentProfileForm
     color: profile.color ?? "",
     systemPrompt: profile.systemPrompt ?? "",
     notes: profile.notes ?? "",
+    instructions: profile.instructions ?? "",
     provider,
     modelId,
     modeId: profile.modeId ?? "",
@@ -866,6 +871,7 @@ export function openAgentProfileForm(snapshot: AgentProfileFormSnapshot): AgentP
     setSystemPrompt: (value) =>
       publish((current) => ({ ...current, systemPrompt: value }), { userEdit: true }),
     setNotes: (value) => publish((current) => ({ ...current, notes: value }), { userEdit: true }),
+    setInstructions: (value) => publish((current) => ({ ...current, instructions: value })),
     setProvider: (providerId, display) =>
       publish(
         (current) => {
