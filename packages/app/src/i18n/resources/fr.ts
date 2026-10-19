@@ -1736,6 +1736,10 @@ export const fr: TranslationResources = {
     createProfileFromModel: "Créer un profil à partir de ce modèle",
     editProfileLabel: "Modifier {{name}}",
     editProfilesCount: "Modifier les profils ({{count}})",
+    profileInstructions: "Instructions de {{name}}",
+    removeProfileInstructions: "Retirer les instructions de {{name}}",
+    profileInstructionsNotApplied:
+      "Les instructions de {{name}} s’appliquent uniquement aux nouveaux agents",
     modelCount: "{{count}} modèle",
     modelCountPlural: "{{count}} modèles",
     retry: "Réessayer",
@@ -2942,6 +2946,10 @@ export const fr: TranslationResources = {
         notesPlaceholder:
           "À utiliser pour le travail sur l’UI : composants, mise en page et design tokens.",
         notesHint: "Aide les agents à choisir ce profil lorsqu’ils démarrent un autre agent.",
+        instructionsLabel: "Instructions",
+        instructionsPlaceholder:
+          "Suivre les design tokens de docs/design.md. Ne jamais ajouter de couleurs.",
+        instructionsHint: "Ajoutées au prompt système des nouveaux agents démarrés avec ce profil.",
         save: "Enregistrer",
         saving: "Enregistrement…",
         remove: "Supprimer",
