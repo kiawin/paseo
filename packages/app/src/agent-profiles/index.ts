@@ -1,6 +1,7 @@
 /**
  * Agent profiles: named bundles of composer settings (provider, model, mode,
- * thinking option, feature values, notes) stored host-wide in daemon config.
+ * thinking option, feature values, notes, instructions) stored host-wide in
+ * daemon config.
  *
  * Four capabilities leave this module — managing the list in settings, reading
  * it, pinning it to the model picker, and drawing a profile's glyph. Everything
@@ -11,10 +12,11 @@
  * `useAgentProfilePicker` deliberately hands the picker a flat row view model
  * and one `applyProfile(id)` callback rather than the profiles themselves: what
  * a profile contains, and how it reaches a live agent versus a draft, stays in
- * here.
+ * here. The one exception is `ProfileInstructions`: a draft holds a profile's
+ * instructions until it creates its agent, so the draft owns that state.
  */
 export type { AgentProfile } from "@getpaseo/protocol/messages";
-export type { MaterializedAgentProfile } from "./internal/materialize-profile";
+export type { MaterializedAgentProfile, ProfileInstructions } from "./internal/materialize-profile";
 export type { AgentProfileSeed } from "./internal/profile-form-model";
 export { useAgentProfileEditor, type AgentProfileEditorControls } from "./agent-profile-editor";
 export { useAgentProfiles } from "./internal/use-agent-profiles";
