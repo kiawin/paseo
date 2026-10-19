@@ -9,6 +9,8 @@ import invariant from "tiny-invariant";
 import { Composer } from "@/composer";
 import { type ComposerEditingSession, useComposerFullscreen } from "@/composer/editing-session";
 import { ComposerImportPill } from "@/composer/draft/import-pill";
+import { ComposerProfileInstructionsPill } from "@/composer/draft/profile-instructions-pill";
+import type { ProfileInstructions } from "@/agent-profiles";
 import { COMPOSER_PILL_CLEARANCE } from "@/composer/pill-styles";
 import { composerWorkspaceAttachment } from "@/composer/attachments/workspace";
 import { useAgentInputDraft } from "@/composer/draft/input-draft";
@@ -103,6 +105,10 @@ function resolveDraftModeId(input: {
   return null;
 }
 
+function profileSystemPrompt(profileInstructions: ProfileInstructions | null): string | undefined {
+  return profileInstructions?.text;
+}
+
 async function submitDraftCreateRequest(input: {
   draftId: string;
   attempt: { clientMessageId: string };
@@ -121,6 +127,7 @@ async function submitDraftCreateRequest(input: {
     effectiveThinkingOptionId: string | null;
     providerOptions: Record<string, unknown> | undefined;
     metadata: Record<string, JsonValue>;
+    profileInstructions: ProfileInstructions | null;
   };
   hostDisconnectedMessage: string;
   selectModelMessage: string;
@@ -160,6 +167,7 @@ async function submitDraftCreateRequest(input: {
     thinkingOptionId:
       autoSubmitConfig?.thinkingOptionId ?? (composerState.effectiveThinkingOptionId || undefined),
     providerOptions: autoSubmitConfig?.providerOptions ?? composerState.providerOptions,
+    systemPrompt: profileSystemPrompt(composerState.profileInstructions),
   });
 
   const attachmentsArray = Array.isArray(attachments) ? attachments : undefined;
@@ -249,6 +257,39 @@ function buildDraftInitialValues(input: {
     model: input.initialSetup.model,
     thinkingOptionId: input.initialSetup.thinkingOptionId,
   };
+}
+
+/** The pills above the draft composer. Profile instructions hide once the draft is submitting. */
+function DraftComposerPills({
+  hidden,
+  isSubmitting,
+  onImportPress,
+  profileInstructions,
+  onRemoveProfileInstructions,
+}: {
+  hidden: boolean;
+  isSubmitting: boolean;
+  onImportPress: (() => void) | null;
+  profileInstructions: ProfileInstructions | null;
+  onRemoveProfileInstructions: () => void;
+}) {
+  const instructions = isSubmitting ? null : profileInstructions;
+  if (hidden || (!onImportPress && !instructions)) {
+    return null;
+  }
+  return (
+    <View style={styles.pillRow}>
+      <View style={styles.pillContent}>
+        {onImportPress ? <ComposerImportPill onPress={onImportPress} /> : null}
+        {instructions ? (
+          <ComposerProfileInstructionsPill
+            instructions={instructions}
+            onRemove={onRemoveProfileInstructions}
+          />
+        ) : null}
+      </View>
+    </View>
+  );
 }
 
 interface WorkspaceDraftComposerProps {
@@ -580,13 +621,13 @@ export function WorkspaceDraftComposer({
           </View>
         </View>
       ) : null}
-      {importPillPress && !isComposerFullscreen ? (
-        <View style={styles.importPillRow}>
-          <View style={styles.importPillContent}>
-            <ComposerImportPill onPress={importPillPress} />
-          </View>
-        </View>
-      ) : null}
+      <DraftComposerPills
+        hidden={isComposerFullscreen}
+        isSubmitting={isSubmitting}
+        onImportPress={importPillPress}
+        profileInstructions={composerState.profileInstructions}
+        onRemoveProfileInstructions={composerState.clearProfileInstructions}
+      />
       <Composer
         agentId={tabId}
         serverId={serverId}
@@ -631,7 +672,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[4],
     alignItems: "center",
   },
-  importPillRow: {
+  pillRow: {
     width: "100%",
     paddingHorizontal: theme.spacing[4],
     paddingTop: {
@@ -644,10 +685,12 @@ const styles = StyleSheet.create((theme) => ({
     },
     alignItems: "center",
   },
-  importPillContent: {
+  pillContent: {
     width: "100%",
     maxWidth: theme.contentMaxWidth,
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[2],
   },
   formError: {
     width: "100%",
