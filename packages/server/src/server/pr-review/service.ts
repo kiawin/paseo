@@ -78,6 +78,8 @@ export interface ReviewerSettings {
   modeId?: string;
   thinkingOptionId?: string;
   featureValues?: Record<string, unknown>;
+  /** The profile's instructions. */
+  systemPrompt?: string;
 }
 
 export interface CreatedReviewer {
@@ -614,6 +616,7 @@ function reviewerFromProfile(profile: AgentProfile): ReviewerSettings {
     ...(profile.featureValues && Object.keys(profile.featureValues).length > 0
       ? { featureValues: profile.featureValues }
       : {}),
+    ...(profile.instructions?.trim() ? { systemPrompt: profile.instructions.trim() } : {}),
   };
 }
 

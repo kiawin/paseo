@@ -1735,6 +1735,9 @@ export const ru: TranslationResources = {
     createProfileFromModel: "Создать профиль из этой модели",
     editProfileLabel: "Изменить {{name}}",
     editProfilesCount: "Изменить профили ({{count}})",
+    profileInstructions: "Инструкции {{name}}",
+    removeProfileInstructions: "Удалить инструкции {{name}}",
+    profileInstructionsNotApplied: "Инструкции {{name}} применяются только к новым агентам",
     modelCount: "{{count}} модель",
     modelCountPlural: "{{count}} моделей",
     retry: "Повторить попытку",
@@ -3066,6 +3069,11 @@ export const ru: TranslationResources = {
         notesLabel: "Когда использовать",
         notesPlaceholder: "Используйте для работы над UI — компоненты, макет и токены дизайна.",
         notesHint: "Помогает агентам выбрать этот профиль при запуске другого агента.",
+        instructionsLabel: "Инструкции",
+        instructionsPlaceholder:
+          "Следуйте токенам дизайна из docs/design.md. Не добавляйте новые цвета.",
+        instructionsHint:
+          "Добавляются в системный промпт новых агентов, запущенных с этим профилем.",
         save: "Сохранить",
         saving: "Сохранение...",
         remove: "Удалить",
