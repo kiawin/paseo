@@ -5,9 +5,10 @@ import { z } from "zod";
  * otherwise set one control at a time. Field names mirror `AgentSessionConfig`
  * so applying a profile is a copy rather than a translation table.
  *
- * There is deliberately no system prompt here. `AgentSessionConfig.systemPrompt`
- * is creation-only, so a profile carrying one would apply when starting a new
- * agent and silently do nothing when applied to a running one.
+ * `instructions` is the worker-facing counterpart to `notes`. It becomes
+ * `AgentSessionConfig.systemPrompt`, which is creation-only: a client sends it
+ * when a profile applied to a draft creates the agent, and says so instead of
+ * applying it when the profile is applied to a running agent.
  */
 export const AgentProfileSchema = z
   .object({
@@ -24,6 +25,8 @@ export const AgentProfileSchema = z
     featureValues: z.record(z.string(), z.unknown()).optional(),
     /** Free text, surfaced to orchestrating agents by the `list_profiles` MCP tool. */
     notes: z.string().optional(),
+    /** Sent as the system prompt of an agent created from this profile. */
+    instructions: z.string().optional(),
   })
   .passthrough();
 

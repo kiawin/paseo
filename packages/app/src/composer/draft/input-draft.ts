@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UserComposerAttachment } from "@/attachments/types";
+import type { ProfileInstructions } from "@/agent-profiles";
 import type { TextReplacement } from "@/composer/types";
 import type { DraftAgentControlsProps } from "@/composer/agent-controls";
 import type { DraftCommandTarget } from "@/hooks/use-agent-commands-query";
@@ -51,6 +52,9 @@ type DraftComposerState = UseAgentFormStateResult & {
   effectiveModelId: string;
   effectiveThinkingOptionId: string;
   featureValues: Record<string, unknown> | undefined;
+  /** Set by applying a profile that has instructions; sent as the new agent's system prompt. */
+  profileInstructions: ProfileInstructions | null;
+  clearProfileInstructions: () => void;
   agentControls: DraftAgentControlsProps;
   commandDraft: DraftCommandTarget;
 };
@@ -288,10 +292,18 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     initialFeatureValues: composerOptions?.initialFeatureValues,
   });
 
+  const [profileInstructions, setProfileInstructions] = useState<ProfileInstructions | null>(null);
+  const clearProfileInstructions = useCallback(() => setProfileInstructions(null), []);
+
   const applyDraftAgentProfile = useCallback(
     (profile: Parameters<typeof formState.applyProfileFromUser>[0]) => {
       formState.applyProfileFromUser(profile);
       applyProfileFeatureValues(profile.featureValues);
+      // A profile without instructions replaces the previous profile's, so the
+      // draft never sends instructions from a profile it no longer matches.
+      setProfileInstructions(
+        profile.instructions ? { profileName: profile.name, text: profile.instructions } : null,
+      );
     },
     [applyProfileFeatureValues, formState],
   );
@@ -326,6 +338,8 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
       effectiveModelId,
       effectiveThinkingOptionId,
       featureValues: draftFeatureValues,
+      profileInstructions,
+      clearProfileInstructions,
       agentControls: buildDraftAgentControls({
         formState,
         features: draftFeatures,
@@ -343,7 +357,9 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     draftFeatures,
     draftFeatureValues,
     applyDraftAgentProfile,
+    clearProfileInstructions,
     formState,
+    profileInstructions,
     setDraftFeatureValue,
     workingDir,
   ]);
