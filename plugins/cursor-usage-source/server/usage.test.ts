@@ -46,6 +46,12 @@ function mockFetch(handlers: Map<string, () => Response>): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
+// Stands in for the `security` CLI so Keychain lookups run on any platform.
+function keychainWith(token: string | null) {
+  return vi.fn(async (_args: string[]) => token);
+}
+const noKeychain = async () => null;
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -148,12 +154,70 @@ describe("cursor usage source", () => {
       balances: [
         expect.objectContaining({
           id: "plan_usage",
-          used: 15,
+          used: 10,
           remaining: 25,
           limit: 40,
           resetsAt: null,
         }),
       ],
+    });
+  });
+
+  it("reports Cursor's two included-usage pools instead of spend", async () => {
+    process.env["CURSOR_ACCESS_TOKEN"] = "cursor_test_token";
+    // A team plan past its included spend on free bonus usage; the dashboard shows
+    // Cursor models at 40% and Other models at 23%.
+    fetchApi = mockFetch(
+      new Map([
+        [
+          "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+          () =>
+            jsonResponse({
+              planUsage: {
+                totalSpend: 9378,
+                includedSpend: 2000,
+                bonusSpend: 7378,
+                limit: 2000,
+                remainingBonus: false,
+                autoPercentUsed: 40.31428571428572,
+                apiPercentUsed: 22.8,
+                totalPercentUsed: 37.512,
+              },
+              billingCycleStart: "1790033087000",
+              billingCycleEnd: "1792625087000",
+            }),
+        ],
+      ]),
+    );
+
+    const cursor = findProvider(await service().listUsage(), "cursor");
+
+    const resetsAt = new Date(1792625087000).toISOString();
+    expect(cursor).toEqual({
+      status: "available",
+      planLabel: null,
+      windows: [
+        {
+          id: "cursor_models",
+          label: "Cursor models",
+          summary: true,
+          usedPct: 40.31428571428572,
+          resetsAt,
+          tone: "ok",
+        },
+        {
+          id: "other_models",
+          label: "Other models",
+          summary: true,
+          usedPct: 22.8,
+          resetsAt,
+          tone: "ok",
+        },
+      ],
+      balances: [],
+      details: [],
+      error: null,
+      providerId: "cursor",
     });
   });
 
@@ -180,7 +244,7 @@ describe("cursor usage source", () => {
     expect(authorization).toBe("Bearer cursor_state_jwt");
     expect(cursor).toMatchObject({
       status: "available",
-      balances: [expect.objectContaining({ id: "plan_usage", used: 15, remaining: 25, limit: 40 })],
+      balances: [expect.objectContaining({ id: "plan_usage", used: 10, remaining: 25, limit: 40 })],
     });
   });
 
@@ -227,7 +291,7 @@ describe("cursor usage source", () => {
     expect(authorization).toBe("Bearer cursor_cli_jwt");
     expect(cursor).toMatchObject({
       status: "available",
-      balances: [expect.objectContaining({ id: "plan_usage", used: 15, remaining: 25, limit: 40 })],
+      balances: [expect.objectContaining({ id: "plan_usage", used: 10, remaining: 25, limit: 40 })],
     });
   });
 
@@ -248,6 +312,56 @@ describe("cursor usage source", () => {
 
     expect(authorization).toBe("Bearer cursor_desktop_jwt");
     expect(cursor.status).toBe("available");
+  });
+
+  it("falls back to cursor-agent's Keychain login on macOS when no file store holds one", async () => {
+    const keychain = keychainWith("cursor_keychain_jwt");
+    const accounts = await discover("darwin", keychain);
+    expect(accounts).toEqual([
+      {
+        key: expect.stringMatching(/^store-[a-f0-9]{64}$/),
+        input: { store: "keychain", locator: "cursor-access-token" },
+      },
+    ]);
+
+    let authorization: string | null = null;
+    const report = await fetchUsage(
+      accounts[0]!.input as Parameters<typeof fetchUsage>[0],
+      (async (_url: RequestInfo | URL, init?: RequestInit) => {
+        authorization =
+          (init?.headers as Record<string, string> | undefined)?.Authorization ?? null;
+        return jsonResponse({
+          planUsage: { totalSpend: "0", remaining: "100", limit: "100" },
+          billingCycleStart: null,
+          billingCycleEnd: null,
+        });
+      }) as unknown as typeof fetch,
+      keychain,
+    );
+
+    expect(authorization).toBe("Bearer cursor_keychain_jwt");
+    expect(report.status).toBe("available");
+  });
+
+  it("reads the macOS file stores before the Keychain", async () => {
+    const keychain = keychainWith("cursor_keychain_jwt");
+    const authPath = join(homeDir, ".cursor", "auth.json");
+    mkdirSync(join(homeDir, ".cursor"), { recursive: true });
+    writeFileSync(authPath, JSON.stringify({ accessToken: "cursor_file_jwt" }));
+
+    expect(await discover("darwin", keychain)).toEqual([
+      {
+        key: expect.stringMatching(/^store-[a-f0-9]{64}$/),
+        input: { store: "file", locator: authPath },
+      },
+    ]);
+    expect(keychain).not.toHaveBeenCalled();
+  });
+
+  it("never reads the Keychain outside macOS", async () => {
+    const keychain = keychainWith("cursor_keychain_jwt");
+    expect(await discover("linux", keychain)).toEqual([]);
+    expect(keychain).not.toHaveBeenCalled();
   });
 
   it("omits unreadable state.vscdb", async () => {
@@ -345,7 +459,7 @@ describe("cursor usage source", () => {
     it("reads ~/.cursor/auth.json on macOS only when cursor-agent uses the file store", async () => {
       const authPath = join(sessionHome, ".cursor", "auth.json");
       writeAuthJson(authPath);
-      expect(await discoverSession(cursorSession({}), "darwin")).toEqual([]);
+      expect(await discoverSession(cursorSession({}), "darwin", noKeychain)).toEqual([]);
       expect(
         await discoverSession(cursorSession({ AGENT_CLI_CREDENTIAL_STORE: "file" }), "darwin"),
       ).toEqual([
@@ -354,6 +468,25 @@ describe("cursor usage source", () => {
           input: { store: "file", locator: authPath },
         },
       ]);
+    });
+
+    it("reads cursor-agent's Keychain login on macOS by default", async () => {
+      const keychain = keychainWith("session-keychain-token");
+      expect(await discoverSession(cursorSession({}), "darwin", keychain)).toEqual([
+        {
+          key: expect.stringMatching(/^store-[a-f0-9]{64}$/),
+          input: { store: "keychain", locator: "cursor-access-token" },
+        },
+      ]);
+      expect(keychain).toHaveBeenCalledWith([
+        "find-generic-password",
+        "-a",
+        "cursor-user",
+        "-s",
+        "cursor-access-token",
+        "-w",
+      ]);
+      expect(await discoverSession(cursorSession({}), "darwin", noKeychain)).toEqual([]);
     });
 
     it.each([
