@@ -179,7 +179,7 @@ class Measurer {
     return it->second;
   }
   std::unique_ptr<para::Paragraph> shape(const std::u16string& text) {
-    auto builder = para::ParagraphBuilder::make(style_, fonts_, SkUnicodes::ICU::Make());
+    auto builder = para::ParagraphBuilder::make(style_, fonts_, unicode_);
     builder->pushStyle(textStyle_);
     const auto utf8 = SkUnicode::convertUtf16ToUtf8(text);
     builder->addText(utf8.c_str(), utf8.size());
@@ -199,6 +199,7 @@ class Measurer {
   SkFont font_;
   std::vector<SkString> families_;
   sk_sp<para::FontCollection> fonts_;
+  sk_sp<SkUnicode> unicode_ = SkUnicodes::ICU::Make();
   para::ParagraphStyle style_;
   para::TextStyle textStyle_;
   std::unordered_map<char16_t, bool> glyphs_;
