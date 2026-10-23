@@ -717,7 +717,7 @@ function createPaseoWorktreeForMcpTest(options: {
   createdWorkspaceIds?: string[];
   workspaceRecords?: Map<string, PersistedWorkspaceRecord>;
   generateWorkspaceName?: () => Promise<GeneratedWorkspaceName | null>;
-  startedAgentSetupIds?: string[];
+  runSetupValues?: Array<boolean | undefined>;
 }): CreatePaseoWorktreeWorkflowFn {
   const projects = new Map<string, PersistedProjectRecord>();
   const workspaces = options.workspaceRecords ?? new Map<string, PersistedWorkspaceRecord>();
@@ -816,15 +816,17 @@ function createPaseoWorktreeForMcpTest(options: {
     const result = await createPaseoWorktreeWorkflow(
       {
         paseoHome: options.paseoHome,
-        createPaseoWorktree: (workflowInput, workflowOptions) =>
-          createPaseoWorktreeService(workflowInput, {
+        createPaseoWorktree: (workflowInput, workflowOptions) => {
+          options.runSetupValues?.push(workflowInput.runSetup);
+          return createPaseoWorktreeService(workflowInput, {
             github,
             ...(workflowOptions?.resolveDefaultBranch
               ? { resolveDefaultBranch: workflowOptions.resolveDefaultBranch }
               : {}),
             workspaceGitService,
             workspaceProvisioning,
-          }),
+          });
+        },
         warmWorkspaceGitData: async () => {},
         autoNameWorkspaceBranchForFirstAgent: (autoNameInput) =>
           workspaceAutoName.scheduleForWorktree(autoNameInput),
@@ -7908,6 +7910,8 @@ it("rejects hidden agent-worktree placement and directs callers to workspace cre
       baseBranch: "main",
     }),
   ).rejects.toThrow("create_workspace");
+});
+
 describe("move_to_worktree MCP tool", () => {
   const logger = createTestLogger();
 
@@ -7917,8 +7921,7 @@ describe("move_to_worktree MCP tool", () => {
     const repoDir = join(tempDir, "repo");
     const paseoHome = join(tempDir, ".paseo");
     const createdWorkspaceIds: string[] = [];
-    const setupContinuations: Array<"workspace" | "agent" | undefined> = [];
-    const startedAgentSetupIds: string[] = [];
+    const runSetupValues: Array<boolean | undefined> = [];
     const workspaceRecords = new Map<string, PersistedWorkspaceRecord>([
       [
         "ws-shared",
@@ -7983,8 +7986,7 @@ describe("move_to_worktree MCP tool", () => {
           broadcasts: [],
           createdWorkspaceIds,
           workspaceRecords,
-          setupContinuations,
-          startedAgentSetupIds,
+          runSetupValues,
         }),
         callerAgentId: "agent-1",
         logger,
@@ -8026,8 +8028,9 @@ describe("move_to_worktree MCP tool", () => {
           workspaceId: createdWorkspaceIds[0],
         },
       );
-      expect(setupContinuations).toEqual(["agent"]);
-      expect(startedAgentSetupIds).toEqual(["moved-agent"]);
+      // Setup is owned and scheduled by the workspace workflow. The lower-level
+      // worktree creation must not run a second synchronous setup pass.
+      expect(runSetupValues).toEqual([false]);
       const sentPrompt = JSON.stringify(spies.agentManager.streamAgent.mock.calls[0]?.[1]);
       expect(sentPrompt).toContain("Branch: feature/retry, created from main");
       expect(sentPrompt).toContain("Task:\\nAdd the retry");

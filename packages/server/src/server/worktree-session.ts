@@ -16,7 +16,6 @@ import {
 import type { PersistedWorkspaceRecord } from "./workspace-registry.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import {
-  runAsyncWorktreeBootstrap,
   runWorktreeAutoTerminals,
   applyWorktreeSetupProgressEvent,
   buildWorktreeSetupDetail,
@@ -72,15 +71,6 @@ export interface NormalizedGitOptions {
 }
 
 type EmitSessionMessage = (message: SessionOutboundMessage) => void;
-type AgentWorktreeSetupTimelineItem = Parameters<
-  typeof runAsyncWorktreeBootstrap
->[0]["appendTimelineItem"] extends (item: infer Item) => unknown
-  ? Item
-  : never;
-type AgentWorktreeSetupTimelineWriter = (input: {
-  agentId: string;
-  item: AgentWorktreeSetupTimelineItem;
-}) => Promise<boolean>;
 
 interface BuildAgentSessionConfigDependencies {
   paseoHome?: string;
@@ -92,7 +82,6 @@ interface BuildAgentSessionConfigDependencies {
     input: CreatePaseoWorktreeInput,
     options?: {
       resolveDefaultBranch?: (repoRoot: string) => Promise<string>;
-      setupContinuation?: CreatePaseoWorktreeSetupContinuationInput;
     },
   ) => Promise<CreatePaseoWorktreeWorkflowResult>;
   checkoutExistingBranch: (cwd: string, branch: string) => Promise<CheckoutExistingBranchResult>;
@@ -101,23 +90,6 @@ interface BuildAgentSessionConfigDependencies {
     baseBranch: string;
     newBranchName: string;
   }) => Promise<void>;
-}
-
-interface AgentWorktreeSetupContinuationInput {
-  kind: "agent";
-  terminalManager: TerminalManager | null;
-  appendTimelineItem: AgentWorktreeSetupTimelineWriter;
-  emitLiveTimelineItem: AgentWorktreeSetupTimelineWriter;
-  logger: Logger;
-}
-
-export type CreatePaseoWorktreeSetupContinuationInput =
-  | { kind: "workspace" }
-  | AgentWorktreeSetupContinuationInput;
-
-export interface AgentWorktreeSetupContinuation {
-  kind: "agent";
-  startAfterAgentCreate: (input: { agentId: string }) => void;
 }
 
 interface CreatePaseoWorktreeInBackgroundDependencies {
@@ -213,12 +185,10 @@ export async function buildAgentSessionConfig(
   firstAgentContext?: FirstAgentContext,
 ): Promise<{
   sessionConfig: AgentSessionConfig;
-  setupContinuation?: AgentWorktreeSetupContinuation;
   createdWorkspaceId?: string;
 }> {
   let cwd = expandTilde(config.cwd);
   const normalized = normalizeGitOptions(gitOptions, legacyWorktreeName);
-  let setupContinuation: AgentWorktreeSetupContinuation | undefined;
   let createdWorkspaceId: string | undefined;
 
   if (!normalized) {
@@ -262,7 +232,6 @@ export async function buildAgentSessionConfig(
       },
     );
     cwd = createdWorktree.workspace.cwd;
-    setupContinuation = createdWorktree.setupContinuation;
     createdWorkspaceId = createdWorktree.workspace.workspaceId;
   } else if (normalized.createNewBranch) {
     const baseBranch =
@@ -288,7 +257,6 @@ export async function buildAgentSessionConfig(
       ...config,
       cwd,
     },
-    setupContinuation,
     createdWorkspaceId,
   };
 }
@@ -667,6 +635,9 @@ export async function createPaseoWorktreeWorkflow(
   const createdWorktree = await dependencies.createPaseoWorktree(
     {
       ...input,
+      // The workflow owns setup after the workspace exists and automation is allowed.
+      // Keep the lower-level worktree creator from running a second setup pass here.
+      runSetup: false,
 
       paseoHome: input.paseoHome ?? dependencies.paseoHome,
       worktreesRoot: input.worktreesRoot ?? dependencies.worktreesRoot,
@@ -891,6 +862,7 @@ export async function runWorktreeSetupInBackground(
           setupResults = await runWorktreeSetupCommands({
             worktreePath: workspaceCwd,
             branchName: worktree.branchName,
+            cleanupOnFailure: false,
             repoRootPath: options.repoRoot,
             runtimeEnv,
             signal,

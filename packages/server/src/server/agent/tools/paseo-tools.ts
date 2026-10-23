@@ -52,11 +52,7 @@ import {
   requireActiveWorkspaceForArchive,
   type ArchiveDependencies,
 } from "../../workspace-archive-service.js";
-import {
-  buildAgentWorktreeSetupContinuationInput,
-  createAgentCommand,
-  type CreateAgentFromMcpInput,
-} from "../create-agent/create.js";
+import { createAgentCommand } from "../create-agent/create.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "../../voice-types.js";
 import type { FirstAgentContext } from "../../messages.js";
 import { everyMsToFiveFieldCron } from "@getpaseo/protocol/schedule/cadence";
@@ -1829,28 +1825,23 @@ function createToolCatalog(
         providerSnapshotManager,
         createPaseoWorktree: options.createPaseoWorktree,
       };
-      // The agent continuation defers worktree setup and terminals until the new
-      // agent exists, as create_agent does for the worktrees it creates.
-      const createdWorktree = await options.createPaseoWorktree(
-        {
-          cwd: callerAgent.cwd,
-          action: "branch-off",
-          branchName,
-          refName: baseBranch,
-          ...(title ? { title } : {}),
-          callerWorkspaceId: callerAgent.workspaceId,
-          runSetup: false,
-          paseoHome: options.paseoHome,
-          worktreesRoot: options.worktreesRoot,
-          ...(capturedChanges
-            ? {
-                prepareWorktree: (worktreeRoot: string) =>
-                  applyCapturedChanges(capturedChanges, worktreeRoot),
-              }
-            : {}),
-        },
-        { setupContinuation: buildAgentWorktreeSetupContinuationInput(agentCommandDependencies) },
-      );
+      const createdWorktree = await options.createPaseoWorktree({
+        cwd: callerAgent.cwd,
+        action: "branch-off",
+        branchName,
+        refName: baseBranch,
+        ...(title ? { title } : {}),
+        callerWorkspaceId: callerAgent.workspaceId,
+        runSetup: false,
+        paseoHome: options.paseoHome,
+        worktreesRoot: options.worktreesRoot,
+        ...(capturedChanges
+          ? {
+              prepareWorktree: (worktreeRoot: string) =>
+                applyCapturedChanges(capturedChanges, worktreeRoot),
+            }
+          : {}),
+      });
       const workspace = createdWorktree.workspace;
       const createdBranch = createdWorktree.worktree.branchName || branchName;
       const failAfterWorktree = (step: string, error: unknown): never => {
@@ -1897,9 +1888,6 @@ function createToolCatalog(
         promptFailure: "throw",
         notifyOnFinish: false,
         callerAgentId,
-        ...(createdWorktree.setupContinuation
-          ? { worktreeSetupContinuation: createdWorktree.setupContinuation }
-          : {}),
       }).catch((error: unknown) => failAfterWorktree("starting the new agent", error));
 
       return {
