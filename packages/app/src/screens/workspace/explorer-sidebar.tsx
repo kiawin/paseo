@@ -3,7 +3,10 @@ import { View } from "react-native";
 import { useWorkspaceTabDrag } from "@/components/workspace-tab-drag-context";
 import { StyleSheet } from "react-native-unistyles";
 import { RetainedPanel } from "@/components/retained-panel";
-import { TitlebarDragRegion, WINDOW_CONTENT_DATASET } from "@/components/desktop/titlebar-drag-region";
+import {
+  TitlebarDragRegion,
+  WINDOW_CONTENT_DATASET,
+} from "@/components/desktop/titlebar-drag-region";
 import { WorkspacePanelHost } from "@/screens/workspace/workspace-panel-host";
 import { deriveWorkspacePaneState } from "@/screens/workspace/workspace-pane-state";
 import {

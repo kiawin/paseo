@@ -34,7 +34,10 @@ import {
   removeWindowChromeCorner,
   type WindowChromeCorners,
 } from "@/utils/desktop-window";
-import { TitlebarDragRegion, WINDOW_CONTENT_DATASET } from "@/components/desktop/titlebar-drag-region";
+import {
+  TitlebarDragRegion,
+  WINDOW_CONTENT_DATASET,
+} from "@/components/desktop/titlebar-drag-region";
 import { type TabDropPreview } from "@/components/split-container-tab-drop-preview";
 import { SplitDropZone, type SplitDropZoneHover } from "@/components/split-drop-zone";
 import { deriveWorkspacePaneState } from "@/screens/workspace/workspace-pane-state";
