@@ -1,4 +1,4 @@
-import { useFileUrl } from "@getpaseo/plugin/client";
+import { useFileText, useFileUrl } from "@getpaseo/plugin/client";
 import { useCallback, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";

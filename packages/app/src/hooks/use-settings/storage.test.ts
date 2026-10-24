@@ -389,14 +389,6 @@ describe("loadAppSettingsFromStorage", () => {
     expect(legacySide.openInSidePane).not.toHaveProperty("pullRequests");
   });
 
-  it("uses the native terminal renderer by default", async () => {
-    const deps = makeDeps();
-
-    const result = await loadAppSettingsFromStorage(deps);
-
-    expect(result.useLegacyTerminalRenderer).toBe(false);
-  });
-
   it("sends forge links to the external browser by default", async () => {
     const result = await loadAppSettingsFromStorage(makeDeps());
 
@@ -462,17 +454,6 @@ describe("loadAppSettingsFromStorage", () => {
     expect(result.noteImageBehavior).toBe("tap-to-load");
   });
 
-  it("loads the per-device legacy terminal renderer preference", async () => {
-    const deps = makeDeps({
-      storage: createInMemoryKeyValueStorage({
-        [APP_SETTINGS_KEY]: JSON.stringify({ useLegacyTerminalRenderer: true }),
-      }),
-    });
-
-    const result = await loadAppSettingsFromStorage(deps);
-
-    expect(result.useLegacyTerminalRenderer).toBe(true);
-  });
   it("loads configured terminal scrollback lines from app settings", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({

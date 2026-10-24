@@ -1,9 +1,6 @@
-import { lightHighlightColors } from "@getpaseo/highlight";
-
 const testTheme = {
   colorScheme: "light",
   colors: {
-    syntax: lightHighlightColors,
     foreground: "#111111",
     foregroundMuted: "#666666",
     // Read at import time by styles/syntax-token-styles; the values are irrelevant to tests.

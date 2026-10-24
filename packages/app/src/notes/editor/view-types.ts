@@ -1,5 +1,5 @@
 import type { NoteRecordPayload } from "@getpaseo/protocol/messages";
-import type { EditorVisualTheme } from "@/file-pane/editor/extensions.web";
+import type { EditorVisualTheme } from "@/file-panels/source/editor/extensions.web";
 import type { NoteEditorModel } from "./model";
 
 export interface NoteEditorViewProps {

@@ -54,6 +54,8 @@ function workspace(
       error: null,
     },
     ...overrides,
+    createdAt: overrides.createdAt ?? null,
+    lastUserMessageAt: overrides.lastUserMessageAt ?? null,
   };
 }
 

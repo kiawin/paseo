@@ -598,11 +598,21 @@ describe("sidebar group visibility", () => {
     expect(result.current.visibleItems).toHaveLength(7);
     rerender({ last: creating });
     for (const status of ["running", "attention", "needs_input", "failed", "done"] as const) {
+      const agent = {
+        agentId: "agent",
+        title: null,
+        provider: "codex",
+        status,
+        enteredAt: new Date(),
+      };
       const last = createSidebarWorkspaceEntry({
         serverId: SERVER_ID,
         workspace: descriptor,
         workspaceAgentActivity: new Map([
-          [descriptor.id, { agentId: "agent", status, enteredAt: null }],
+          [
+            descriptor.id,
+            { agentId: agent.agentId, status, enteredAt: agent.enteredAt, agents: [agent] },
+          ],
         ]),
       });
       expect(last.statusBucket).toBe(status);

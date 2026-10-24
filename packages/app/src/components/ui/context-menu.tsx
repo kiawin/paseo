@@ -6,6 +6,8 @@ import {
   type Ref,
 } from "react";
 import {
+  Platform,
+  StatusBar,
   View,
   type GestureResponderEvent,
   type PressableProps,

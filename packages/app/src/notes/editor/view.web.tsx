@@ -6,7 +6,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import { editorBaseExtensions, editorTheme } from "@/file-pane/editor/extensions.web";
+import { editorBaseExtensions, editorTheme } from "@/file-panels/source/editor/extensions.web";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { formatTimeAgo } from "@/utils/time";
 import { getRevisionedTextConflictCallout } from "@/editor/revisioned-text-model";
