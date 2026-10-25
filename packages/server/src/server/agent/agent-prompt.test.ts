@@ -15,12 +15,8 @@ import { join } from "node:path";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
-import {
-  sendPromptToAgent,
-  setupFinishNotification,
-  waitForAgentRunStartWithTimeout,
-} from "./agent-prompt.js";
-import type { AgentManagerEvent, ManagedAgent } from "./agent-manager.js";
+import { sendPromptToAgent, waitForAgentRunStartWithTimeout } from "./agent-prompt.js";
+import type { ManagedAgent } from "./agent-manager.js";
 import type {
   AgentClient,
   AgentRunResult,
@@ -373,7 +369,7 @@ test("watcher envelopes reach the agent and show as a message from the watcher",
   const encoded = formatAgentMessage(message);
 
   expect(parseAgentMessage(encoded)).toEqual(message);
-  expect(projectAgentMessage({ type: "user_message", text: encoded })).toMatchObject({
+  expect(projectAgentMessages({ type: "user_message", text: encoded })[0]).toMatchObject({
     type: "tool_call",
     agentMessage: {
       event: "message",

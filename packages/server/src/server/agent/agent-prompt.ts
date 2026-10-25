@@ -1,9 +1,4 @@
-import type { WaitForFinishResult } from "@getpaseo/client/internal/daemon-client";
-import {
-  prepareAgentMessage,
-  type AgentPromptSource,
-  type AgentMessageDelivery,
-} from "./agent-messages/index.js";
+import { prepareAgentMessage, type AgentPromptSource } from "./agent-messages/index.js";
 import { randomBytes } from "node:crypto";
 import type { Logger } from "pino";
 
@@ -407,7 +402,7 @@ export async function sendPreparedPromptToAgent(
   }
 
   return await startAgentRun(params.agentManager, params.agentId, params.prompt, params.logger, {
-    replaceRunning: true,
+    replaceRunning: params.replaceRunning ?? true,
     onDispatch: params.onDispatch,
     activeTurnBehavior: params.activeTurnBehavior,
     clearPendingPermissions: params.clearPendingPermissions,
