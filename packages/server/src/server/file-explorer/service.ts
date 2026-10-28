@@ -4,6 +4,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { expandUserPath, resolvePathFromBase } from "../path-utils.js";
 import { runGitCommand } from "../../utils/run-git-command.js";
+import { READ_ONLY_GIT_ENV } from "../checkout-git-utils.js";
 import { ZipFile } from "yazl";
 import type { Readable } from "stream";
 
@@ -157,7 +158,6 @@ interface EntryPayloadParams {
   root: string;
   targetPath: string;
   name: string;
-  kind: ExplorerEntryKind;
 }
 
 export async function listDirectoryEntries({
@@ -176,13 +176,11 @@ export async function listDirectoryEntries({
   const entriesWithNulls = await Promise.all(
     dirents.map(async (dirent) => {
       const targetPath = path.join(directoryPath.requestedPath, dirent.name);
-      const kind: ExplorerEntryKind = dirent.isDirectory() ? "directory" : "file";
       try {
         return await buildEntryPayload({
           root,
           targetPath,
           name: dirent.name,
-          kind,
         });
       } catch (error) {
         // Directories can contain dangling links (e.g. AGENTS.md -> CLAUDE.md).
@@ -775,7 +773,7 @@ async function resolveUploadParent(
   root: string,
   relativePath: string,
   createMissingDirectories: boolean,
-): Promise<{ parentDir: string; fileName: string; realRoot: string }> {
+): Promise<{ parentDir: string; requestedParentDir: string; fileName: string; realRoot: string }> {
   // Everything downstream compares against the canonical root, so the request is scoped
   // to it as well. Scoping to the caller's root instead leaves the two in different forms
   // whenever the root is a symlink or a Windows 8.3 short name, and every comparison then
@@ -793,20 +791,17 @@ async function resolveUploadParent(
   }
 
   const realParent = await fs.realpath(parentDir);
-  const relative = path.relative(realRoot, realParent);
-  if (relative !== "" && (relative.startsWith("..") || path.isAbsolute(relative))) {
-    throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
-  }
-  return { parentDir: realParent, fileName, realRoot };
+  await assertWithinCanonicalWorkspace(realRoot, realParent);
+  return { parentDir: realParent, requestedParentDir: parentDir, fileName, realRoot };
 }
 
 /**
  * Creates the missing directories of an uploaded folder tree, one segment at a time.
  *
  * A plain mkdir recursive would happily follow a symlinked segment out of the workspace,
- * so the deepest directory that already exists is resolved and checked first, and only
- * then are the remaining segments created. Freshly created directories cannot be
- * symlinks, so each step stays inside the root by construction.
+ * so each existing symlinked segment is resolved and checked before the walk continues
+ * from its target, and only then are the remaining segments created. Freshly created
+ * directories cannot be symlinks, so each step stays inside the workspace by construction.
  */
 async function createScopedDirectories(realRoot: string, targetDir: string): Promise<void> {
   const relative = path.relative(realRoot, targetDir);
@@ -829,7 +824,13 @@ async function createScopedDirectories(realRoot: string, targetDir: string): Pro
       continue;
     }
     if (stats.isSymbolicLink()) {
-      throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+      const linkTarget = await fs.realpath(next);
+      await assertWithinCanonicalWorkspace(realRoot, linkTarget);
+      if (!(await fs.stat(linkTarget)).isDirectory()) {
+        throw new Error("Upload target path passes through a file");
+      }
+      current = linkTarget;
+      continue;
     }
     if (!stats.isDirectory()) {
       throw new Error("Upload target path passes through a file");
@@ -894,14 +895,19 @@ export async function createUploadSink({
   /** Set when uploading a folder tree, whose intermediate directories may not exist. */
   createMissingDirectories?: boolean;
 }): Promise<UploadSink> {
-  // realRoot, not root: the reported path has to be relative to the directory the bytes
-  // actually landed in.
-  const { parentDir, fileName, realRoot } = await resolveUploadParent(
+  const { parentDir, requestedParentDir, fileName, realRoot } = await resolveUploadParent(
     root,
     relativePath,
     createMissingDirectories,
   );
   const targetPath = await resolveUploadTarget(parentDir, fileName, overwrite);
+  // Reported against the requested parent, not the resolved one, so an upload through a
+  // link reports the link path the user picked. Both are relative to realRoot because the
+  // request was scoped to it.
+  const reportedPath = normalizeRelativePath({
+    root: realRoot,
+    targetPath: path.join(requestedParentDir, path.basename(targetPath)),
+  });
   const temporaryPath = path.join(
     parentDir,
     `.${path.basename(targetPath)}.paseo-${randomUUID()}.tmp`,
@@ -919,7 +925,7 @@ export async function createUploadSink({
   };
 
   return {
-    targetPath: normalizeRelativePath({ root: realRoot, targetPath }),
+    targetPath: reportedPath,
     async write(chunk) {
       if (!handle) {
         throw new Error("Upload is no longer open.");
@@ -957,7 +963,7 @@ export async function createUploadSink({
       }
       const stats = await fs.stat(targetPath, { bigint: true });
       return {
-        path: normalizeRelativePath({ root: realRoot, targetPath }),
+        path: reportedPath,
         size: Number(stats.size),
         modifiedAt: stats.mtime.toISOString(),
         revision: fileRevision(stats),
@@ -1212,7 +1218,7 @@ async function resolveScopedPath({
   const canonicalRoot = await fs.realpath(workspacePath);
   try {
     const canonicalPath = await fs.realpath(requestedPath);
-    assertWithinWorkspace(canonicalRoot, canonicalPath);
+    await assertWithinCanonicalWorkspace(canonicalRoot, canonicalPath);
     return { requestedPath, resolvedPath: canonicalPath };
   } catch (error) {
     if (isMissingEntryError(error)) return { requestedPath, resolvedPath: requestedPath };
@@ -1221,10 +1227,60 @@ async function resolveScopedPath({
 }
 
 function assertWithinWorkspace(root: string, candidate: string): void {
+  if (!isWithinRoot(root, candidate)) throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+}
+
+function isWithinRoot(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
-  const isOutsideWorkspace =
-    relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
-  if (isOutsideWorkspace) throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+  return !(relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative));
+}
+
+/**
+ * Checks where a path lands after its links are followed. Only this canonical check
+ * accepts the main checkout: the requested path itself must always stay in the root.
+ *
+ * A linked git worktree may reach its repository's main checkout through a link, the
+ * way setup scripts link ignored data folders back so the data outlives the worktree.
+ * The allowance covers reads and writes alike, so editing, creating, renaming,
+ * deleting or uploading through such a link changes the main checkout's files.
+ */
+async function assertWithinCanonicalWorkspace(
+  canonicalRoot: string,
+  canonicalPath: string,
+): Promise<void> {
+  if (isWithinRoot(canonicalRoot, canonicalPath)) return;
+  const mainCheckout = await resolveMainCheckout(canonicalRoot);
+  if (mainCheckout && isWithinRoot(mainCheckout, canonicalPath)) return;
+  throw new Error(ACCESS_OUTSIDE_WORKSPACE_MESSAGE);
+}
+
+const mainCheckoutByRoot = new Map<string, Promise<string | null>>();
+
+/**
+ * The main checkout of the repository a linked worktree belongs to, or null when the
+ * root is not in git, is in the main checkout itself, or belongs to a bare repository
+ * (whose common dir is not a checkout anyone browses).
+ */
+function resolveMainCheckout(canonicalRoot: string): Promise<string | null> {
+  let pending = mainCheckoutByRoot.get(canonicalRoot);
+  if (!pending) {
+    pending = findMainCheckout(canonicalRoot).catch(() => null);
+    mainCheckoutByRoot.set(canonicalRoot, pending);
+  }
+  return pending;
+}
+
+async function findMainCheckout(canonicalRoot: string): Promise<string | null> {
+  const { stdout, exitCode } = await runGitCommand(
+    ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
+    { cwd: canonicalRoot, envOverlay: READ_ONLY_GIT_ENV, acceptExitCodes: [0, 128] },
+  );
+  if (exitCode !== 0) return null;
+  const [gitDir, commonDir] = stdout.trim().split("\n");
+  if (!gitDir || !commonDir || gitDir === commonDir) return null;
+  const canonicalCommonDir = await fs.realpath(commonDir);
+  if (path.basename(canonicalCommonDir) !== ".git") return null;
+  return path.dirname(canonicalCommonDir);
 }
 
 async function openFileForRead(filePath: string): Promise<FileHandle> {
@@ -1235,17 +1291,18 @@ async function buildEntryPayload({
   root,
   targetPath,
   name,
-  kind,
 }: EntryPayloadParams): Promise<FileExplorerEntry> {
   const entryPath = await resolveScopedPath({
     root,
     relativePath: normalizeRelativePath({ root, targetPath }),
   });
+  // Kind comes from the followed stat, not the dirent: a dirent reports a symlinked
+  // folder as a link, which would list it as a file the explorer cannot open.
   const stats = await fs.stat(entryPath.resolvedPath);
   return {
     name,
     path: normalizeRelativePath({ root, targetPath }),
-    kind,
+    kind: stats.isDirectory() ? "directory" : "file",
     size: stats.size,
     modifiedAt: stats.mtime.toISOString(),
   };
