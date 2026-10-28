@@ -77,6 +77,26 @@ describe.skipIf(isPlatform("win32"))("service POSIX-only", () => {
     }
   });
 
+  it("lists a symlinked folder inside the workspace as a browsable directory", async () => {
+    const root = await createTempDir("paseo-file-explorer-");
+
+    try {
+      await mkdir(path.join(root, "real"));
+      await writeFile(path.join(root, "real", "inner.txt"), "inner\n", "utf-8");
+      await symlink("real", path.join(root, "linked"));
+
+      const result = await listDirectoryEntries({ root });
+      const linked = result.entries.find((entry) => entry.name === "linked");
+      expect(linked?.kind).toBe("directory");
+
+      const nested = await listDirectoryEntries({ root, relativePath: "linked" });
+      expect(nested.path).toBe("linked");
+      expect(nested.entries.map((entry) => entry.path)).toEqual(["linked/inner.txt"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("uses canonical paths for downloadable symlink targets inside the workspace", async () => {
     const root = await createTempDir("paseo-file-explorer-");
 
