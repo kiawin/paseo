@@ -69,6 +69,8 @@ export type ChatDisplay = "full" | "collapseToolCalls" | "collapseTurns";
  * survives; this decides how what survives is drawn.
  */
 export type ChatTranscriptStyle = "cards" | "trace";
+/** What an Explorer sidebar tab shows: its icon, its name, or both. */
+export type ExplorerTabDisplay = "iconAndName" | "icon" | "name";
 
 const ThemePreferenceSchema = z.enum([
   ...THEME_OPTIONS.map((option) => option.name),
@@ -140,6 +142,7 @@ export interface AppSettings {
   filePanelAssociations: Record<string, string>;
   /** Whether workspace tabs show the inline close button. The tab menu can still close a tab. */
   showTabCloseButton: boolean;
+  explorerTabDisplay: ExplorerTabDisplay;
   /** Desktop-only preferences for implicit opens into the ordinary side pane. */
   openInSidePane: OpenInSidePanePreferences;
   pullRequestOpenLocation: PullRequestOpenLocation;
@@ -203,6 +206,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sendShortcut: "enter",
   filePanelAssociations: {},
   showTabCloseButton: true,
+  explorerTabDisplay: "iconAndName",
   openInSidePane: DEFAULT_OPEN_IN_SIDE_PANE_PREFERENCES,
   pullRequestOpenLocation: "explorer",
 };
@@ -317,6 +321,7 @@ const StoredAppSettingsSchema = z
     sendShortcut: z.enum(["enter", "shift-enter", "mod-enter"]).catch("enter"),
     filePanelAssociations: z.record(z.string(), z.string()).catch({}),
     showTabCloseButton: z.boolean().catch(true),
+    explorerTabDisplay: z.enum(["iconAndName", "icon", "name"]).catch("iconAndName"),
     openInSidePane: z
       .object({
         explorerFiles: z.boolean().catch(false),
