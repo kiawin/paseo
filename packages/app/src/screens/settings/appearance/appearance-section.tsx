@@ -10,6 +10,7 @@ import {
 } from "@getpaseo/highlight";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
+import { SettingsCard, SettingsSelect, SettingsSwitch } from "@/components/settings";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { ThemePicker } from "@/appearance/theme-picker";
 import { Button } from "@/components/ui/button";
@@ -30,8 +31,10 @@ import {
   sanitizeFontFamily,
   useAppSettings,
   type AppSettings,
+  type ExplorerTabDisplay,
 } from "@/hooks/use-settings";
 import { DEFAULT_MONO_FONT_STACK, DEFAULT_UI_FONT_STACK } from "@/styles/theme";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
 import { settingsStyles } from "@/styles/settings";
 import { AppearancePreview } from "./appearance-preview";
@@ -294,12 +297,58 @@ function SyntaxRow({ value, onChange }: SyntaxRowProps) {
   );
 }
 
+interface TabCloseButtonRowProps {
+  value: boolean;
+  onChange: (value: boolean) => void;
+}
+
+function TabCloseButtonRow({ value, onChange }: TabCloseButtonRowProps) {
+  const { t } = useTranslation();
+  return (
+    <SettingsSwitch
+      label={t("settings.appearance.tabs.closeButton.label")}
+      hint={t("settings.appearance.tabs.closeButton.description")}
+      value={value}
+      onValueChange={onChange}
+    />
+  );
+}
+
+const EXPLORER_TAB_DISPLAYS: readonly ExplorerTabDisplay[] = ["iconAndName", "icon", "name"];
+
+interface ExplorerTabDisplayRowProps {
+  value: ExplorerTabDisplay;
+  onChange: (value: ExplorerTabDisplay) => void;
+}
+
+function ExplorerTabDisplayRow({ value, onChange }: ExplorerTabDisplayRowProps) {
+  const { t } = useTranslation();
+  const options = useMemo(
+    () =>
+      EXPLORER_TAB_DISPLAYS.map((display) => ({
+        value: display,
+        label: t(`settings.appearance.tabs.explorerDisplay.options.${display}`),
+      })),
+    [t],
+  );
+  return (
+    <SettingsSelect
+      label={t("settings.appearance.tabs.explorerDisplay.label")}
+      hint={t("settings.appearance.tabs.explorerDisplay.description")}
+      value={value}
+      options={options}
+      onValueChange={onChange}
+    />
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export function AppearanceSection() {
   const { t } = useTranslation();
+  const isCompact = useIsCompactFormFactor();
   const { settings, updateSettings } = useAppSettings();
   const showInterfaceFontFamilyRow = !isNative;
   const uiFontPlaceholder = resolveDefaultStackPlaceholder(t, DEFAULT_UI_FONT_STACK);
@@ -332,6 +381,20 @@ export function AppearanceSection() {
   const handleSyntaxThemeChange = useCallback(
     (syntaxTheme: SyntaxThemeId) => {
       void updateSettings({ syntaxTheme });
+    },
+    [updateSettings],
+  );
+
+  const handleShowTabCloseButtonChange = useCallback(
+    (showTabCloseButton: boolean) => {
+      void updateSettings({ showTabCloseButton });
+    },
+    [updateSettings],
+  );
+
+  const handleExplorerTabDisplayChange = useCallback(
+    (explorerTabDisplay: ExplorerTabDisplay) => {
+      void updateSettings({ explorerTabDisplay });
     },
     [updateSettings],
   );
@@ -434,6 +497,20 @@ export function AppearanceSection() {
         <View style={[settingsStyles.card, styles.themeCard]}>
           <ThemePicker />
         </View>
+      </SettingsSection>
+      <SettingsSection title={t("settings.appearance.tabs.title")}>
+        <SettingsCard>
+          {isCompact ? null : (
+            <TabCloseButtonRow
+              value={settings.showTabCloseButton}
+              onChange={handleShowTabCloseButtonChange}
+            />
+          )}
+          <ExplorerTabDisplayRow
+            value={settings.explorerTabDisplay}
+            onChange={handleExplorerTabDisplayChange}
+          />
+        </SettingsCard>
       </SettingsSection>
       <SettingsSection title={t("settings.appearance.fonts.title")}>
         <View style={settingsStyles.card}>
