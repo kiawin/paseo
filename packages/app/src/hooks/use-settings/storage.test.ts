@@ -423,6 +423,21 @@ describe("loadAppSettingsFromStorage", () => {
     expect(legacySide.openInSidePane).not.toHaveProperty("pullRequests");
   });
 
+  it("shows Explorer tab icons and names unless a valid choice is stored", async () => {
+    const loadStored = (explorerTabDisplay: unknown) =>
+      loadAppSettingsFromStorage(
+        makeDeps({
+          storage: createInMemoryKeyValueStorage({
+            [APP_SETTINGS_KEY]: JSON.stringify({ explorerTabDisplay }),
+          }),
+        }),
+      );
+
+    expect((await loadAppSettingsFromStorage(makeDeps())).explorerTabDisplay).toBe("iconAndName");
+    expect((await loadStored("icon")).explorerTabDisplay).toBe("icon");
+    expect((await loadStored("labels")).explorerTabDisplay).toBe("iconAndName");
+  });
+
   it("sends forge links to the external browser by default", async () => {
     const result = await loadAppSettingsFromStorage(makeDeps());
 
