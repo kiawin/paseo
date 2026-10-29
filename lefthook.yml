@@ -12,3 +12,11 @@ pre-commit:
       run: npm run lint -- {staged_files}
     - name: typecheck
       run: npm run typecheck
+    # Spec Kit appends a generated pointer block to CLAUDE.md/AGENTS.md. It is
+    # local context for Spec Kit, never project docs, so refuse to commit it.
+    - name: speckit-block
+      run: |
+        if git diff --cached -U0 --no-color | grep -nE '^\+.*<!-- SPECKIT (START|END) -->'; then
+          echo "Staged changes add a Spec Kit block. Unstage it (git add -p) and keep it local."
+          exit 1
+        fi
