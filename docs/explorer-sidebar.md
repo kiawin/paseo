@@ -97,8 +97,11 @@ The persisted layout still contains the Explorer pane so tabs survive reloads. T
 that pane from the workspace split tree and docks it separately. Persisted identifiers retain the
 literal `"explorer"` pane id and `explorerPaneIdByWorkspace` key for compatibility.
 
-Explorer uses the shared workspace tab row and ordinary tab context menus. Files and Changes
-hide their close buttons through the panel manifest; close them from the tab context menu.
+Explorer uses the shared workspace tab row and ordinary tab context menus. The Explorer tabs
+appearance setting shows icon and name, icon only, or name only on this rail; workspace panes
+always show both. Icon-only chips have no inline close, so close them from the tab menu or with a
+middle click. Files and Changes hide their close buttons through the panel manifest; close them
+from the tab context menu.
 Other tabs reveal the close control on hover. Compact layouts show no inline close on any tab,
 since a narrow X beside the label is easy to hit by accident; the long-press menu closes it.
 Compact tabs also keep their natural width and the rail scrolls as soon as they overflow, while
