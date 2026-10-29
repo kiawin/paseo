@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useSettings } from "@/hooks/use-settings";
+import { useSettings, type ExplorerTabDisplay } from "@/hooks/use-settings";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { WORKSPACE_SECONDARY_HEADER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import { buttonControlHeight } from "@/components/ui/control-geometry";
@@ -500,6 +500,7 @@ function workspaceTabLabelSignature(labels: WorkspaceTabLabel[]): string {
 function completeWorkspaceTabLabelWidths(
   labels: WorkspaceTabLabel[],
   measurements: Map<string, WorkspaceTabLabelMeasurement>,
+  showLabels: boolean,
 ): number[] | null {
   const widths: number[] = [];
   for (const { key, label, modified } of labels) {
@@ -510,7 +511,8 @@ function completeWorkspaceTabLabelWidths(
     // The modified dot sits in the content row, so a modified tab needs that much more width
     // before its label starts truncating.
     const modifiedAllowance = modified ? TAB_CONTENT_GAP + TAB_MODIFIED_DOT_SIZE : 0;
-    widths.push(measurement.width + TAB_LABEL_LAYOUT_ALLOWANCE + modifiedAllowance);
+    const labelWidth = showLabels ? measurement.width + TAB_LABEL_LAYOUT_ALLOWANCE : 0;
+    widths.push(labelWidth + modifiedAllowance);
   }
   return widths;
 }
@@ -667,6 +669,7 @@ function useMiddleClickClose(onClose: () => void) {
 function TabHandleContent({
   presentation,
   isHighlighted,
+  showIcon,
   showLabel,
   backdrop,
   tabLabelSkeletonStyle,
@@ -675,6 +678,7 @@ function TabHandleContent({
 }: {
   presentation: WorkspaceTabPresentation;
   isHighlighted: boolean;
+  showIcon: boolean;
   showLabel: boolean;
   backdrop: SurfaceBackdrop;
   tabLabelSkeletonStyle: React.ComponentProps<typeof View>["style"];
@@ -689,9 +693,15 @@ function TabHandleContent({
 
   return (
     <View style={styles.tabHandle} dataSet={tabHandleDataSet}>
-      <View style={styles.tabIcon}>
-        <WorkspaceTabIcon presentation={presentation} active={isHighlighted} backdrop={backdrop} />
-      </View>
+      {showIcon ? (
+        <View style={styles.tabIcon}>
+          <WorkspaceTabIcon
+            presentation={presentation}
+            active={isHighlighted}
+            backdrop={backdrop}
+          />
+        </View>
+      ) : null}
       {showLabel && presentation.titleState === "loading" ? (
         <View style={tabLabelSkeletonStyle} />
       ) : null}
@@ -721,6 +731,7 @@ function TabChip({
   isDragging,
   isFocused,
   resolvedTabWidth,
+  showIcon,
   showLabel,
   showCloseButton,
   rail,
@@ -742,6 +753,7 @@ function TabChip({
   isDragging: boolean;
   isFocused: boolean;
   resolvedTabWidth: number;
+  showIcon: boolean;
   showLabel: boolean;
   showCloseButton: boolean;
   /** The surface the row paints, so chip fills and their knockouts match the host. */
@@ -871,6 +883,7 @@ function TabChip({
               <TabHandleContent
                 presentation={presentation}
                 isHighlighted={isHighlighted}
+                showIcon={showIcon}
                 showLabel={showLabel}
                 backdrop={chipBackdrop}
                 tabLabelSkeletonStyle={tabLabelSkeletonStyle}
@@ -1056,6 +1069,11 @@ function ResolvedWorkspaceDesktopTabsRow({
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
   const showCloseButtons = useSettings((settings) => settings.showTabCloseButton);
+  const explorerTabDisplay = useSettings((settings) => settings.explorerTabDisplay);
+  // Only the Explorer rail is configurable; workspace panes always show icon and name.
+  const tabDisplay: ExplorerTabDisplay = host === "explorer" ? explorerTabDisplay : "iconAndName";
+  const showTabIcons = tabDisplay !== "name";
+  const showTabLabels = tabDisplay !== "icon";
   const newTabKeys = useShortcutKeys("workspace-tab-new");
   const [tabsContainerWidth, setTabsContainerWidth] = useState<number>(0);
   const tabsScrollRef = useRef<ScrollView>(null);
@@ -1086,14 +1104,22 @@ function ResolvedWorkspaceDesktopTabsRow({
       ),
       rowPaddingHorizontal: TAB_ROW_PADDING_HORIZONTAL,
       tabGap: TAB_CHIP_GAP,
-      minTabWidth: TAB_MIN_WIDTH,
+      // An icon-only chip hugs its icon instead of reserving room for a label it never shows.
+      minTabWidth: showTabLabels ? TAB_MIN_WIDTH : TAB_ICON_WIDTH + TAB_CHIP_HORIZONTAL_PADDING * 2,
       maxTabWidth: TAB_MAX_WIDTH,
-      tabIconWidth: TAB_ICON_WIDTH,
-      tabContentGap: TAB_CONTENT_GAP,
+      tabIconWidth: showTabIcons ? TAB_ICON_WIDTH : 0,
+      tabContentGap: showTabIcons ? TAB_CONTENT_GAP : 0,
       tabHorizontalPadding: TAB_CHIP_HORIZONTAL_PADDING,
       closeButtonWidth: TAB_CLOSE_BUTTON_RESERVED_WIDTH,
     }),
-    [exitFocusModeWidth, focusModeEnabled, showPaneMaximizeAction, showPaneSplitActions],
+    [
+      exitFocusModeWidth,
+      focusModeEnabled,
+      showPaneMaximizeAction,
+      showPaneSplitActions,
+      showTabIcons,
+      showTabLabels,
+    ],
   );
 
   const panePanelKinds = useMemo(() => tabs.map(({ tab }) => tab.kind), [tabs]);
@@ -1159,7 +1185,11 @@ function ResolvedWorkspaceDesktopTabsRow({
     if (tabsContainerWidth <= 0) {
       return;
     }
-    const labelWidths = completeWorkspaceTabLabelWidths(tabLabels, labelMeasurements);
+    const labelWidths = completeWorkspaceTabLabelWidths(
+      tabLabels,
+      labelMeasurements,
+      showTabLabels,
+    );
     if (!labelWidths) {
       return;
     }
@@ -1178,7 +1208,7 @@ function ResolvedWorkspaceDesktopTabsRow({
         labelWidths,
       };
     });
-  }, [labelMeasurements, tabLabelSignature, tabLabels, tabs, tabsContainerWidth]);
+  }, [labelMeasurements, showTabLabels, tabLabelSignature, tabLabels, tabs, tabsContainerWidth]);
 
   useLayoutEffect(() => {
     publishMeasuredTrack();
@@ -1283,11 +1313,16 @@ function ResolvedWorkspaceDesktopTabsRow({
       dragHandleProps,
       isActive,
     }: DraggableRenderItemInfo<ResolvedWorkspaceDesktopTabRowItem>) => {
+      // An icon-only chip has no room beside its icon for the close control; the tab menu and
+      // middle-click still close it.
       const shouldShowCloseButton =
-        showCloseButtons && layout.closeButtonPolicy === "all" && item.presentation.showCloseButton;
+        showCloseButtons &&
+        showTabLabels &&
+        layout.closeButtonPolicy === "all" &&
+        item.presentation.showCloseButton;
       const layoutItem = layout.items[index] ?? null;
       const resolvedTabWidth = layoutItem?.width ?? 150;
-      const showLabel = layoutItem?.showLabel ?? true;
+      const showLabel = showTabLabels && (layoutItem?.showLabel ?? true);
       const showDropIndicatorBefore = activeDragTabId !== null && tabDropPreviewIndex === index;
       const showDropIndicatorAfter =
         activeDragTabId !== null &&
@@ -1314,6 +1349,7 @@ function ResolvedWorkspaceDesktopTabsRow({
           onCloseTabsToRight={onCloseTabsToRight}
           onCloseOtherTabs={onCloseOtherTabs}
           resolvedTabWidth={resolvedTabWidth}
+          showIcon={showTabIcons}
           showLabel={showLabel}
           showCloseButton={shouldShowCloseButton}
           rail={rail}
@@ -1348,6 +1384,8 @@ function ResolvedWorkspaceDesktopTabsRow({
       onRenameTab,
       rail,
       setHoveredCloseTabKey,
+      showTabIcons,
+      showTabLabels,
       tabMenuLabels,
       tabDropPreviewIndex,
       displayedTabs.length,
@@ -1473,6 +1511,7 @@ function ResolvedDesktopTabChip({
   onCloseTabsToRight,
   onCloseOtherTabs,
   resolvedTabWidth,
+  showIcon,
   showLabel,
   showCloseButton,
   rail,
@@ -1501,6 +1540,7 @@ function ResolvedDesktopTabChip({
   onCloseTabsToRight: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
   resolvedTabWidth: number;
+  showIcon: boolean;
   showLabel: boolean;
   showCloseButton: boolean;
   rail: WorkspaceTabRailSurface;
@@ -1574,6 +1614,7 @@ function ResolvedDesktopTabChip({
         isDragging={isDragging}
         isFocused={isFocused}
         resolvedTabWidth={resolvedTabWidth}
+        showIcon={showIcon}
         showLabel={showLabel}
         showCloseButton={showCloseButton}
         rail={rail}
