@@ -2727,6 +2727,15 @@ export const ar: TranslationResources = {
           label: "إظهار زر الإغلاق",
           description: "أخفِه لإغلاق علامات التبويب من قائمة التبويب بدلاً من ذلك",
         },
+        explorerDisplay: {
+          label: "علامات تبويب اللوحة الجانبية",
+          description: "ما تعرضه علامات التبويب في اللوحة الجانبية",
+          options: {
+            iconAndName: "الأيقونة والاسم",
+            icon: "الأيقونة فقط",
+            name: "الاسم فقط",
+          },
+        },
       },
       sidebar: {
         header: {

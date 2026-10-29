@@ -2819,6 +2819,15 @@ export const en = {
           label: "Show close button",
           description: "Hide it to close tabs from the tab menu instead",
         },
+        explorerDisplay: {
+          label: "Explorer tabs",
+          description: "What the Explorer sidebar tabs show",
+          options: {
+            iconAndName: "Icon and name",
+            icon: "Icon only",
+            name: "Name only",
+          },
+        },
       },
       sidebar: {
         header: {

@@ -2734,6 +2734,15 @@ export const ru: TranslationResources = {
           label: "Показывать кнопку закрытия",
           description: "Скройте её, чтобы закрывать вкладки через меню вкладки",
         },
+        explorerDisplay: {
+          label: "Вкладки боковой панели",
+          description: "Что показывают вкладки боковой панели",
+          options: {
+            iconAndName: "Значок и название",
+            icon: "Только значок",
+            name: "Только название",
+          },
+        },
       },
       sidebar: {
         header: {
