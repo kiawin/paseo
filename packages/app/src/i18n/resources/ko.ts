@@ -2712,6 +2712,15 @@ export const ko: TranslationResources = {
           label: "닫기 버튼 표시",
           description: "숨기면 탭 메뉴에서 탭을 닫습니다",
         },
+        explorerDisplay: {
+          label: "사이드 패널 탭",
+          description: "사이드 패널 탭에 표시할 내용",
+          options: {
+            iconAndName: "아이콘과 이름",
+            icon: "아이콘만",
+            name: "이름만",
+          },
+        },
       },
       sidebar: {
         header: {

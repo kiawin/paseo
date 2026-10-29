@@ -2736,6 +2736,15 @@ export const ptBR: TranslationResources = {
           label: "Mostrar o botão de fechar",
           description: "Oculte-o para fechar as abas pelo menu da aba",
         },
+        explorerDisplay: {
+          label: "Abas do painel lateral",
+          description: "O que as abas do painel lateral mostram",
+          options: {
+            iconAndName: "Ícone e nome",
+            icon: "Somente ícone",
+            name: "Somente nome",
+          },
+        },
       },
       sidebar: {
         header: {

@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
-import { SettingsCard, SettingsSwitch } from "@/components/settings";
+import { SettingsCard, SettingsSelect, SettingsSwitch } from "@/components/settings";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { useContributedThemes } from "@/appearance/provider";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ import {
   sanitizeFontFamily,
   useAppSettings,
   type AppSettings,
+  type ExplorerTabDisplay,
   DEFAULT_THEME_PREFERENCE,
 } from "@/hooks/use-settings";
 import {
@@ -242,6 +243,34 @@ function TabCloseButtonRow({ value, onChange }: TabCloseButtonRowProps) {
       label={t("settings.appearance.tabs.closeButton.label")}
       hint={t("settings.appearance.tabs.closeButton.description")}
       value={value}
+      onValueChange={onChange}
+    />
+  );
+}
+
+const EXPLORER_TAB_DISPLAYS: readonly ExplorerTabDisplay[] = ["iconAndName", "icon", "name"];
+
+interface ExplorerTabDisplayRowProps {
+  value: ExplorerTabDisplay;
+  onChange: (value: ExplorerTabDisplay) => void;
+}
+
+function ExplorerTabDisplayRow({ value, onChange }: ExplorerTabDisplayRowProps) {
+  const { t } = useTranslation();
+  const options = useMemo(
+    () =>
+      EXPLORER_TAB_DISPLAYS.map((display) => ({
+        value: display,
+        label: t(`settings.appearance.tabs.explorerDisplay.options.${display}`),
+      })),
+    [t],
+  );
+  return (
+    <SettingsSelect
+      label={t("settings.appearance.tabs.explorerDisplay.label")}
+      hint={t("settings.appearance.tabs.explorerDisplay.description")}
+      value={value}
+      options={options}
       onValueChange={onChange}
     />
   );
@@ -559,6 +588,13 @@ export function AppearanceSection() {
     [updateSettings],
   );
 
+  const handleExplorerTabDisplayChange = useCallback(
+    (explorerTabDisplay: ExplorerTabDisplay) => {
+      void updateSettings({ explorerTabDisplay });
+    },
+    [updateSettings],
+  );
+
   const commitUiFontFamily = useCallback(
     (value: string) => {
       const sanitized = sanitizeFontFamily(value);
@@ -664,16 +700,20 @@ export function AppearanceSection() {
           />
         </View>
       </SettingsSection>
-      {isCompact ? null : (
-        <SettingsSection title={t("settings.appearance.tabs.title")}>
-          <SettingsCard>
+      <SettingsSection title={t("settings.appearance.tabs.title")}>
+        <SettingsCard>
+          {isCompact ? null : (
             <TabCloseButtonRow
               value={settings.showTabCloseButton}
               onChange={handleShowTabCloseButtonChange}
             />
-          </SettingsCard>
-        </SettingsSection>
-      )}
+          )}
+          <ExplorerTabDisplayRow
+            value={settings.explorerTabDisplay}
+            onChange={handleExplorerTabDisplayChange}
+          />
+        </SettingsCard>
+      </SettingsSection>
       <SettingsSection title={t("settings.appearance.fonts.title")}>
         <View style={settingsStyles.card}>
           {showInterfaceFontFamilyRow ? (

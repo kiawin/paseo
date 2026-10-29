@@ -2753,6 +2753,15 @@ export const es: TranslationResources = {
           label: "Mostrar el botón de cerrar",
           description: "Ocúltalo para cerrar las pestañas desde el menú de la pestaña",
         },
+        explorerDisplay: {
+          label: "Pestañas del panel lateral",
+          description: "Qué muestran las pestañas del panel lateral",
+          options: {
+            iconAndName: "Icono y nombre",
+            icon: "Solo icono",
+            name: "Solo nombre",
+          },
+        },
       },
       sidebar: {
         header: {

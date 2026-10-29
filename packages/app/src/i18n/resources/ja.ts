@@ -2720,6 +2720,15 @@ export const ja: TranslationResources = {
           label: "閉じるボタンを表示",
           description: "非表示にすると、タブメニューからタブを閉じます",
         },
+        explorerDisplay: {
+          label: "サイドパネルのタブ",
+          description: "サイドパネルのタブに表示する内容",
+          options: {
+            iconAndName: "アイコンと名前",
+            icon: "アイコンのみ",
+            name: "名前のみ",
+          },
+        },
       },
       sidebar: {
         header: {

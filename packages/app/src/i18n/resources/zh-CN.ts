@@ -2670,6 +2670,15 @@ export const zhCN: TranslationResources = {
           label: "显示关闭按钮",
           description: "隐藏后可从标签页菜单关闭标签页",
         },
+        explorerDisplay: {
+          label: "侧边面板标签页",
+          description: "侧边面板标签页显示的内容",
+          options: {
+            iconAndName: "图标和名称",
+            icon: "仅图标",
+            name: "仅名称",
+          },
+        },
       },
       sidebar: {
         header: {
