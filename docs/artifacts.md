@@ -85,6 +85,10 @@ atomic index write. A publish is not one write, and the parts that are easy to g
   each group. Pinning is not a content change and must not move a record out of the eviction
   order. An overwrite does refresh `updatedAt`, which moves a record the user keeps updating out
   of the eviction firing line.
+- **Archiving is a label like the pin, and clears it.** An archived artifact has no pin, so it
+  is evicted like any other unpinned row. A republish keeps the archive, so an agent updating a
+  page does not bring it back to the Active list. Pinning an archived artifact unarchives it. The
+  Active / All filter runs in the app; the daemon and agents see every row.
 - **A user title survives an agent republish.** Keep it separate from the agent's `title` so a
   later capture can update the document's own name without discarding the person's label. Rename
   and reset leave `updatedAt` alone; restoring the agent title removes the override.
@@ -128,11 +132,11 @@ to each other, and nothing is removed from the source.
 
 - Hosts are matched by `projectKey`, the grouping notes federation reads, and each side is
   addressed by its own `projectId`.
-- A copy is a new record with no origin agent. The title, custom title, pin and link carry over;
-  `createdAt`, the origin agent and note revisions do not. The pin and custom title commit with the
-  document, so a failed copy leaves no half-labelled row. A note's pin is applied after its save,
-  because `note.save` carries only the body; a note the target already holds still gets its pin, so
-  a second run repairs one the first could not apply.
+- A copy is a new record with no origin agent. The title, custom title, pin, archive and link carry
+  over; `createdAt`, the origin agent and note revisions do not. The pin, archive and custom title
+  commit with the document, so a failed copy leaves no half-labelled row. A note's pin or archive
+  is applied after its save, because `note.save` carries only the body; a note the target already
+  holds still gets its label, so a second run repairs one the first could not apply.
 - An agent's publish takes its project from its workspace. A client names the project, so the
   daemon refuses one it does not have, and the store refuses any `projectId` whose directory
   resolves outside the artifact root, because legacy ids are joined into the path verbatim.

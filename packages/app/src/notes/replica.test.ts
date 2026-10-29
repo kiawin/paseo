@@ -281,5 +281,14 @@ describe("note metadata replica owner", () => {
     await owner.list(PROJECT_ID);
     expect(notified).toBe(1);
     expect(storage.replacements.at(-1)?.notes[0]).toMatchObject({ noteId: "note-2", pinned: true });
+
+    // So must an archive, for the same reason.
+    listed.splice(1, 1, { ...note("note-1", "Plan"), archived: true });
+    await owner.list(PROJECT_ID);
+    expect(notified).toBe(2);
+    expect(storage.replacements.at(-1)?.notes[1]).toMatchObject({
+      noteId: "note-1",
+      archived: true,
+    });
   });
 });

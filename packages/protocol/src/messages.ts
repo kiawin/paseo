@@ -3113,6 +3113,8 @@ export const ArtifactRecordPayloadSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   pinned: z.boolean(),
+  // Absent from a daemon that predates archiving; read as false. An archived row is never pinned.
+  archived: z.boolean().optional(),
   // Companion link to the same document published elsewhere; `http:` / `https:` only, and
   // opened externally rather than loaded into the preview.
   externalUrl: z.string().nullable(),
@@ -3156,6 +3158,14 @@ export const ArtifactPinSetRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Archiving is metadata like pinning, and archiving clears the pin.
+export const ArtifactArchiveSetRequestSchema = z.object({
+  type: z.literal("artifact.archive.set.request"),
+  artifactId: z.string(),
+  archived: z.boolean(),
+  requestId: z.string(),
+});
+
 export const ArtifactRenameRequestSchema = z.object({
   type: z.literal("artifact.rename.request"),
   artifactId: z.string(),
@@ -3176,6 +3186,7 @@ export const ArtifactPublishRequestSchema = z.object({
   html: z.string().nullable(),
   externalUrl: z.string().nullable(),
   pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
   requestId: z.string(),
 });
 
@@ -3194,6 +3205,8 @@ export const NoteRecordPayloadSchema = z.object({
   revision: z.number().int().positive(),
   // Absent from a daemon that predates pinning; read as false.
   pinned: z.boolean().optional(),
+  // Absent from a daemon that predates archiving; read as false. An archived note is never pinned.
+  archived: z.boolean().optional(),
 });
 
 export const NoteListRequestSchema = z.object({
@@ -3223,6 +3236,15 @@ export const NotePinSetRequestSchema = z.object({
   noteId: z.string(),
   projectId: z.string().optional(),
   pinned: z.boolean(),
+  requestId: z.string(),
+});
+
+// Like pinning, archiving changes neither the revision nor `updatedAt`. Archiving clears the pin.
+export const NoteArchiveSetRequestSchema = z.object({
+  type: z.literal("note.archive.set.request"),
+  noteId: z.string(),
+  projectId: z.string().optional(),
+  archived: z.boolean(),
   requestId: z.string(),
 });
 
@@ -3863,12 +3885,14 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ArtifactEntryDownloadRequestSchema,
   ArtifactDeleteRequestSchema,
   ArtifactPinSetRequestSchema,
+  ArtifactArchiveSetRequestSchema,
   ArtifactRenameRequestSchema,
   ArtifactPublishRequestSchema,
   NoteListRequestSchema,
   NoteReadRequestSchema,
   NoteSaveRequestSchema,
   NotePinSetRequestSchema,
+  NoteArchiveSetRequestSchema,
   NoteSearchRequestSchema,
   NoteDeleteRequestSchema,
   AgentPrWatchSetRequestSchema,
@@ -4138,12 +4162,16 @@ export const ServerInfoStatusPayloadSchema = z
         artifactRename: z.boolean().optional(),
         // COMPAT(artifactPublish): added in v0.11.x, remove after 2028-04-17.
         artifactPublish: z.boolean().optional(),
+        // COMPAT(artifactArchive): added in v0.14.x, remove after 2028-10-29.
+        artifactArchive: z.boolean().optional(),
         // COMPAT(notes): added in v0.9.0; remove gate after the supported daemon floor includes Notes.
         notes: z.boolean().optional(),
         // COMPAT(notePin): added in v0.11.x, remove after 2028-04-18.
         notePin: z.boolean().optional(),
         // COMPAT(noteSearch): added in v0.11.x, remove after 2028-04-18.
         noteSearch: z.boolean().optional(),
+        // COMPAT(noteArchive): added in v0.14.x, remove after 2028-10-29.
+        noteArchive: z.boolean().optional(),
         // COMPAT(prAutoFix): added in v0.12.x, remove gate after 2028-10-17.
         prAutoFix: z.boolean().optional(),
         // COMPAT(prAutoReviewOwn): added in v0.12.x, remove gate after 2028-10-18.
@@ -6779,6 +6807,16 @@ export const ArtifactPinSetResponseSchema = z.object({
   }),
 });
 
+export const ArtifactArchiveSetResponseSchema = z.object({
+  type: z.literal("artifact.archive.set.response"),
+  payload: z.object({
+    artifact: ArtifactRecordPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
 export const ArtifactRenameResponseSchema = z.object({
   type: z.literal("artifact.rename.response"),
   payload: z.object({
@@ -6844,6 +6882,16 @@ export const NoteSaveResponseSchema = z.object({
 
 export const NotePinSetResponseSchema = z.object({
   type: z.literal("note.pin.set.response"),
+  payload: z.object({
+    note: NoteRecordPayloadSchema.nullable(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const NoteArchiveSetResponseSchema = z.object({
+  type: z.literal("note.archive.set.response"),
   payload: z.object({
     note: NoteRecordPayloadSchema.nullable(),
     success: z.boolean(),
@@ -7990,6 +8038,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ArtifactEntryDownloadResponseSchema,
   ArtifactDeleteResponseSchema,
   ArtifactPinSetResponseSchema,
+  ArtifactArchiveSetResponseSchema,
   ArtifactRenameResponseSchema,
   ArtifactPublishResponseSchema,
   ArtifactChangedMessageSchema,
@@ -7997,6 +8046,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   NoteReadResponseSchema,
   NoteSaveResponseSchema,
   NotePinSetResponseSchema,
+  NoteArchiveSetResponseSchema,
   NoteSearchResponseSchema,
   NoteDeleteResponseSchema,
   NoteChangedMessageSchema,
@@ -8486,6 +8536,8 @@ export type ArtifactDeleteRequest = z.infer<typeof ArtifactDeleteRequestSchema>;
 export type ArtifactDeleteResponse = z.infer<typeof ArtifactDeleteResponseSchema>;
 export type ArtifactPinSetRequest = z.infer<typeof ArtifactPinSetRequestSchema>;
 export type ArtifactPinSetResponse = z.infer<typeof ArtifactPinSetResponseSchema>;
+export type ArtifactArchiveSetRequest = z.infer<typeof ArtifactArchiveSetRequestSchema>;
+export type ArtifactArchiveSetResponse = z.infer<typeof ArtifactArchiveSetResponseSchema>;
 export type ArtifactRenameRequest = z.infer<typeof ArtifactRenameRequestSchema>;
 export type ArtifactRenameResponse = z.infer<typeof ArtifactRenameResponseSchema>;
 export type ArtifactPublishRequest = z.infer<typeof ArtifactPublishRequestSchema>;
@@ -8500,6 +8552,8 @@ export type NoteSaveRequest = z.infer<typeof NoteSaveRequestSchema>;
 export type NoteSaveResponse = z.infer<typeof NoteSaveResponseSchema>;
 export type NotePinSetRequest = z.infer<typeof NotePinSetRequestSchema>;
 export type NotePinSetResponse = z.infer<typeof NotePinSetResponseSchema>;
+export type NoteArchiveSetRequest = z.infer<typeof NoteArchiveSetRequestSchema>;
+export type NoteArchiveSetResponse = z.infer<typeof NoteArchiveSetResponseSchema>;
 export type NoteSearchRequest = z.infer<typeof NoteSearchRequestSchema>;
 export type NoteSearchResponse = z.infer<typeof NoteSearchResponseSchema>;
 export type NoteSearchMatch = z.infer<typeof NoteSearchMatchSchema>;

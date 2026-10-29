@@ -1070,6 +1070,8 @@ export interface PublishArtifactInput {
   html: string | null;
   externalUrl: string | null;
   pinned?: boolean;
+  /** Older hosts drop it; the copy then lands active. */
+  archived?: boolean;
 }
 
 export interface SaveNoteInput {
@@ -5932,6 +5934,24 @@ export class DaemonClient {
     return payload.note;
   }
 
+  /** Gate on `server_info.features.noteArchive` before calling. */
+  async setNoteArchived(input: {
+    noteId: string;
+    projectId: string;
+    archived: boolean;
+  }): Promise<NoteRecordPayload> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "note.archive.set.request", ...input, requestId },
+      responseType: "note.archive.set.response",
+    });
+    if (!payload.success || !payload.note) {
+      throw new Error(payload.error ?? "Failed to archive the note.");
+    }
+    return payload.note;
+  }
+
   /** Gate on `server_info.features.noteSearch` before calling. */
   async searchNotes(projectId: string, query: string): Promise<NoteSearchMatch[]> {
     const requestId = this.createRequestId();
@@ -6039,6 +6059,20 @@ export class DaemonClient {
       requestId,
       message: { type: "artifact.pin.set.request", artifactId, pinned, requestId },
       responseType: "artifact.pin.set.response",
+    });
+    if (!payload.success || !payload.artifact) {
+      throw new Error(payload.error ?? "Failed to update the artifact.");
+    }
+    return payload.artifact;
+  }
+
+  /** Gate on `server_info.features.artifactArchive` before calling. */
+  async setArtifactArchived(artifactId: string, archived: boolean): Promise<ArtifactRecordPayload> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "artifact.archive.set.request", artifactId, archived, requestId },
+      responseType: "artifact.archive.set.response",
     });
     if (!payload.success || !payload.artifact) {
       throw new Error(payload.error ?? "Failed to update the artifact.");

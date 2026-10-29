@@ -36,6 +36,7 @@ export function CopyFromHostSection({ project, target, targetClient }: CopyFromH
   const toast = useToast();
   const canPublish = useHostFeature(target.serverId, "artifactPublish");
   const targetPinsNotes = useHostFeature(target.serverId, "notePin");
+  const targetArchivesNotes = useHostFeature(target.serverId, "noteArchive");
   const sources = useMemo(
     () => project.hosts.filter((host) => host.serverId !== target.serverId),
     [project.hosts, target.serverId],
@@ -48,6 +49,7 @@ export function CopyFromHostSection({ project, target, targetClient }: CopyFromH
         target: { client: targetClient, projectId: target.projectId },
         includeNotes,
         pinNotes: targetPinsNotes,
+        archiveNotes: targetArchivesNotes,
       }),
     onSuccess: (result) => {
       const counts = {

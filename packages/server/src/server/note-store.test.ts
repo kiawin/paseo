@@ -401,6 +401,56 @@ describe("pin", () => {
   });
 });
 
+describe("archive", () => {
+  test("clears the pin without touching revision or recency, and a save keeps it", async () => {
+    const saved = await store.save({ projectId: "prj_a", body: "# Plan" });
+    await store.setPinned(saved.record.noteId, true);
+    const changes: unknown[] = [];
+    store.subscribeToDetailedChanges((change) => changes.push(change));
+
+    const archived = await store.setArchived(saved.record.noteId, true);
+    expect(archived).toMatchObject({
+      archived: true,
+      revision: saved.record.revision,
+      updatedAt: saved.record.updatedAt,
+    });
+    expect(archived).not.toHaveProperty("pinned");
+    expect(changes).toEqual([
+      { projectId: "prj_a", noteId: saved.record.noteId, revision: 1, kind: "update" },
+    ]);
+
+    const edited = await store.save({
+      projectId: "prj_a",
+      noteId: saved.record.noteId,
+      body: "# Plan v2",
+    });
+    expect(edited.record.archived).toBe(true);
+    expect(await (await open()).get(saved.record.noteId)).toMatchObject({ archived: true });
+
+    const restored = await store.setArchived(saved.record.noteId, false);
+    expect(restored).not.toHaveProperty("archived");
+    expect(restored).not.toHaveProperty("pinned");
+  });
+
+  test("pinning an archived note unarchives it", async () => {
+    const saved = await store.save({ projectId: "prj_a", body: "# Plan" });
+    await store.setArchived(saved.record.noteId, true);
+
+    const pinned = await store.setPinned(saved.record.noteId, true);
+    expect(pinned).toMatchObject({ pinned: true });
+    expect(pinned).not.toHaveProperty("archived");
+
+    await store.setArchived(saved.record.noteId, true);
+    expect(await store.setPinned(saved.record.noteId, false)).toMatchObject({ archived: true });
+  });
+
+  test("refuses an unknown note", async () => {
+    await expect(store.setArchived("note_missing", true)).rejects.toMatchObject({
+      code: "note_not_found",
+    });
+  });
+});
+
 describe("search", () => {
   test("matches titles without a snippet and bodies with one, requiring every term", async () => {
     const titled = await store.save({ projectId: "prj_a", body: "# Release plan\n\nShip it." });

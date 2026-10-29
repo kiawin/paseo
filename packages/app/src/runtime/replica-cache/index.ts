@@ -363,6 +363,7 @@ const StoredNoteMetadataSchema = z.strictObject({
   updatedAt: z.string(),
   revision: z.number().int().positive(),
   pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
 });
 
 const StoredTimelineSchema = z.strictObject({
@@ -733,6 +734,7 @@ function serializeNoteMetadata(note: NoteRecordPayload): StoredNoteMetadata {
     updatedAt: note.updatedAt,
     revision: note.revision,
     ...(note.pinned ? { pinned: true } : {}),
+    ...(note.archived ? { archived: true } : {}),
   };
 }
 

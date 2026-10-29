@@ -1,7 +1,16 @@
 import { useCallback, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { PressHighlight } from "@/components/ui/press-highlight";
-import { ExternalLink, Pencil, Pin, PinOff, RotateCcw, Trash2 } from "lucide-react-native";
+import {
+  Archive,
+  ArchiveRestore,
+  ExternalLink,
+  Pencil,
+  Pin,
+  PinOff,
+  RotateCcw,
+  Trash2,
+} from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { ArtifactRecordPayload } from "@getpaseo/protocol/messages";
@@ -10,7 +19,12 @@ import { useArtifactSearch, useProjectArtifacts, useWorkspaceProjectId } from "@
 import { getArtifactDisplayTitle } from "@/artifacts/title";
 import { AdaptiveRenameModal } from "@/components/rename-modal";
 import { formatBytes } from "@/components/transfer-status";
-import { PanelSearchFailure, PanelSearchField } from "@/components/panel-search";
+import {
+  filterByArchiveScope,
+  PanelSearchFailure,
+  PanelSearchField,
+  type ArchiveScope,
+} from "@/components/panel-search";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -29,6 +43,10 @@ const ThemedExternalLink = withUnistyles(ExternalLink, (theme) => ({
 }));
 const ThemedPin = withUnistyles(Pin, (theme) => ({ color: theme.colors.mutedForeground }));
 const ThemedPinOff = withUnistyles(PinOff, (theme) => ({ color: theme.colors.mutedForeground }));
+const ThemedArchive = withUnistyles(Archive, (theme) => ({ color: theme.colors.mutedForeground }));
+const ThemedArchiveRestore = withUnistyles(ArchiveRestore, (theme) => ({
+  color: theme.colors.mutedForeground,
+}));
 const ThemedPencil = withUnistyles(Pencil, (theme) => ({ color: theme.colors.mutedForeground }));
 const ThemedRotateCcw = withUnistyles(RotateCcw, (theme) => ({
   color: theme.colors.mutedForeground,
@@ -44,6 +62,8 @@ function ArtifactRow({
   onRename,
   onResetTitle,
   onTogglePin,
+  archiveSupported,
+  onToggleArchive,
   onDelete,
 }: {
   artifact: ArtifactRecordPayload;
@@ -54,10 +74,16 @@ function ArtifactRow({
   onRename: (artifact: ArtifactRecordPayload) => void;
   onResetTitle: (artifact: ArtifactRecordPayload) => void;
   onTogglePin: (artifact: ArtifactRecordPayload) => void;
+  archiveSupported: boolean;
+  onToggleArchive: (artifact: ArtifactRecordPayload) => void;
   onDelete: (artifact: ArtifactRecordPayload) => void;
 }) {
   const { t } = useTranslation();
   const { artifactId, externalUrl } = artifact;
+  const archived = artifact.archived === true;
+  let stateLabel: string | null = null;
+  if (artifact.pinned) stateLabel = t("panels.artifacts.pinned");
+  else if (archived) stateLabel = t("panels.artifacts.archived");
   const displayTitle = getArtifactDisplayTitle(artifact);
   const host = externalUrl ? externalLinkHost(externalUrl) : null;
   // A link-only artifact has nothing to preview, so the row is the link.
@@ -77,7 +103,15 @@ function ArtifactRow({
   const handleRename = useCallback(() => onRename(artifact), [artifact, onRename]);
   const handleResetTitle = useCallback(() => onResetTitle(artifact), [artifact, onResetTitle]);
   const handleTogglePin = useCallback(() => onTogglePin(artifact), [artifact, onTogglePin]);
+  const handleToggleArchive = useCallback(
+    () => onToggleArchive(artifact),
+    [artifact, onToggleArchive],
+  );
   const handleDelete = useCallback(() => onDelete(artifact), [artifact, onDelete]);
+  const archiveLeading = useMemo(
+    () => (archived ? <ThemedArchiveRestore size={16} /> : <ThemedArchive size={16} />),
+    [archived],
+  );
   const pinLeading = useMemo(
     () => (artifact.pinned ? <ThemedPinOff size={16} /> : <ThemedPin size={16} />),
     [artifact.pinned],
@@ -92,15 +126,14 @@ function ArtifactRow({
         onPress={handleOpen}
         testID={`artifact-row-${artifactId}`}
         accessibilityRole="button"
-        accessibilityLabel={
-          artifact.pinned ? `${displayTitle}, ${t("panels.artifacts.pinned")}` : displayTitle
-        }
+        accessibilityLabel={stateLabel ? `${displayTitle}, ${stateLabel}` : displayTitle}
       >
         <View style={styles.rowHeader}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
+          <Text style={[styles.rowTitle, archived && styles.rowTitleArchived]} numberOfLines={1}>
             {displayTitle}
           </Text>
           {artifact.pinned ? <ThemedPin size={12} /> : null}
+          {archived ? <ThemedArchive size={12} /> : null}
         </View>
         <Text style={styles.rowMeta} numberOfLines={1}>
           {meta}
@@ -146,13 +179,24 @@ function ArtifactRow({
             {t("panels.artifacts.useAgentTitle")}
           </ContextMenuItem>
         ) : null}
-        <ContextMenuItem
-          leading={pinLeading}
-          onSelect={handleTogglePin}
-          testID={`artifact-pin-${artifactId}`}
-        >
-          {artifact.pinned ? t("panels.artifacts.unpin") : t("panels.artifacts.pin")}
-        </ContextMenuItem>
+        {archived ? null : (
+          <ContextMenuItem
+            leading={pinLeading}
+            onSelect={handleTogglePin}
+            testID={`artifact-pin-${artifactId}`}
+          >
+            {artifact.pinned ? t("panels.artifacts.unpin") : t("panels.artifacts.pin")}
+          </ContextMenuItem>
+        )}
+        {archiveSupported ? (
+          <ContextMenuItem
+            leading={archiveLeading}
+            onSelect={handleToggleArchive}
+            testID={`artifact-archive-${artifactId}`}
+          >
+            {archived ? t("panels.artifacts.unarchive") : t("panels.artifacts.archive")}
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuItem
           destructive
           leading={deleteLeading}
@@ -219,6 +263,8 @@ function ArtifactSearchResults({
   onRename,
   onResetTitle,
   onTogglePin,
+  archiveSupported,
+  onToggleArchive,
   onDelete,
 }: {
   artifacts: ArtifactRecordPayload[];
@@ -234,6 +280,8 @@ function ArtifactSearchResults({
   onRename: (artifact: ArtifactRecordPayload) => void;
   onResetTitle: (artifact: ArtifactRecordPayload) => void;
   onTogglePin: (artifact: ArtifactRecordPayload) => void;
+  archiveSupported: boolean;
+  onToggleArchive: (artifact: ArtifactRecordPayload) => void;
   onDelete: (artifact: ArtifactRecordPayload) => void;
 }) {
   const { t } = useTranslation();
@@ -282,6 +330,8 @@ function ArtifactSearchResults({
             onRename={onRename}
             onResetTitle={onResetTitle}
             onTogglePin={onTogglePin}
+            archiveSupported={archiveSupported}
+            onToggleArchive={onToggleArchive}
             onDelete={onDelete}
           />
         ))}
@@ -306,11 +356,30 @@ export function ArtifactsPane({
   const { t } = useTranslation();
   const toast = useToast();
   const projectId = useWorkspaceProjectId(serverId, workspaceId ?? null);
-  const { artifacts, isLoading, error, supported, renameSupported, remove, setPinned, rename } =
-    useProjectArtifacts(serverId, projectId);
+  const {
+    artifacts,
+    isLoading,
+    error,
+    supported,
+    renameSupported,
+    archiveSupported,
+    remove,
+    setPinned,
+    setArchived,
+    rename,
+  } = useProjectArtifacts(serverId, projectId);
   const [searchQuery, setSearchQuery] = useState("");
+  const [archiveScope, setArchiveScope] = useState<ArchiveScope>("active");
   const [renamingArtifact, setRenamingArtifact] = useState<ArtifactRecordPayload | null>(null);
-  const search = useArtifactSearch(serverId, projectId, artifacts, searchQuery);
+  const visibleArtifacts = useMemo(
+    () => filterByArchiveScope(artifacts, archiveScope),
+    [artifacts, archiveScope],
+  );
+  const archiveScopeControl = useMemo(
+    () => (archiveSupported ? { value: archiveScope, onValueChange: setArchiveScope } : undefined),
+    [archiveSupported, archiveScope],
+  );
+  const search = useArtifactSearch(serverId, projectId, visibleArtifacts, searchQuery);
   const searchLabel = search.contentSearchSupported
     ? t("panels.artifacts.searchTitlesAndText")
     : t("panels.artifacts.searchTitles");
@@ -342,6 +411,14 @@ export function ArtifactsPane({
       })();
     },
     [setPinned, t, toast],
+  );
+  const onToggleArchive = useCallback(
+    (artifact: ArtifactRecordPayload) => {
+      setArchived(artifact.artifactId, artifact.archived !== true).catch(() => {
+        toast.error(t("panels.artifacts.archiveFailed"));
+      });
+    },
+    [setArchived, t, toast],
   );
   const onDelete = useCallback(
     (artifact: ArtifactRecordPayload) => {
@@ -399,23 +476,33 @@ export function ArtifactsPane({
         testID="artifacts-search"
         label={searchLabel}
         onChangeText={setSearchQuery}
+        archiveScope={archiveScopeControl}
       />
-      <ArtifactSearchResults
-        artifacts={search.matchingArtifacts}
-        snippetsById={search.snippetsById}
-        pending={search.pending}
-        failed={search.failed}
-        contentSearchSupported={search.contentSearchSupported}
-        hasQuery={search.hasQuery}
-        onRetry={search.retry}
-        onOpen={onOpenArtifact}
-        onOpenLink={onOpenLink}
-        renameSupported={renameSupported}
-        onRename={onRename}
-        onResetTitle={onResetTitle}
-        onTogglePin={onTogglePin}
-        onDelete={onDelete}
-      />
+      {visibleArtifacts.length === 0 ? (
+        <View style={styles.centerState} testID="artifacts-no-active">
+          <Text style={styles.emptyTitle}>{t("panels.artifacts.noActiveTitle")}</Text>
+          <Text style={styles.emptyBody}>{t("panels.artifacts.noActiveDescription")}</Text>
+        </View>
+      ) : (
+        <ArtifactSearchResults
+          artifacts={search.matchingArtifacts}
+          snippetsById={search.snippetsById}
+          pending={search.pending}
+          failed={search.failed}
+          contentSearchSupported={search.contentSearchSupported}
+          hasQuery={search.hasQuery}
+          onRetry={search.retry}
+          onOpen={onOpenArtifact}
+          onOpenLink={onOpenLink}
+          renameSupported={renameSupported}
+          onRename={onRename}
+          onResetTitle={onResetTitle}
+          onTogglePin={onTogglePin}
+          archiveSupported={archiveSupported}
+          onToggleArchive={onToggleArchive}
+          onDelete={onDelete}
+        />
+      )}
       {renamingArtifact ? (
         <ArtifactRenameEditor
           key={renamingArtifact.artifactId}
@@ -454,6 +541,9 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
+  },
+  rowTitleArchived: {
+    color: theme.colors.mutedForeground,
   },
   rowMeta: {
     color: theme.colors.mutedForeground,

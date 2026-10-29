@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  NoteArchiveSetRequestSchema,
+  NoteArchiveSetResponseSchema,
   NoteChangedMessageSchema,
   NoteDeleteRequestSchema,
   NoteDeleteResponseSchema,
@@ -285,5 +287,40 @@ describe("note messages", () => {
     for (const message of [pinResponse, searchResponse]) {
       expect(WSOutboundMessageSchema.safeParse({ type: "session", message }).success).toBe(true);
     }
+  });
+
+  test("round-trips archive, registers it in the unions, and gates it on noteArchive", () => {
+    const request = {
+      type: "note.archive.set.request" as const,
+      noteId: RECORD.noteId,
+      projectId: RECORD.projectId,
+      archived: true,
+      requestId: "r",
+    };
+    expect(NoteArchiveSetRequestSchema.parse(request)).toEqual(request);
+    expect(SessionInboundMessageSchema.safeParse(request).success).toBe(true);
+
+    const response = {
+      type: "note.archive.set.response" as const,
+      payload: { note: { ...RECORD, archived: true }, success: true, error: null, requestId: "r" },
+    };
+    expect(NoteArchiveSetResponseSchema.parse(response)).toEqual(response);
+    expect(WSOutboundMessageSchema.safeParse({ type: "session", message: response }).success).toBe(
+      true,
+    );
+    // A record from a daemon before archiving parses as active.
+    expect(
+      NoteArchiveSetResponseSchema.parse({
+        ...response,
+        payload: { ...response.payload, note: RECORD },
+      }).payload.note?.archived,
+    ).toBeUndefined();
+    expect(
+      ServerInfoStatusPayloadSchema.parse({
+        status: "server_info",
+        serverId: "server-1",
+        features: { noteArchive: true },
+      }).features?.noteArchive,
+    ).toBe(true);
   });
 });

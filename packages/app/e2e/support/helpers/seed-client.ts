@@ -53,13 +53,25 @@ export interface SeedDaemonClient {
     assigned: boolean;
   }): Promise<unknown>;
   listProjects(): Promise<{ projects: SeedProjectDescriptor[] }>;
-  listArtifacts(
-    projectId: string,
-  ): Promise<Array<{ artifactId: string; title: string; customTitle?: string; pinned: boolean }>>;
+  listArtifacts(projectId: string): Promise<
+    Array<{
+      artifactId: string;
+      title: string;
+      customTitle?: string;
+      pinned: boolean;
+      archived?: boolean;
+    }>
+  >;
+  publishArtifact(input: {
+    projectId: string;
+    title: string;
+    html: string | null;
+    externalUrl: string | null;
+  }): Promise<{ artifactId: string }>;
   saveNote(input: { projectId: string; body: string }): Promise<{ note: { noteId: string } }>;
   listNotes(
     projectId: string,
-  ): Promise<Array<{ noteId: string; displayTitle: string; pinned?: boolean }>>;
+  ): Promise<Array<{ noteId: string; displayTitle: string; pinned?: boolean; archived?: boolean }>>;
   createWorkspace(input: {
     source:
       | { kind: "directory"; path: string; projectId?: string }

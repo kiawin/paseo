@@ -257,6 +257,20 @@ export function useSetNotePinned() {
   );
 }
 
+/** Archives on the note's own host, then refreshes that host's list like a pin does. */
+export function useSetNoteArchived() {
+  const runtime = getHostRuntimeStore();
+  return useCallback(
+    async (note: FederatedNoteRecord, archived: boolean) => {
+      const client = runtime.getClient(note.serverId);
+      if (!client) throw new Error("Notes host is not connected.");
+      await client.setNoteArchived({ noteId: note.noteId, projectId: note.projectId, archived });
+      await runtime.getNoteMetadataOwner(note.serverId)?.replace(note.projectId);
+    },
+    [runtime],
+  );
+}
+
 export interface NoteResult {
   note: NoteRecordPayload | null;
   body: string | null;

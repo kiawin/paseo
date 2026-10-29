@@ -3283,6 +3283,8 @@ export class Session {
         return this.artifactsSession.handleDeleteRequest(msg, source);
       case "artifact.pin.set.request":
         return this.artifactsSession.handlePinSetRequest(msg, source);
+      case "artifact.archive.set.request":
+        return this.artifactsSession.handleArchiveSetRequest(msg, source);
       case "artifact.rename.request":
         return this.artifactsSession.handleRenameRequest(msg, source);
       case "artifact.publish.request":
@@ -3307,6 +3309,8 @@ export class Session {
         return this.notesSession.handleDeleteRequest(msg, source);
       case "note.pin.set.request":
         return this.notesSession.handlePinSetRequest(msg, source);
+      case "note.archive.set.request":
+        return this.notesSession.handleArchiveSetRequest(msg, source);
       case "note.search.request":
         return this.notesSession.handleSearchRequest(msg, source);
       default:

@@ -32,12 +32,19 @@ the delete when that revision is stale, returning the current revision. Saves ac
 edits so agents and people can continue writing; deletes require a current view because they are
 destructive.
 
-## Pinning
+## Pinning and archiving
 
 A pin is metadata. It changes neither the revision nor `updatedAt`, so an open editor is not told
 its copy is stale, a delete holding the revision it saw still lands, and the list's recency order
 is untouched. Pinned notes list first on each host. A save keeps the pin. Notes never evict, so
 unlike an artifact pin it protects nothing; it only orders the list. Agents pin with `pin_note`.
+
+An archive is metadata in the same way, and a save keeps it, so an agent writing to an archived
+note does not bring it back. The list hides archived notes unless you switch from Active to All.
+A note is never both pinned and archived: archiving clears the pin, and pinning an archived note
+unarchives it. The filter is the app's; `list_notes` and `search_notes` still return archived notes,
+with `archived: true`. The Active / All toggle shows when any host of the project advertises
+`noteArchive`, and the Archive action is disabled on a host that does not.
 
 ## Search
 
@@ -56,7 +63,7 @@ keep their existing parser limit.
 
 ## Platform scope
 
-Phone and tablet can list, search, pin, and read notes. They do not edit or delete them. Web and desktop provide
+Phone and tablet can list, search, pin, archive, and read notes. They do not edit or delete them. Web and desktop provide
 the editor and delete action. Native authoring remains deferred.
 
 A note switches between Preview and Source like a Markdown file. A saved note opens on Preview and a

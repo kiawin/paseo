@@ -2029,6 +2029,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.artifactStore ? { artifactRename: true } : {}),
         // COMPAT(artifactPublish): added in v0.11.x, remove after 2028-04-17.
         ...(this.artifactStore ? { artifactPublish: true } : {}),
+        // COMPAT(artifactArchive): added in v0.14.x, remove after 2028-10-29.
+        ...(this.artifactStore ? { artifactArchive: true } : {}),
         // COMPAT(notes): added in v0.9.0; remove the feature gate after the supported daemon floor
         // includes Notes.
         ...(this.noteStore ? { notes: true } : {}),
@@ -2036,6 +2038,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.noteStore ? { notePin: true } : {}),
         // COMPAT(noteSearch): added in v0.11.x, remove after 2028-04-18.
         ...(this.noteStore ? { noteSearch: true } : {}),
+        // COMPAT(noteArchive): added in v0.14.x, remove after 2028-10-29.
+        ...(this.noteStore ? { noteArchive: true } : {}),
         // COMPAT(prAutoFix): added in v0.12.x, remove gate after 2028-10-17.
         ...(this.prWatchService ? { prAutoFix: true } : {}),
         // COMPAT(prAutoReviewOwn): added in v0.12.x, remove gate after 2028-10-18.

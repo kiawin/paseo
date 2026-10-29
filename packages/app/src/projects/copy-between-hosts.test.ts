@@ -46,6 +46,7 @@ function makeHost(input: {
   const published: PublishArtifactInput[] = [];
   const saved: Array<{ projectId: string; body: string }> = [];
   const pins: Array<{ noteId: string; projectId: string; pinned: boolean }> = [];
+  const archives: Array<{ noteId: string; projectId: string; archived: boolean }> = [];
   const client = {
     listArtifacts: async () => input.artifacts ?? [],
     downloadArtifact: async ({
@@ -77,11 +78,59 @@ function makeHost(input: {
       pins.push(pin);
       return { ...note(pin.noteId, "x"), pinned: pin.pinned };
     },
+    setNoteArchived: async (archive: { noteId: string; projectId: string; archived: boolean }) => {
+      archives.push(archive);
+      return { ...note(archive.noteId, "x"), archived: archive.archived };
+    },
   };
-  return { client, published, saved, pins };
+  return { client, published, saved, pins, archives };
 }
 
 describe("copyProjectBetweenHosts", () => {
+  test("carries the archive on artifacts and notes, and repairs it on notes already there", async () => {
+    const source = makeHost({
+      artifacts: [artifact({ artifactId: "art_old", title: "Old", archived: true })],
+      html: { art_old: "<p>old</p>" },
+      notes: [
+        { ...note("n_new", "1".repeat(64)), archived: true },
+        { ...note("n_dup", "2".repeat(64)), archived: true },
+      ],
+    });
+    const target = makeHost({ notes: [note("n_there", "2".repeat(64))] });
+
+    const result = await copyProjectBetweenHosts({
+      source: { client: source.client, projectId: "prj_old" },
+      target: { client: target.client, projectId: "prj_new" },
+      includeNotes: true,
+      pinNotes: true,
+      archiveNotes: true,
+    });
+
+    expect(result).toEqual({ artifactsCopied: 1, notesCopied: 1, skipped: 1, failures: [] });
+    expect(target.published[0]).toMatchObject({ title: "Old", archived: true });
+    expect(target.archives).toEqual([
+      { noteId: "saved_1", projectId: "prj_new", archived: true },
+      { noteId: "n_there", projectId: "prj_new", archived: true },
+    ]);
+    expect(target.pins).toEqual([]);
+  });
+
+  test("leaves note archives behind on a target that predates them", async () => {
+    const source = makeHost({ notes: [{ ...note("n1", "1".repeat(64)), archived: true }] });
+    const target = makeHost({});
+
+    await copyProjectBetweenHosts({
+      source: { client: source.client, projectId: "prj_old" },
+      target: { client: target.client, projectId: "prj_new" },
+      includeNotes: true,
+      pinNotes: true,
+      archiveNotes: false,
+    });
+
+    expect(target.saved).toHaveLength(1);
+    expect(target.archives).toEqual([]);
+  });
+
   test("copies documents, links, pins and notes into the target's own project", async () => {
     const source = makeHost({
       artifacts: [
@@ -113,6 +162,7 @@ describe("copyProjectBetweenHosts", () => {
       target: { client: target.client, projectId: "prj_new" },
       includeNotes: true,
       pinNotes: true,
+      archiveNotes: true,
     });
 
     expect(result).toEqual({ artifactsCopied: 2, notesCopied: 1, skipped: 0, failures: [] });
@@ -158,6 +208,7 @@ describe("copyProjectBetweenHosts", () => {
       target: { client: target.client, projectId: "prj_new" },
       includeNotes: true,
       pinNotes: true,
+      archiveNotes: true,
     });
 
     expect(result).toEqual({
@@ -181,6 +232,7 @@ describe("copyProjectBetweenHosts", () => {
       target: { client: target.client, projectId: "prj_new" },
       includeNotes: false,
       pinNotes: true,
+      archiveNotes: true,
     });
 
     expect(result).toEqual({ artifactsCopied: 0, notesCopied: 0, skipped: 0, failures: [] });
@@ -203,6 +255,7 @@ describe("copyProjectBetweenHosts", () => {
       target: { client: target.client, projectId: "prj_new" },
       includeNotes: true,
       pinNotes: true,
+      archiveNotes: true,
     });
 
     expect(result).toEqual({ artifactsCopied: 0, notesCopied: 2, skipped: 1, failures: [] });
@@ -223,6 +276,7 @@ describe("copyProjectBetweenHosts", () => {
       target: { client: oldTarget.client, projectId: "prj_new" },
       includeNotes: true,
       pinNotes: false,
+      archiveNotes: true,
     });
     expect(unpinned).toMatchObject({ notesCopied: 1, failures: [] });
     expect(oldTarget.pins).toEqual([]);
@@ -233,6 +287,7 @@ describe("copyProjectBetweenHosts", () => {
       target: { client: failingTarget.client, projectId: "prj_new" },
       includeNotes: true,
       pinNotes: true,
+      archiveNotes: true,
     });
     // The body landed, so it counts as copied; the pin is reported and a re-run applies it.
     expect(failed).toEqual({

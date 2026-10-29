@@ -27,6 +27,8 @@ export const PersistedNoteRecordSchema = z.object({
   revision: z.number().int().positive(),
   // Absent on records written before pinning existed.
   pinned: z.boolean().optional(),
+  // Absent on records written before archiving existed. Never set together with `pinned`.
+  archived: z.boolean().optional(),
 });
 
 export type PersistedNoteRecord = z.infer<typeof PersistedNoteRecordSchema>;
@@ -234,6 +236,7 @@ function createNoteRecord({
     updatedAt: now,
     revision: (existing?.revision ?? 0) + 1,
     ...(existing?.pinned ? { pinned: true } : {}),
+    ...(existing?.archived ? { archived: true } : {}),
   });
 }
 
@@ -382,10 +385,28 @@ export class NoteStore extends FileBackedRegistry<PersistedNoteRecord> {
    * its copy is stale and a delete holding the current revision still lands.
    */
   async setPinned(noteId: string, pinned: boolean): Promise<PersistedNoteRecord> {
-    const record = await this.update(noteId, (next) => {
-      const { pinned: _previous, ...rest } = next;
-      return pinned ? { ...rest, pinned: true } : rest;
+    // Pinning an archived note brings it back: a pinned note is one the person wants in view.
+    return this.updateLabels(noteId, (next) => {
+      const { pinned: _previous, archived, ...rest } = next;
+      if (pinned) return { ...rest, pinned: true };
+      return archived ? { ...rest, archived } : rest;
     });
+  }
+
+  /** Metadata like a pin. Archiving clears the pin; a later save keeps the note archived. */
+  async setArchived(noteId: string, archived: boolean): Promise<PersistedNoteRecord> {
+    return this.updateLabels(noteId, (next) => {
+      const { pinned: _pinned, archived: _previous, ...rest } = next;
+      if (archived) return { ...rest, archived: true };
+      return next.pinned ? { ...rest, pinned: true } : rest;
+    });
+  }
+
+  private async updateLabels(
+    noteId: string,
+    apply: (record: PersistedNoteRecord) => PersistedNoteRecord,
+  ): Promise<PersistedNoteRecord> {
+    const record = await this.update(noteId, apply);
     if (!record) throw new NoteError("note_not_found", `No note ${noteId}`);
     this.notifyChanged({
       projectId: record.projectId,

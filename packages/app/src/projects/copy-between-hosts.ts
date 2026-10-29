@@ -1,4 +1,4 @@
-import type { ArtifactRecordPayload } from "@getpaseo/protocol/messages";
+import type { ArtifactRecordPayload, NoteRecordPayload } from "@getpaseo/protocol/messages";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 
 import { downloadArtifactHtml } from "@/artifacts/store";
@@ -9,7 +9,12 @@ type SourceClient = Pick<
 >;
 type TargetClient = Pick<
   DaemonClient,
-  "listArtifacts" | "publishArtifact" | "listNotes" | "saveNote" | "setNotePinned"
+  | "listArtifacts"
+  | "publishArtifact"
+  | "listNotes"
+  | "saveNote"
+  | "setNotePinned"
+  | "setNoteArchived"
 >;
 
 /** One project placement: `projectId` is host-local, so each side carries its own. */
@@ -38,6 +43,18 @@ function artifactIdentity(artifact: ArtifactRecordPayload): string | null {
   return null;
 }
 
+type NoteLabel = "pinned" | "archived";
+
+/** The label a copied note should carry on the target. A note is never both pinned and archived. */
+function noteLabel(
+  note: NoteRecordPayload,
+  target: { pinNotes: boolean; archiveNotes: boolean },
+): NoteLabel | null {
+  if (target.pinNotes && note.pinned === true) return "pinned";
+  if (target.archiveNotes && note.archived === true) return "archived";
+  return null;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -55,8 +72,10 @@ export async function copyProjectBetweenHosts(input: {
   includeNotes: boolean;
   /** False when the target daemon predates note pins; pins are then left behind. */
   pinNotes: boolean;
+  /** False when the target daemon predates note archiving; archived notes then land active. */
+  archiveNotes: boolean;
 }): Promise<CopyBetweenHostsResult> {
-  const { source, target, includeNotes, pinNotes } = input;
+  const { source, target, includeNotes, pinNotes, archiveNotes } = input;
   const result: CopyBetweenHostsResult = {
     artifactsCopied: 0,
     notesCopied: 0,
@@ -92,6 +111,7 @@ export async function copyProjectBetweenHosts(input: {
         html,
         externalUrl: artifact.externalUrl,
         pinned: artifact.pinned,
+        ...(artifact.archived ? { archived: true } : {}),
       });
       present.add(identity);
       result.artifactsCopied += 1;
@@ -104,24 +124,33 @@ export async function copyProjectBetweenHosts(input: {
     }
   }
 
-  // `note.save` carries only the body, so a pin is applied after the copy lands. A note the
-  // target already holds still gets its pin, which is how a second run repairs a pin a first run
-  // could not apply.
-  const pinOnTarget = async (noteId: string, title: string) => {
+  // `note.save` carries only the body, so a pin or archive is applied after the copy lands. A
+  // note the target already holds still gets its label, which is how a second run repairs one a
+  // first run could not apply.
+  const labelOnTarget = async (noteId: string, title: string, label: NoteLabel) => {
     try {
-      await target.client.setNotePinned({ noteId, projectId: target.projectId, pinned: true });
+      if (label === "pinned") {
+        await target.client.setNotePinned({ noteId, projectId: target.projectId, pinned: true });
+      } else {
+        await target.client.setNoteArchived({
+          noteId,
+          projectId: target.projectId,
+          archived: true,
+        });
+      }
     } catch (error) {
       result.failures.push({ kind: "note", title, error: errorMessage(error) });
     }
   };
   const presentNotes = new Map(targetNotes.map((note) => [note.contentSha256, note] as const));
   for (const note of sourceNotes) {
-    const wantsPin = pinNotes && note.pinned === true;
+    const label = noteLabel(note, { pinNotes, archiveNotes });
     const onTarget = presentNotes.get(note.contentSha256);
     if (onTarget) {
       result.skipped += 1;
-      if (wantsPin && onTarget.pinned !== true)
-        await pinOnTarget(onTarget.noteId, note.displayTitle);
+      if (label && onTarget[label] !== true) {
+        await labelOnTarget(onTarget.noteId, note.displayTitle, label);
+      }
       continue;
     }
     let savedNoteId: string;
@@ -137,8 +166,13 @@ export async function copyProjectBetweenHosts(input: {
       continue;
     }
     result.notesCopied += 1;
-    presentNotes.set(note.contentSha256, { ...note, noteId: savedNoteId, pinned: wantsPin });
-    if (wantsPin) await pinOnTarget(savedNoteId, note.displayTitle);
+    presentNotes.set(note.contentSha256, {
+      ...note,
+      noteId: savedNoteId,
+      pinned: label === "pinned",
+      archived: label === "archived",
+    });
+    if (label) await labelOnTarget(savedNoteId, note.displayTitle, label);
   }
 
   return result;

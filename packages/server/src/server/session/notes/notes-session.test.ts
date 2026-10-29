@@ -231,6 +231,46 @@ describe("pin and search", () => {
     expect(await store.get(saved.record.noteId)).not.toHaveProperty("pinned");
   });
 
+  test("archives a note in its own project and refuses one through another project", async () => {
+    const saved = await store.save({ projectId: "prj_notes", body: "# One" });
+    const { session, emitted } = makeSession();
+
+    await session.handleArchiveSetRequest(
+      {
+        type: "note.archive.set.request",
+        noteId: saved.record.noteId,
+        projectId: "prj_other",
+        archived: true,
+        requestId: "archive-1",
+      },
+      {},
+    );
+    await session.handleArchiveSetRequest(
+      {
+        type: "note.archive.set.request",
+        noteId: saved.record.noteId,
+        projectId: "prj_notes",
+        archived: true,
+        requestId: "archive-2",
+      },
+      {},
+    );
+
+    expect(emitted[0]?.message).toMatchObject({
+      type: "note.archive.set.response",
+      payload: { note: null, success: false, requestId: "archive-1" },
+    });
+    expect(emitted[1]?.message).toEqual({
+      type: "note.archive.set.response",
+      payload: {
+        note: expect.objectContaining({ noteId: saved.record.noteId, archived: true }),
+        success: true,
+        error: null,
+        requestId: "archive-2",
+      },
+    });
+  });
+
   test("searches the project's notes", async () => {
     const saved = await store.save({
       projectId: "prj_notes",

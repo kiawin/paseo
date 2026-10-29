@@ -6,6 +6,7 @@ import type {
   NoteDeleteRequest,
   NoteListRequest,
   NotePinSetRequest,
+  NoteArchiveSetRequest,
   NoteReadRequest,
   NoteRecordPayload,
   NoteSaveRequest,
@@ -35,6 +36,7 @@ export function toNoteRecordPayload(record: PersistedNoteRecord): NoteRecordPayl
     updatedAt: record.updatedAt,
     revision: record.revision,
     ...(record.pinned ? { pinned: true } : {}),
+    ...(record.archived ? { archived: true } : {}),
   };
 }
 
@@ -145,6 +147,33 @@ export class NotesSession {
       this.host.emit(
         {
           type: "note.pin.set.response",
+          payload: { note: null, success: false, error: getErrorMessage(error), requestId },
+        },
+        source,
+      );
+    }
+  }
+
+  async handleArchiveSetRequest(request: NoteArchiveSetRequest, source?: object): Promise<void> {
+    const { noteId, projectId, archived, requestId } = request;
+    try {
+      const store = this.requireStore();
+      const existing = await store.get(noteId);
+      if (!existing || (projectId !== undefined && existing.projectId !== projectId)) {
+        throw new NoteError("note_not_found", `No note ${noteId}`);
+      }
+      const record = await store.setArchived(noteId, archived);
+      this.host.emit(
+        {
+          type: "note.archive.set.response",
+          payload: { note: toNoteRecordPayload(record), success: true, error: null, requestId },
+        },
+        source,
+      );
+    } catch (error) {
+      this.host.emit(
+        {
+          type: "note.archive.set.response",
           payload: { note: null, success: false, error: getErrorMessage(error), requestId },
         },
         source,

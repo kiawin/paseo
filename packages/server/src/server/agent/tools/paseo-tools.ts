@@ -3116,7 +3116,7 @@ function createToolCatalog(
     {
       title: "Pin note",
       description:
-        "Pin a note in the caller agent's project so it lists first, or unpin it. Pinning does not change the note's revision or updated time.",
+        "Pin a note in the caller agent's project so it lists first, or unpin it. Pinning does not change the note's revision or updated time. Pinning an archived note unarchives it.",
       inputSchema: {
         noteId: z.string(),
         pinned: z.boolean().optional().default(true),

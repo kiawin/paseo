@@ -63,6 +63,7 @@ function metadataOnly(note: NoteRecordPayload): NoteRecordPayload {
     updatedAt: note.updatedAt,
     revision: note.revision,
     ...(note.pinned ? { pinned: true } : {}),
+    ...(note.archived ? { archived: true } : {}),
   };
 }
 

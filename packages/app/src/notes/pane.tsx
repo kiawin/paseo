@@ -1,10 +1,15 @@
 import { Fragment, useCallback, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { Pin, PinOff } from "lucide-react-native";
+import { Archive, ArchiveRestore, Pin, PinOff } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 
-import { useNoteSearch, useProjectNotes, useSetNotePinned } from "@/notes/hooks";
+import {
+  useNoteSearch,
+  useProjectNotes,
+  useSetNoteArchived,
+  useSetNotePinned,
+} from "@/notes/hooks";
 import {
   groupFederatedNotesByHost,
   noteTargetForRow,
@@ -21,7 +26,12 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { PanelSearchFailure, PanelSearchField } from "@/components/panel-search";
+import {
+  filterByArchiveScope,
+  PanelSearchFailure,
+  PanelSearchField,
+  type ArchiveScope,
+} from "@/components/panel-search";
 import { useToast } from "@/contexts/toast-context";
 import { isWeb } from "@/constants/platform";
 import { useHostFeatureMap } from "@/runtime/host-features";
@@ -29,27 +39,44 @@ import { formatTimeAgo } from "@/utils/time";
 
 const ThemedPin = withUnistyles(Pin, (theme) => ({ color: theme.colors.mutedForeground }));
 const ThemedPinOff = withUnistyles(PinOff, (theme) => ({ color: theme.colors.mutedForeground }));
+const ThemedArchive = withUnistyles(Archive, (theme) => ({ color: theme.colors.mutedForeground }));
+const ThemedArchiveRestore = withUnistyles(ArchiveRestore, (theme) => ({
+  color: theme.colors.mutedForeground,
+}));
 
 function NoteRow({
   note,
   snippet,
   pinSupported,
+  archiveSupported,
   onOpen,
   onTogglePin,
+  onToggleArchive,
 }: {
   note: FederatedNoteRecord;
   snippet: string | null;
   pinSupported: boolean;
+  archiveSupported: boolean;
   onOpen: (target: NoteTarget) => void;
   onTogglePin: (note: FederatedNoteRecord) => void;
+  onToggleArchive: (note: FederatedNoteRecord) => void;
 }) {
   const { t } = useTranslation();
   const pinned = note.pinned === true;
+  const archived = note.archived === true;
+  let stateLabel: string | null = null;
+  if (pinned) stateLabel = t("panels.notes.pinned");
+  else if (archived) stateLabel = t("panels.notes.archived");
   const handleOpen = useCallback(() => onOpen(noteTargetForRow(note)), [note, onOpen]);
   const handleTogglePin = useCallback(() => onTogglePin(note), [note, onTogglePin]);
+  const handleToggleArchive = useCallback(() => onToggleArchive(note), [note, onToggleArchive]);
   const pinLeading = useMemo(
     () => (pinned ? <ThemedPinOff size={16} /> : <ThemedPin size={16} />),
     [pinned],
+  );
+  const archiveLeading = useMemo(
+    () => (archived ? <ThemedArchiveRestore size={16} /> : <ThemedArchive size={16} />),
+    [archived],
   );
   return (
     <ContextMenu>
@@ -58,15 +85,14 @@ function NoteRow({
         onPress={handleOpen}
         testID={`note-row-${note.noteId}`}
         accessibilityRole="button"
-        accessibilityLabel={
-          pinned ? `${note.displayTitle}, ${t("panels.notes.pinned")}` : note.displayTitle
-        }
+        accessibilityLabel={stateLabel ? `${note.displayTitle}, ${stateLabel}` : note.displayTitle}
       >
         <View style={styles.rowHeader}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
+          <Text style={[styles.rowTitle, archived && styles.rowTitleArchived]} numberOfLines={1}>
             {note.displayTitle}
           </Text>
           {pinned ? <ThemedPin size={12} /> : null}
+          {archived ? <ThemedArchive size={12} /> : null}
         </View>
         <Text style={styles.rowMeta} numberOfLines={1}>
           {t("panels.notes.hostTag", { host: note.serverName })} ·{" "}
@@ -81,16 +107,31 @@ function NoteRow({
         ) : null}
       </ContextMenuTrigger>
       <ContextMenuContent width={200} testID={`note-menu-${note.noteId}`}>
+        {archived ? null : (
+          <ContextMenuItem
+            leading={pinLeading}
+            onSelect={handleTogglePin}
+            disabled={!pinSupported}
+            description={
+              pinSupported ? undefined : t("panels.notes.pinUnsupported", { host: note.serverName })
+            }
+            testID={`note-pin-${note.noteId}`}
+          >
+            {pinned ? t("panels.notes.unpin") : t("panels.notes.pin")}
+          </ContextMenuItem>
+        )}
         <ContextMenuItem
-          leading={pinLeading}
-          onSelect={handleTogglePin}
-          disabled={!pinSupported}
+          leading={archiveLeading}
+          onSelect={handleToggleArchive}
+          disabled={!archiveSupported}
           description={
-            pinSupported ? undefined : t("panels.notes.pinUnsupported", { host: note.serverName })
+            archiveSupported
+              ? undefined
+              : t("panels.notes.archiveUnsupported", { host: note.serverName })
           }
-          testID={`note-pin-${note.noteId}`}
+          testID={`note-archive-${note.noteId}`}
         >
-          {pinned ? t("panels.notes.unpin") : t("panels.notes.pin")}
+          {archived ? t("panels.notes.unarchive") : t("panels.notes.archive")}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -154,6 +195,71 @@ function CreateNoteButton({ label, onCreateNote }: { label: string; onCreateNote
   );
 }
 
+function NoteResults({
+  hasVisibleNotes,
+  search,
+  pinSupportedByServerId,
+  archiveSupportedByServerId,
+  onOpenNote,
+  onTogglePin,
+  onToggleArchive,
+}: {
+  hasVisibleNotes: boolean;
+  search: ReturnType<typeof useNoteSearch>;
+  pinSupportedByServerId: ReadonlyMap<string, boolean>;
+  archiveSupportedByServerId: ReadonlyMap<string, boolean>;
+  onOpenNote: (target: NoteTarget) => void;
+  onTogglePin: (note: FederatedNoteRecord) => void;
+  onToggleArchive: (note: FederatedNoteRecord) => void;
+}) {
+  const { t } = useTranslation();
+  if (!hasVisibleNotes) {
+    return (
+      <StateView
+        testID="notes-no-active"
+        title={t("panels.notes.noActiveTitle")}
+        body={t("panels.notes.noActiveDescription")}
+      />
+    );
+  }
+  if (search.matchingNotes.length === 0) {
+    return (
+      <StateView
+        testID="notes-no-results"
+        title={t("common.empty.noResults")}
+        body={
+          search.hasQuery && !search.textSearchEverywhere
+            ? t("panels.notes.updateForTextSearch")
+            : undefined
+        }
+      />
+    );
+  }
+  return (
+    <ScrollView style={styles.list} testID="notes-list" keyboardShouldPersistTaps="handled">
+      {groupFederatedNotesByHost(search.matchingNotes).map((group) => (
+        <Fragment key={group.serverId}>
+          <Text style={styles.hostHeading} testID={`notes-host-${group.serverId}`}>
+            {t("panels.notes.hostHeading", { host: group.serverName })}
+          </Text>
+          {group.notes.map((note) => (
+            <NoteRow
+              key={noteRowKey(note)}
+              note={note}
+              snippet={search.snippets.get(noteRowKey(note)) ?? null}
+              pinSupported={pinSupportedByServerId.get(note.serverId) === true}
+              archiveSupported={archiveSupportedByServerId.get(note.serverId) === true}
+              onOpen={onOpenNote}
+              onTogglePin={onTogglePin}
+              onToggleArchive={onToggleArchive}
+            />
+          ))}
+        </Fragment>
+      ))}
+    </ScrollView>
+  );
+}
+
 export function NotesPane({
   serverId,
   workspaceId,
@@ -170,9 +276,32 @@ export function NotesPane({
   const { hosts, notes, hostErrors, supported, connectionStatus, isLoading, error, refetch } =
     useProjectNotes(serverId, workspaceId);
   const [searchQuery, setSearchQuery] = useState("");
-  const search = useNoteSearch(hosts, notes, searchQuery);
+  const [archiveScope, setArchiveScope] = useState<ArchiveScope>("active");
+  const visibleNotes = useMemo(
+    () => filterByArchiveScope(notes, archiveScope),
+    [notes, archiveScope],
+  );
+  const search = useNoteSearch(hosts, visibleNotes, searchQuery);
   const serverIds = useMemo(() => hosts.map((host) => host.serverId), [hosts]);
   const pinSupportedByServerId = useHostFeatureMap(serverIds, "notePin");
+  const archiveSupportedByServerId = useHostFeatureMap(serverIds, "noteArchive");
+  const anyHostArchives = useMemo(
+    () => [...archiveSupportedByServerId.values()].some(Boolean),
+    [archiveSupportedByServerId],
+  );
+  const archiveScopeControl = useMemo(
+    () => (anyHostArchives ? { value: archiveScope, onValueChange: setArchiveScope } : undefined),
+    [anyHostArchives, archiveScope],
+  );
+  const setArchived = useSetNoteArchived();
+  const onToggleArchive = useCallback(
+    (note: FederatedNoteRecord) => {
+      setArchived(note, note.archived !== true).catch(() => {
+        toast.error(t("panels.notes.archiveFailed"));
+      });
+    },
+    [setArchived, t, toast],
+  );
   const setPinned = useSetNotePinned();
   const onTogglePin = useCallback(
     (note: FederatedNoteRecord) => {
@@ -232,7 +361,12 @@ export function NotesPane({
       <View style={styles.toolbar}>
         <CreateNoteButton label={t("panels.notes.newNote")} onCreateNote={onCreateNote} />
       </View>
-      <PanelSearchField testID="notes-search" label={searchLabel} onChangeText={setSearchQuery} />
+      <PanelSearchField
+        testID="notes-search"
+        label={searchLabel}
+        onChangeText={setSearchQuery}
+        archiveScope={archiveScopeControl}
+      />
       {search.pending ? (
         <Text style={styles.searchStatus} testID="notes-search-status">
           {t("panels.notes.searchingText")}
@@ -245,37 +379,15 @@ export function NotesPane({
           onRetry={search.retry}
         />
       ) : null}
-      {search.matchingNotes.length === 0 ? (
-        <StateView
-          testID="notes-no-results"
-          title={t("common.empty.noResults")}
-          body={
-            search.hasQuery && !search.textSearchEverywhere
-              ? t("panels.notes.updateForTextSearch")
-              : undefined
-          }
-        />
-      ) : (
-        <ScrollView style={styles.list} testID="notes-list" keyboardShouldPersistTaps="handled">
-          {groupFederatedNotesByHost(search.matchingNotes).map((group) => (
-            <Fragment key={group.serverId}>
-              <Text style={styles.hostHeading} testID={`notes-host-${group.serverId}`}>
-                {t("panels.notes.hostHeading", { host: group.serverName })}
-              </Text>
-              {group.notes.map((note) => (
-                <NoteRow
-                  key={noteRowKey(note)}
-                  note={note}
-                  snippet={search.snippets.get(noteRowKey(note)) ?? null}
-                  pinSupported={pinSupportedByServerId.get(note.serverId) === true}
-                  onOpen={onOpenNote}
-                  onTogglePin={onTogglePin}
-                />
-              ))}
-            </Fragment>
-          ))}
-        </ScrollView>
-      )}
+      <NoteResults
+        hasVisibleNotes={visibleNotes.length > 0}
+        search={search}
+        pinSupportedByServerId={pinSupportedByServerId}
+        archiveSupportedByServerId={archiveSupportedByServerId}
+        onOpenNote={onOpenNote}
+        onTogglePin={onTogglePin}
+        onToggleArchive={onToggleArchive}
+      />
     </View>
   );
 }
@@ -325,6 +437,9 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
+  },
+  rowTitleArchived: {
+    color: theme.colors.mutedForeground,
   },
   rowMeta: {
     color: theme.colors.mutedForeground,
