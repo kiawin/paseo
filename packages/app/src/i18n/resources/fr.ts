@@ -2750,6 +2750,15 @@ export const fr: TranslationResources = {
           label: "Afficher le bouton de fermeture",
           description: "Masquez-le pour fermer les onglets depuis le menu de l’onglet",
         },
+        explorerDisplay: {
+          label: "Onglets de l’explorateur",
+          description: "Ce qu’affichent les onglets de la barre latérale de l’explorateur",
+          options: {
+            iconAndName: "Icône et nom",
+            icon: "Icône seule",
+            name: "Nom seul",
+          },
+        },
       },
       sidebar: {
         header: {
