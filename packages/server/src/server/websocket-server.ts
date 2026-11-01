@@ -2139,6 +2139,7 @@ export class VoiceAssistantWebSocketServer {
         entityMetadata: true,
         diffSubscription: true,
         binaryChunkingV1: true,
+        agentContextUsage: true,
         agentRequestReceipts: true,
         workspaceRequestReceipts: true,
         creationLifecycle: true,
