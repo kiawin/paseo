@@ -270,6 +270,11 @@ contract, account and window identity, provider-derived period names, login fall
 read-only credential rules. Usage adapters own the interpretation of provider fields; the app
 renders their names and resolves pins without provider-specific duration guesses.
 
+The context window meter uses the provider's streamed token totals. Opening its details requests
+an on-demand category breakdown from the live Claude query. Other providers keep the total-only
+view because they do not expose an equivalent category report. The request never starts a query.
+If the report omits category kinds, the app keeps the total-only view.
+
 ### Prompt cache warmth
 
 `AgentUsage.promptCacheExpiresAtMs` is an absolute epoch stamped on the daemon clock, not a warm flag. The context-meter tooltip renders a countdown from it and never learns which provider filled it, so a provider that grows the capability lights the line up with no app change.
