@@ -2904,6 +2904,8 @@ export class Session {
     source?: object,
   ): Promise<void> | undefined {
     switch (msg.type) {
+      case "agent.context.usage.request":
+        return this.handleAgentContextUsageRequest(msg, source);
       case "fetch_agent_timeline_request":
         return this.handleFetchAgentTimelineRequest(msg, source);
       case "agent.timeline.append.request":
@@ -2959,6 +2961,26 @@ export class Session {
       default:
         return undefined;
     }
+  }
+
+  private async handleAgentContextUsageRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.context.usage.request" }>,
+    source?: object,
+  ): Promise<void> {
+    const agent = this.agentManager.getAgent(msg.agentId);
+    let usage;
+    try {
+      usage = (await agent?.session?.getContextUsage?.()) ?? undefined;
+    } catch (error) {
+      this.sessionLogger.warn({ err: error, agentId: msg.agentId }, "Failed to read context usage");
+    }
+    this.emitForSource(
+      {
+        type: "agent.context.usage.response",
+        payload: { requestId: msg.requestId, ...(usage ? { usage } : {}) },
+      },
+      source,
+    );
   }
 
   private dispatchHubExecutionMessage(msg: SessionInboundMessage): Promise<void> | undefined {

@@ -137,6 +137,9 @@ Sometimes the revealed content can't live inside the trigger — a hover card po
 
 For a card whose content the user can point at or press, use `HoverCard` (`packages/app/src/components/ui/hover-card.tsx`). It is built on `useHoverSafeZone` (`packages/app/src/hooks/use-hover-safe-zone.ts`), which computes a rectangular "bridge" across the gap between the trigger and the content, whether the card sits beside, above, or below the trigger. While the pointer is inside trigger, content, or the bridge, the card stays open. A short grace timer absorbs jitter at the edges. `Tooltip` takes no pointer events and closes as soon as the pointer leaves the trigger. If the trigger has no focusable child, give `HoverCardTrigger` `focusable` and an accessible label so keyboard users can open the same content.
 
+On native wide screens, the context window tooltip opts into interactive content for its expandable
+rows. Tapping outside it closes the modal. Web interactive content still uses `HoverCard`.
+
 Don't roll your own. The math is annoying, the edge cases (pointer leaves window, drag in progress, content unmounts) are subtle, and we already paid for the hook.
 
 ## Pre-PR checklist

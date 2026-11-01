@@ -9,7 +9,7 @@ import type {
   ToolPolicy,
 } from "@getpaseo/protocol/agent-types";
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
-import type { AgentAttachment } from "@getpaseo/protocol/messages";
+import type { AgentAttachment, AgentContextUsage } from "@getpaseo/protocol/messages";
 import type { PaseoToolCatalog } from "./tools/types.js";
 
 export type {
@@ -690,6 +690,7 @@ export interface AgentUsageSession {
 
 export interface AgentSession {
   usageSession?(): AgentUsageSession | null;
+  getContextUsage?(): Promise<AgentContextUsage | null>;
   readonly provider: AgentProvider;
   readonly id: string | null;
   readonly capabilities: AgentCapabilityFlags;
