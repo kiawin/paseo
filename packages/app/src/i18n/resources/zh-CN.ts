@@ -2207,6 +2207,12 @@ export const zhCN: TranslationResources = {
     dismiss: "关闭",
   },
   contextWindow: {
+    notInWindow: "不在窗口中",
+    skills: "技能",
+    mcpTools: "MCP 工具",
+    memoryFiles: "记忆文件",
+    agents: "智能体",
+    itemTokens: "{{tokens}} 个 token",
     noData: "暂无上下文数据",
     accessibilityNoData: "上下文窗口：暂无上下文数据",
     title: "上下文窗口",

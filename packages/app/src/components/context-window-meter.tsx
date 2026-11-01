@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
-import { Pressable, Text, View, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -181,7 +181,8 @@ export function ContextWindowMeter({
   glyphSize,
 }: ContextWindowMeterProps) {
   const { t, i18n } = useTranslation();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const detailsScrollStyle = useMemo(() => ({ maxHeight: height * 0.7 }), [height]);
   // Usage cards need a wider popover; without them it keeps the plain tooltip shape.
   const showsUsage = useHostReportsUsage(serverId);
   const popoverWidth = Math.min(USAGE_POPOVER_WIDTH, width - 24);
@@ -275,8 +276,8 @@ export function ContextWindowMeter({
     ? [styles.usagePopover, { width: popoverWidth }]
     : styles.plainPopover;
 
-  // Native wide screens have no hover, so the details open in a tooltip on press. The tooltip
-  // takes no presses, so its usage cards have no Refresh.
+  // Native wide screens open the details on press. Account cards retain their existing
+  // non-refreshable presentation there.
   if (isNative) {
     return (
       <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile>
@@ -298,16 +299,23 @@ export function ContextWindowMeter({
           maxWidth={showsUsage ? popoverWidth : undefined}
           style={popoverStyle}
           testID="context-window-meter-tooltip"
+          interactive
         >
-          <ContextWindowDetails
-            serverId={serverId}
-            agentId={agentId}
-            context={context}
-            sessionCost={formattedSessionCost}
-            showTitle
-            refreshable={false}
-          />
-          {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
+          <ScrollView style={detailsScrollStyle}>
+            <View style={styles.popoverContents}>
+              <ContextWindowDetails
+                serverId={serverId}
+                agentId={agentId}
+                context={context}
+                sessionCost={formattedSessionCost}
+                showTitle
+                refreshable={false}
+              />
+              {promptCacheLabel ? (
+                <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text>
+              ) : null}
+            </View>
+          </ScrollView>
         </TooltipContent>
       </Tooltip>
     );
@@ -334,15 +342,19 @@ export function ContextWindowMeter({
         testID="context-window-details"
         style={popoverStyle}
       >
-        <ContextWindowDetails
-          serverId={serverId}
-          agentId={agentId}
-          context={context}
-          sessionCost={formattedSessionCost}
-          showTitle
-          refreshable
-        />
-        {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
+        <ScrollView style={detailsScrollStyle}>
+          <View style={styles.popoverContents}>
+            <ContextWindowDetails
+              serverId={serverId}
+              agentId={agentId}
+              context={context}
+              sessionCost={formattedSessionCost}
+              showTitle
+              refreshable
+            />
+            {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
+          </View>
+        </ScrollView>
       </HoverCardContent>
     </HoverCard>
   );
@@ -372,6 +384,7 @@ const styles = StyleSheet.create((theme) => ({
   // Plain details use a small inset; account usage cards have their own content density.
   plainPopover: { paddingVertical: theme.spacing[1], paddingHorizontal: theme.spacing[2] },
   usagePopover: { padding: theme.spacing[3], gap: theme.spacing[3] },
+  popoverContents: { gap: theme.spacing[3] },
   skeletonLabel: {
     width: 22,
     height: theme.fontSize.base,
