@@ -455,6 +455,7 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
       return inner.openOptionsPatch;
     },
     usageSession: inner.usageSession?.bind(inner),
+    getContextUsage: inner.getContextUsage?.bind(inner),
     run: (prompt, options) => inner.run(prompt, options),
     startTurn: (prompt, options) => inner.startTurn(prompt, options),
     steerActiveTurn: inner.steerActiveTurn?.bind(inner),
