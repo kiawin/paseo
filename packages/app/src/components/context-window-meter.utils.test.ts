@@ -1,5 +1,47 @@
 import { describe, expect, it, test } from "vitest";
 import { buildPromptCacheLabel, formatContextPercentage } from "./context-window-meter.utils";
+import { buildContextWindowBreakdown } from "./context-window-breakdown.utils";
+
+describe("context window breakdown", () => {
+  it("groups categories by kind and excludes free and deferred tokens from the bar", () => {
+    const breakdown = buildContextWindowBreakdown({
+      rawMaxTokens: 100,
+      categories: [
+        { name: "Free-looking used category", tokens: 40, kind: "used" },
+        { name: "Reserve", tokens: 10, kind: "buffer" },
+        { name: "Available", tokens: 50, kind: "free" },
+        { name: "Delayed", tokens: 200, kind: "deferred" },
+      ],
+    });
+    expect(
+      breakdown?.rows.map(({ percentage, barPercentage }) => [percentage, barPercentage]),
+    ).toEqual([
+      [40, 40],
+      [10, 10],
+      [50, 0],
+    ]);
+    expect(breakdown?.deferred.map(({ name }) => name)).toEqual(["Delayed"]);
+  });
+
+  it("fits an over-limit bar without hiding the actual percentages", () => {
+    const breakdown = buildContextWindowBreakdown({
+      rawMaxTokens: 100,
+      categories: [
+        { name: "One", tokens: 100, kind: "used" },
+        { name: "Two", tokens: 50, kind: "buffer" },
+      ],
+    });
+    expect(breakdown?.rows[0]?.percentage).toBe(100);
+    expect(breakdown?.rows.reduce((sum, row) => sum + row.barPercentage, 0)).toBeCloseTo(100);
+  });
+
+  it("ignores incomplete categories and does not display an empty breakdown", () => {
+    expect(buildContextWindowBreakdown({ rawMaxTokens: 0, categories: [] })).toBeNull();
+    expect(
+      buildContextWindowBreakdown({ rawMaxTokens: 100, categories: [{ name: "Incomplete" }] }),
+    ).toBeNull();
+  });
+});
 
 describe("context window meter formatting", () => {
   it("localizes percentages without hiding context overflow", () => {
