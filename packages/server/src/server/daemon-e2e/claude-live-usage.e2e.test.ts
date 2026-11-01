@@ -7,6 +7,7 @@ import { describe, expect, test, vi } from "vitest";
 import { ClaudeAgentClient } from "../agent/providers/claude/agent.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
+import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -16,7 +17,10 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-function createControlledClaudeQueryFactory(resultGate: Promise<void>) {
+function createControlledClaudeQueryFactory(
+  resultGate: Promise<void>,
+  getContextUsage: ReturnType<typeof vi.fn>,
+) {
   return vi.fn(({ prompt }: { prompt: AsyncIterable<unknown> }) => {
     const queuedMessages: Array<Record<string, unknown>> = [];
     const waiters: Array<() => void> = [];
@@ -120,7 +124,7 @@ function createControlledClaudeQueryFactory(resultGate: Promise<void>) {
       }),
       setPermissionMode: vi.fn(async () => undefined),
       setModel: vi.fn(async () => undefined),
-      getContextUsage: vi.fn(async () => undefined),
+      getContextUsage,
       supportedModels: vi.fn(async () => []),
       supportedCommands: vi.fn(async () => []),
       rewindFiles: vi.fn(async () => ({ canRewind: true })),
@@ -136,11 +140,26 @@ describe("daemon E2E (claude live usage)", () => {
     const logger = pino({ level: "silent" });
     const cwd = mkdtempSync(path.join(tmpdir(), "paseo-claude-live-usage-"));
     const resultGate = deferred();
+    const getContextUsage = vi.fn(async () => ({
+      categories: [
+        { id: "messages", name: "Messages", tokens: 100, kind: "used" },
+        { id: "free_space", name: "Free space", tokens: 100, kind: "free" },
+        { id: "mcp_tools_deferred", name: "Deferred", tokens: 50, kind: "deferred" },
+      ],
+      totalTokens: 100,
+      rawMaxTokens: 200,
+      percentage: 50,
+      mcpTools: [{ name: "mcp__test__tool", serverName: "test", tokens: 50, isLoaded: false }],
+      memoryFiles: [],
+      agents: [],
+      skills: { skillFrontmatter: [{ name: "review", source: "projectSettings", tokens: 4 }] },
+    }));
     const daemon = await createTestPaseoDaemon({
       agentClients: {
+        ...createTestAgentClients(),
         claude: new ClaudeAgentClient({
           logger,
-          queryFactory: createControlledClaudeQueryFactory(resultGate.promise),
+          queryFactory: createControlledClaudeQueryFactory(resultGate.promise, getContextUsage),
           resolveBinary: async () => "/test/claude/bin",
         }),
       },
@@ -150,7 +169,11 @@ describe("daemon E2E (claude live usage)", () => {
 
     try {
       await client.connect();
+      expect(client.getLastServerInfoMessage()?.features?.agentContextUsage).toBe(true);
       await client.fetchAgents({ subscribe: {} });
+
+      const codex = await client.createAgent({ provider: "codex", cwd, title: "Codex usage" });
+      expect(await client.getAgentContextUsage(codex.id)).toBeNull();
 
       const agent = await client.createAgent({
         provider: "claude",
@@ -158,6 +181,10 @@ describe("daemon E2E (claude live usage)", () => {
         cwd,
         title: "Claude live usage",
       });
+
+      // Reading details must not start a Claude process before the first turn.
+      expect(await client.getAgentContextUsage(agent.id)).toBeNull();
+      expect(getContextUsage).not.toHaveBeenCalled();
 
       await client.sendMessage(agent.id, "Report live usage");
 
@@ -175,6 +202,23 @@ describe("daemon E2E (claude live usage)", () => {
         contextWindowUsedTokens: 175,
         promptCacheExpiresAtMs: expect.any(Number),
       });
+
+      expect(getContextUsage).not.toHaveBeenCalled();
+      expect(await client.getAgentContextUsage(agent.id)).toEqual({
+        categories: [
+          { id: "messages", name: "Messages", tokens: 100, kind: "used" },
+          { id: "free_space", name: "Free space", tokens: 100, kind: "free" },
+          { id: "mcp_tools_deferred", name: "Deferred", tokens: 50, kind: "deferred" },
+        ],
+        totalTokens: 100,
+        rawMaxTokens: 200,
+        percentage: 50,
+        mcpTools: [{ name: "mcp__test__tool", serverName: "test", tokens: 50, isLoaded: false }],
+        memoryFiles: [],
+        agents: [],
+        skills: [{ name: "review", source: "projectSettings", tokens: 4 }],
+      });
+      expect(getContextUsage).toHaveBeenCalledTimes(1);
 
       resultGate.resolve();
       const finalState = await client.waitForFinish(agent.id, 10_000);
