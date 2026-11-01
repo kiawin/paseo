@@ -2079,6 +2079,7 @@ export class VoiceAssistantWebSocketServer {
         relayProtectedSecurity: true,
         usageSetting: true,
         usageSources: true,
+        agentContextUsage: true,
         ownedSubscriptions: true,
         diffSubscription: true,
         binaryChunkingV1: true,

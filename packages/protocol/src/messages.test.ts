@@ -43,6 +43,46 @@ function fetchWorkspacesResponse(workspace: Record<string, unknown>) {
   };
 }
 
+describe("agent context usage RPC", () => {
+  test("keeps the capability optional and validates both message directions", () => {
+    expect(
+      parseServerInfoStatusPayload({ status: "server_info", serverId: "host", features: {} })
+        ?.features?.agentContextUsage,
+    ).toBeUndefined();
+    expect(
+      parseServerInfoStatusPayload({
+        status: "server_info",
+        serverId: "host",
+        features: { agentContextUsage: true },
+      })?.features?.agentContextUsage,
+    ).toBe(true);
+    const request = { type: "agent.context.usage.request", agentId: "agent", requestId: "req" };
+    expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+    const response = {
+      type: "agent.context.usage.response",
+      payload: {
+        requestId: "req",
+        usage: {
+          rawMaxTokens: 100,
+          categories: [
+            { id: "messages", name: "Messages", tokens: 25, kind: "used" },
+            { id: "mcp_tools_deferred", name: "Deferred", tokens: 10, kind: "deferred" },
+          ],
+          mcpTools: [{ name: "tool", tokens: 10, isLoaded: false }],
+          skills: [{ name: "review", tokens: 5 }],
+        },
+      },
+    };
+    expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "agent.context.usage.response",
+        payload: { requestId: "req" },
+      }),
+    ).toEqual({ type: "agent.context.usage.response", payload: { requestId: "req" } });
+  });
+});
+
 describe("project icon message security", () => {
   test("rejects URL sources at the daemon boundary", () => {
     const parsed = SessionInboundMessageSchema.safeParse({

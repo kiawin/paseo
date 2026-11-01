@@ -2837,6 +2837,84 @@ describe("ClaudeAgentSession context window usage", () => {
     };
   }
 
+  test("requests the live context breakdown only on demand", async () => {
+    const report = {
+      categories: [
+        { id: "skills", name: "Anything", tokens: 12, kind: "used" },
+        { id: "free_space", name: "Anything else", tokens: 30, kind: "free" },
+        { id: "buffer", name: "Reserve", tokens: 10, kind: "buffer" },
+        { id: "mcp_tools_deferred", name: "Later", tokens: 70, kind: "deferred" },
+      ],
+      totalTokens: 120,
+      rawMaxTokens: 100,
+      percentage: 120,
+      mcpTools: [{ name: "tool", serverName: "server", tokens: 70, isLoaded: false }],
+      memoryFiles: [{ path: "CLAUDE.md", type: "Project", tokens: 4 }],
+      agents: [{ agentType: "reviewer", source: "projectSettings", tokens: 2 }],
+      skills: { skillFrontmatter: [{ name: "review", source: "plugin", tokens: 12 }] },
+    };
+    const getContextUsage = vi.fn(async () => report);
+    const session = await createSessionForTurns([[createInitMessage(), createSuccessResult()]], {
+      getContextUsage,
+    });
+    try {
+      expect(await session.getContextUsage?.()).toBeNull();
+      expect(getContextUsage).not.toHaveBeenCalled();
+      await session.run("turn");
+      expect(getContextUsage).not.toHaveBeenCalled();
+      expect(await session.getContextUsage?.()).toEqual({
+        categories: report.categories,
+        totalTokens: 120,
+        rawMaxTokens: 100,
+        percentage: 120,
+        overLimit: { tokensOver: 20 },
+        mcpTools: report.mcpTools,
+        memoryFiles: report.memoryFiles,
+        agents: report.agents,
+        skills: report.skills.skillFrontmatter,
+      });
+      expect(getContextUsage).toHaveBeenCalledTimes(1);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("leaves the breakdown empty when the SDK fails or omits category kinds", async () => {
+    const getContextUsage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("SDK unavailable"))
+      .mockResolvedValueOnce({ categories: [{ name: "Free space", tokens: 10 }] });
+    const session = await createSessionForTurns([[createInitMessage(), createSuccessResult()]], {
+      getContextUsage,
+    });
+    try {
+      await session.run("turn");
+      expect(await session.getContextUsage?.()).toBeNull();
+      expect(await session.getContextUsage?.()).toBeNull();
+      expect((await session.getRuntimeInfo()).provider).toBe("claude");
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("drops a context report after its query closes", async () => {
+    let finishReport!: (value: unknown) => void;
+    const getContextUsage = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finishReport = resolve;
+        }),
+    );
+    const session = await createSessionForTurns([[createInitMessage(), createSuccessResult()]], {
+      getContextUsage,
+    });
+    await session.run("turn");
+    const pending = session.getContextUsage!();
+    await session.close();
+    finishReport({ categories: [] });
+    expect(await pending).toBeNull();
+  });
+
   function createMessageStartEvent(
     usage: Record<string, unknown> = {
       input_tokens: 100,
