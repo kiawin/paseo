@@ -64,6 +64,36 @@ async function compileInlineSchema(sourceSchema: string): Promise<GeneratedSchem
 }
 
 describe("WS outbound zod-aot validation", () => {
+  it("validates an on-demand agent context usage response", () => {
+    const message = {
+      type: "agent.context.usage.response",
+      payload: {
+        requestId: "usage",
+        usage: {
+          rawMaxTokens: 100,
+          categories: [
+            { id: "messages", name: "Messages", tokens: 50, kind: "used" },
+            { id: "mcp_tools_deferred", name: "Deferred", tokens: 4, kind: "deferred" },
+          ],
+          mcpTools: [{ name: "tool", tokens: 4, isLoaded: false }],
+          memoryFiles: [{ path: "CLAUDE.md", tokens: 4 }],
+        },
+      },
+    };
+    expect(validateWSOutboundMessage({ type: "session", message })).toEqual({
+      success: true,
+      data: { type: "session", message },
+    });
+    expect(
+      validateWSOutboundMessage({
+        type: "session",
+        message: {
+          ...message,
+          payload: { ...message.payload, usage: { categories: [{ kind: "invalid" }] } },
+        },
+      }).success,
+    ).toBe(false);
+  });
   it("applies defaults inside discriminated-union branches", async () => {
     const schema = await compileInlineSchema(`
 const SourceSchema = z.discriminatedUnion("type", [

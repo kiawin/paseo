@@ -9,6 +9,7 @@ import {
 import Svg, { Circle } from "react-native-svg";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -39,6 +40,34 @@ interface ContextWindowMeterProps {
   pending?: boolean;
   /** Optional glyph envelope for icon-toolbar alignment. */
   glyphSize?: number;
+}
+interface ContextWindowSummary {
+  percentage: number;
+  maxTokens: number;
+  usedTokens: number;
+}
+function contextWindowPercentageLabel(
+  showPercentage: boolean,
+  context: ContextWindowSummary | null,
+  language: string | undefined,
+) {
+  if (!showPercentage || !context) return null;
+  return (
+    <Text style={styles.percentageLabel}>
+      {formatContextPercentage(context.percentage, language)}
+    </Text>
+  );
+}
+function contextWindowAccessibilityLabel(
+  context: ContextWindowSummary | null,
+  t: TFunction,
+): string {
+  if (context) return t("contextWindow.accessibility", { percentage: context.percentage });
+  return t("contextWindow.accessibilityNoData");
+}
+function PromptCacheLabel({ label }: { label: string | null }) {
+  if (!label) return null;
+  return <Text style={styles.tooltipDetail}>{label}</Text>;
 }
 
 const EMPTY_METRICS: AgentMetric[] = [];
@@ -238,6 +267,11 @@ export function ContextWindowMeter({
     }),
     [percentage],
   );
+  const containerStyle = geometry.containerStyle;
+  const pressableStyle = useCallback(
+    ({ pressed }: PressableStateCallbackType) => [containerStyle, pressed && styles.pressed],
+    [containerStyle],
+  );
   // Only a turn in flight short-circuits into the loading ring. Without data and without a turn
   // the meter still renders, so its "no context data" state stays reachable before the first turn.
   if (pending && (percentage === null || maxTokens === null || usedTokens === null)) {
@@ -245,11 +279,6 @@ export function ContextWindowMeter({
   }
   const formattedSessionCost =
     typeof totalCostUsd === "number" ? formatSessionCost(totalCostUsd) : null;
-  const containerStyle = geometry.containerStyle;
-  const pressableStyle = useCallback(
-    ({ pressed }: PressableStateCallbackType) => [containerStyle, pressed && styles.pressed],
-    [containerStyle],
-  );
   const ring = (
     <ContextWindowRing
       size={geometry.svgSize}
@@ -259,15 +288,12 @@ export function ContextWindowMeter({
       uniProps={meterColors}
     />
   );
-  const percentageLabel =
-    showPercentage && context ? (
-      <Text style={styles.percentageLabel}>
-        {formatContextPercentage(context.percentage, i18n.resolvedLanguage)}
-      </Text>
-    ) : null;
-  const accessibilityLabel = context
-    ? t("contextWindow.accessibility", { percentage: context.percentage })
-    : t("contextWindow.accessibilityNoData");
+  const percentageLabel = contextWindowPercentageLabel(
+    showPercentage,
+    context,
+    i18n.resolvedLanguage,
+  );
+  const accessibilityLabel = contextWindowAccessibilityLabel(context, t);
 
   if (isCompact) {
     return (
@@ -334,7 +360,7 @@ export function ContextWindowMeter({
             showTitle
             refreshable={false}
           />
-          {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
+          <PromptCacheLabel label={promptCacheLabel} />
         </TooltipContent>
       </Tooltip>
     );
@@ -370,7 +396,7 @@ export function ContextWindowMeter({
           showTitle
           refreshable
         />
-        {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
+        <PromptCacheLabel label={promptCacheLabel} />
       </HoverCardContent>
     </HoverCard>
   );

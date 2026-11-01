@@ -2379,6 +2379,75 @@ export const AgentConfigApplyResponseMessageSchema = z.object({
   payload: AgentActionResponsePayloadSchema,
 });
 
+export const AgentContextUsageSchema = z.object({
+  categories: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        name: z.string().optional(),
+        tokens: z.number().optional(),
+        kind: z.enum(["used", "free", "buffer", "deferred"]).optional(),
+      }),
+    )
+    .optional(),
+  totalTokens: z.number().optional(),
+  rawMaxTokens: z.number().optional(),
+  percentage: z.number().optional(),
+  overLimit: z
+    .object({
+      tokensOver: z.number().optional(),
+      kind: z.enum(["hard_limit", "compaction_window"]).optional(),
+    })
+    .optional(),
+  mcpTools: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        serverName: z.string().optional(),
+        tokens: z.number().optional(),
+        isLoaded: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  memoryFiles: z
+    .array(
+      z.object({
+        path: z.string().optional(),
+        type: z.string().optional(),
+        tokens: z.number().optional(),
+      }),
+    )
+    .optional(),
+  agents: z
+    .array(
+      z.object({
+        agentType: z.string().optional(),
+        source: z.string().optional(),
+        tokens: z.number().optional(),
+      }),
+    )
+    .optional(),
+  skills: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        source: z.string().optional(),
+        pluginName: z.string().optional(),
+        tokens: z.number().optional(),
+      }),
+    )
+    .optional(),
+});
+export type AgentContextUsage = z.infer<typeof AgentContextUsageSchema>;
+export const AgentContextUsageRequestSchema = z.object({
+  type: z.literal("agent.context.usage.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+export const AgentContextUsageResponseSchema = z.object({
+  type: z.literal("agent.context.usage.response"),
+  payload: z.object({ requestId: z.string(), usage: AgentContextUsageSchema.optional() }),
+});
 export const AgentDetachRequestMessageSchema = z.object({
   type: z.literal("agent.detach.request"),
   agentId: z.string(),
@@ -4178,6 +4247,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentThinkingRequestMessageSchema,
   SetAgentFeatureRequestMessageSchema,
   AgentConfigApplyRequestMessageSchema,
+  AgentContextUsageRequestSchema,
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
@@ -4543,6 +4613,8 @@ export const ServerInfoStatusPayloadSchema = z
         artifactPublish: z.boolean().optional(),
         // COMPAT(artifactArchive): added in v0.14.x, remove after 2028-10-29.
         artifactArchive: z.boolean().optional(),
+        // COMPAT(agentContextUsage): added in v0.17.4; remove gate when all supported clients include context usage.
+        agentContextUsage: z.boolean().optional(),
         // COMPAT(notes): added in v0.9.0; remove gate after the supported daemon floor includes Notes.
         notes: z.boolean().optional(),
         // COMPAT(notePin): added in v0.11.x, remove after 2028-04-18.
@@ -8793,6 +8865,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentThinkingResponseMessageSchema,
   SetAgentFeatureResponseMessageSchema,
   AgentConfigApplyResponseMessageSchema,
+  AgentContextUsageResponseSchema,
   AgentDetachResponseMessageSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
@@ -9264,6 +9337,8 @@ export type SetAgentModelRequestMessage = z.infer<typeof SetAgentModelRequestMes
 export type SetAgentThinkingRequestMessage = z.infer<typeof SetAgentThinkingRequestMessageSchema>;
 export type SetAgentFeatureRequestMessage = z.infer<typeof SetAgentFeatureRequestMessageSchema>;
 export type AgentConfigApplyRequestMessage = z.infer<typeof AgentConfigApplyRequestMessageSchema>;
+export type AgentContextUsageRequest = z.infer<typeof AgentContextUsageRequestSchema>;
+export type AgentContextUsageResponse = z.infer<typeof AgentContextUsageResponseSchema>;
 export type AgentDetachRequestMessage = z.infer<typeof AgentDetachRequestMessageSchema>;
 export type AgentPermissionResponseMessage = z.infer<typeof AgentPermissionResponseMessageSchema>;
 export type CheckoutStatusRequest = z.infer<typeof CheckoutStatusRequestSchema>;
