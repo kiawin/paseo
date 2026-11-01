@@ -17,6 +17,7 @@ import { formatContextPercentage, formatTokenCount } from "./context-window-mete
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedChevronRight = withUnistyles(ChevronRight);
 const chevronColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const CHEVRON_SLOT_WIDTH = 14;
 
 interface ContextWindowDetailsProps {
   serverId: string;
@@ -231,12 +232,12 @@ function CategoryRow({ row, items }: { row: BreakdownCategory; items: DetailItem
       <Text style={styles.rowName} numberOfLines={1}>
         {row.name}
       </Text>
-      <Text style={styles.detail}>{formatTokenCount(row.tokens)}</Text>
-      {"percentage" in row ? (
-        <Text style={styles.percentage}>
-          {formatContextPercentage(row.percentage, i18n.resolvedLanguage)}
-        </Text>
-      ) : null}
+      <Text style={[styles.detail, styles.tokens]}>{formatTokenCount(row.tokens)}</Text>
+      <Text style={styles.percentage}>
+        {"percentage" in row
+          ? formatContextPercentage(row.percentage, i18n.resolvedLanguage)
+          : null}
+      </Text>
     </>
   );
   if (items.length)
@@ -245,7 +246,12 @@ function CategoryRow({ row, items }: { row: BreakdownCategory; items: DetailItem
         {content}
       </DetailGroup>
     );
-  return <View style={styles.row}>{content}</View>;
+  return (
+    <View style={styles.row}>
+      {content}
+      <View style={styles.chevronSlot} />
+    </View>
+  );
 }
 
 function DetailGroup({
@@ -263,7 +269,6 @@ function DetailGroup({
   const rowStyle = useCallback(
     ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.row,
-      styles.groupHeader,
       hovered && styles.groupHighlight,
       pressed && styles.groupHighlight,
     ],
@@ -284,7 +289,9 @@ function DetailGroup({
         highlightStyle={styles.groupHighlight}
       >
         {children ?? <Text style={styles.groupName}>{label}</Text>}
-        <Chevron size={14} uniProps={chevronColor} />
+        <View style={styles.chevronSlot}>
+          <Chevron size={14} uniProps={chevronColor} />
+        </View>
       </PressHighlight>
       {expanded ? (
         <ScrollView nestedScrollEnabled style={styles.items}>
@@ -336,10 +343,13 @@ const styles = StyleSheet.create((theme) => ({
       theme.colors.palette.zinc[500],
     ][index % 6],
   }),
-  row: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
+  row: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2], minHeight: 28 },
   swatch: { width: 8, height: 8, borderRadius: theme.borderRadius.full },
   freeSwatch: { backgroundColor: theme.colors.surface3 },
   rowName: { flex: 1, color: theme.colors.foreground, fontSize: theme.fontSize.sm },
+  // Every row ends in the same slot, so percentages line up whether or not the row expands.
+  chevronSlot: { width: CHEVRON_SLOT_WIDTH, alignItems: "center", justifyContent: "center" },
+  tokens: { width: 44, textAlign: "right" },
   percentage: {
     width: 40,
     textAlign: "right",
@@ -347,10 +357,14 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
   },
   deferred: { opacity: 0.65, gap: theme.spacing[1], paddingTop: theme.spacing[1] },
-  groupHeader: { flexDirection: "row", alignItems: "center", gap: theme.spacing[1], minHeight: 28 },
   groupHighlight: { backgroundColor: theme.colors.interactionHighlight },
   groupName: { flex: 1, color: theme.colors.foreground, fontSize: theme.fontSize.sm },
-  items: { maxHeight: 160, paddingLeft: theme.spacing[4] },
+  // Item tokens end under the percentage column rather than under the chevron.
+  items: {
+    maxHeight: 160,
+    paddingLeft: theme.spacing[4],
+    paddingRight: CHEVRON_SLOT_WIDTH + theme.spacing[2],
+  },
   item: { flexDirection: "row", gap: theme.spacing[2], paddingVertical: theme.spacing[0.5] },
   itemName: { flex: 1, color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
 }));
