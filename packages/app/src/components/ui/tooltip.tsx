@@ -25,6 +25,7 @@ import {
 } from "react-native";
 import { FadeIn, FadeOut } from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { FloatingSurface } from "@/components/ui/floating";
 import { useRetainedPanelActive } from "@/components/retained-panel";
@@ -465,6 +466,7 @@ export function TooltipContent({
   style,
   testID,
   maxWidth = 280,
+  interactive = false,
 }: PropsWithChildren<{
   side?: Side;
   align?: Align;
@@ -472,6 +474,8 @@ export function TooltipContent({
   style?: StyleProp<ViewStyle>;
   testID?: string;
   maxWidth?: number;
+  /** Native details that contain controls need an interactive floating surface. */
+  interactive?: boolean;
 }>): ReactElement | null {
   const ctx = useTooltipContext("TooltipContent");
   const [triggerRect, setTriggerRect] = useState<Rect | null>(null);
@@ -560,6 +564,7 @@ export function TooltipContent({
     );
   }
 
+  const ModalRoot = interactive ? GestureHandlerRootView : View;
   return (
     <Modal
       visible={ctx.open}
@@ -568,14 +573,15 @@ export function TooltipContent({
       statusBarTranslucent={Platform.OS === "android"}
       onRequestClose={handleDismiss}
     >
-      <Pressable testID="tooltip-dismiss" style={styles.overlay} onPress={handleDismiss}>
+      <ModalRoot style={styles.overlay}>
+        <Pressable testID="tooltip-dismiss" style={styles.dismissOverlay} onPress={handleDismiss} />
         <View pointerEvents="box-none" style={frame.holder}>
           <FloatingSurface
-            pointerEvents="none"
+            pointerEvents={interactive ? "auto" : "none"}
             entering={FadeIn.duration(80)}
             exiting={FadeOut.duration(80)}
             collapsable={false}
-            role="tooltip"
+            role={interactive ? "dialog" : "tooltip"}
             testID={testID}
             onLayout={handleLayout}
             style={contentStyle}
@@ -584,13 +590,14 @@ export function TooltipContent({
             {children}
           </FloatingSurface>
         </View>
-      </Pressable>
+      </ModalRoot>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
   overlay: { flex: 1 },
+  dismissOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
   portalOverlay: {
     position: "absolute",
     top: 0,

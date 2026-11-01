@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import {
   Pressable,
+  ScrollView,
   type PressableStateCallbackType,
   Text,
   View,
@@ -178,6 +179,182 @@ function renderPendingContextWindowMeter(
   );
 }
 
+type ContextWindowMeterContext = {
+  percentage: number;
+  maxTokens: number;
+  usedTokens: number;
+} | null;
+
+interface ContextWindowMeterDetailsProps {
+  serverId: string;
+  agentId: string;
+  context: ContextWindowMeterContext;
+  sessionCost: string | null;
+  accessibilityLabel: string;
+  promptCacheLabel: string | null;
+  percentage: number | null;
+  percentageLabel: string | null;
+  showPercentage: boolean;
+  meterColors: (theme: Theme) => { progressColor: string; trackColor: string };
+  geometry: ReturnType<typeof getMeterGeometry>;
+  popoverWidth: number;
+  showsUsage: boolean;
+  detailsScrollStyle: { maxHeight: number };
+  title: string;
+}
+
+function ContextWindowMeterDetails({
+  serverId,
+  agentId,
+  context,
+  sessionCost,
+  accessibilityLabel,
+  promptCacheLabel,
+  percentage,
+  percentageLabel,
+  showPercentage,
+  meterColors,
+  geometry,
+  popoverWidth,
+  showsUsage,
+  detailsScrollStyle,
+  title,
+}: ContextWindowMeterDetailsProps) {
+  const isCompact = useIsCompactFormFactor();
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const openSheet = useCallback(() => setIsSheetOpen(true), []);
+  const closeSheet = useCallback(() => setIsSheetOpen(false), []);
+  const containerStyle = geometry.containerStyle;
+  const pressableStyle = useCallback(
+    ({ pressed }: PressableStateCallbackType) => [containerStyle, pressed && styles.pressed],
+    [containerStyle],
+  );
+  const popoverStyle = showsUsage
+    ? [styles.usagePopover, { width: popoverWidth }]
+    : styles.plainPopover;
+  const ring = (
+    <ContextWindowRing
+      size={geometry.svgSize}
+      radius={geometry.radius}
+      strokeWidth={geometry.strokeWidth}
+      percentage={percentage}
+      uniProps={meterColors}
+    />
+  );
+  const percentageContent =
+    showPercentage && percentageLabel ? (
+      <Text style={styles.percentageLabel}>{percentageLabel}</Text>
+    ) : null;
+
+  if (isCompact) {
+    return (
+      <>
+        <Pressable
+          style={pressableStyle}
+          testID="context-window-meter"
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+          onPress={openSheet}
+        >
+          {ring}
+          {percentageContent}
+        </Pressable>
+        <ContextWindowSheet open={isSheetOpen} onClose={closeSheet}>
+          <ContextWindowDetails
+            serverId={serverId}
+            agentId={agentId}
+            context={context}
+            sessionCost={sessionCost}
+            showTitle={false}
+            refreshable
+          />
+        </ContextWindowSheet>
+      </>
+    );
+  }
+
+  if (isNative) {
+    return (
+      <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile>
+        <TooltipTrigger asChild triggerRefProp="ref">
+          <Pressable
+            style={pressableStyle}
+            testID="context-window-meter"
+            accessibilityRole="image"
+            accessibilityLabel={accessibilityLabel}
+          >
+            {ring}
+            {percentageContent}
+          </Pressable>
+        </TooltipTrigger>
+        <TooltipContent
+          side="top"
+          align="center"
+          offset={8}
+          maxWidth={showsUsage ? popoverWidth : undefined}
+          style={popoverStyle}
+          testID="context-window-meter-tooltip"
+          interactive
+        >
+          <ScrollView style={detailsScrollStyle}>
+            <View style={styles.popoverContents}>
+              <ContextWindowDetails
+                serverId={serverId}
+                agentId={agentId}
+                context={context}
+                sessionCost={sessionCost}
+                showTitle
+                refreshable={false}
+              />
+              {promptCacheLabel ? (
+                <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text>
+              ) : null}
+            </View>
+          </ScrollView>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <HoverCard>
+      <HoverCardTrigger focusable accessibilityLabel={accessibilityLabel}>
+        <View
+          style={containerStyle}
+          testID="context-window-meter"
+          accessibilityRole="image"
+          accessibilityLabel={accessibilityLabel}
+        >
+          {ring}
+          {percentageContent}
+        </View>
+      </HoverCardTrigger>
+      <HoverCardContent
+        placement="top"
+        offset={8}
+        role="dialog"
+        accessibilityLabel={title}
+        testID="context-window-details"
+        style={popoverStyle}
+      >
+        <ScrollView style={detailsScrollStyle}>
+          <View style={styles.popoverContents}>
+            <ContextWindowDetails
+              serverId={serverId}
+              agentId={agentId}
+              context={context}
+              sessionCost={sessionCost}
+              showTitle
+              refreshable
+            />
+            {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
+          </View>
+        </ScrollView>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
 export function ContextWindowMeter({
   serverId,
   agentId,
@@ -191,15 +368,12 @@ export function ContextWindowMeter({
   glyphSize,
 }: ContextWindowMeterProps) {
   const { t, i18n } = useTranslation();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const detailsScrollStyle = useMemo(() => ({ maxHeight: height * 0.7 }), [height]);
   // Usage cards need a wider popover; without them it keeps the plain tooltip shape.
   const showsUsage = useHostReportsUsage(serverId);
   const popoverWidth = Math.min(USAGE_POPOVER_WIDTH, width - 24);
   // Compact screens open the details in a sheet, which can hold a pressable Refresh.
-  const isCompact = useIsCompactFormFactor();
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const openSheet = useCallback(() => setIsSheetOpen(true), []);
-  const closeSheet = useCallback(() => setIsSheetOpen(false), []);
   const [cacheNowMs, setCacheNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (promptCacheExpiresAtMs === null) {
@@ -238,131 +412,32 @@ export function ContextWindowMeter({
   }
   const formattedSessionCost =
     typeof totalCostUsd === "number" ? formatSessionCost(totalCostUsd) : null;
-  const containerStyle = geometry.containerStyle;
-  const pressableStyle = useCallback(
-    ({ pressed }: PressableStateCallbackType) => [containerStyle, pressed && styles.pressed],
-    [containerStyle],
-  );
-  const ring = (
-    <ContextWindowRing
-      size={geometry.svgSize}
-      radius={geometry.radius}
-      strokeWidth={geometry.strokeWidth}
-      percentage={percentage}
-      uniProps={meterColors}
-    />
-  );
   const percentageLabel =
-    showPercentage && context ? (
-      <Text style={styles.percentageLabel}>
-        {formatContextPercentage(context.percentage, i18n.resolvedLanguage)}
-      </Text>
-    ) : null;
+    showPercentage && context
+      ? formatContextPercentage(context.percentage, i18n.resolvedLanguage)
+      : null;
   const accessibilityLabel = context
     ? t("contextWindow.accessibility", { percentage: context.percentage })
     : t("contextWindow.accessibilityNoData");
 
-  if (isCompact) {
-    return (
-      <>
-        <Pressable
-          style={pressableStyle}
-          testID="context-window-meter"
-          accessibilityRole="button"
-          accessibilityLabel={accessibilityLabel}
-          onPress={openSheet}
-        >
-          {ring}
-          {percentageLabel}
-        </Pressable>
-        <ContextWindowSheet open={isSheetOpen} onClose={closeSheet}>
-          <ContextWindowDetails
-            serverId={serverId}
-            agentId={agentId}
-            context={context}
-            sessionCost={formattedSessionCost}
-            showTitle={false}
-            refreshable
-          />
-        </ContextWindowSheet>
-      </>
-    );
-  }
-
-  const popoverStyle = showsUsage
-    ? [styles.usagePopover, { width: popoverWidth }]
-    : styles.plainPopover;
-
-  // Native wide screens have no hover, so the details open in a tooltip on press. The tooltip
-  // takes no presses, so its usage cards have no Refresh.
-  if (isNative) {
-    return (
-      <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile>
-        <TooltipTrigger asChild triggerRefProp="ref">
-          <Pressable
-            style={pressableStyle}
-            testID="context-window-meter"
-            accessibilityRole="image"
-            accessibilityLabel={accessibilityLabel}
-          >
-            {ring}
-            {percentageLabel}
-          </Pressable>
-        </TooltipTrigger>
-        <TooltipContent
-          side="top"
-          align="center"
-          offset={8}
-          maxWidth={showsUsage ? popoverWidth : undefined}
-          style={popoverStyle}
-          testID="context-window-meter-tooltip"
-        >
-          <ContextWindowDetails
-            serverId={serverId}
-            agentId={agentId}
-            context={context}
-            sessionCost={formattedSessionCost}
-            showTitle
-            refreshable={false}
-          />
-          {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-
   return (
-    <HoverCard>
-      <HoverCardTrigger focusable accessibilityLabel={accessibilityLabel}>
-        <View
-          style={containerStyle}
-          testID="context-window-meter"
-          accessibilityRole="image"
-          accessibilityLabel={accessibilityLabel}
-        >
-          {ring}
-          {percentageLabel}
-        </View>
-      </HoverCardTrigger>
-      <HoverCardContent
-        placement="top"
-        offset={8}
-        role="dialog"
-        accessibilityLabel={t("contextWindow.title")}
-        testID="context-window-details"
-        style={popoverStyle}
-      >
-        <ContextWindowDetails
-          serverId={serverId}
-          agentId={agentId}
-          context={context}
-          sessionCost={formattedSessionCost}
-          showTitle
-          refreshable
-        />
-        {promptCacheLabel ? <Text style={styles.tooltipDetail}>{promptCacheLabel}</Text> : null}
-      </HoverCardContent>
-    </HoverCard>
+    <ContextWindowMeterDetails
+      serverId={serverId}
+      agentId={agentId}
+      context={context}
+      sessionCost={formattedSessionCost}
+      accessibilityLabel={accessibilityLabel}
+      promptCacheLabel={promptCacheLabel}
+      percentage={percentage}
+      percentageLabel={percentageLabel}
+      showPercentage={showPercentage}
+      meterColors={meterColors}
+      geometry={geometry}
+      popoverWidth={popoverWidth}
+      showsUsage={showsUsage}
+      detailsScrollStyle={detailsScrollStyle}
+      title={t("contextWindow.title")}
+    />
   );
 }
 
@@ -393,6 +468,7 @@ const styles = StyleSheet.create((theme) => ({
   // Plain details use a small inset; account usage cards have their own content density.
   plainPopover: { paddingVertical: theme.spacing[1], paddingHorizontal: theme.spacing[2] },
   usagePopover: { padding: theme.spacing[3], gap: theme.spacing[3] },
+  popoverContents: { gap: theme.spacing[3] },
   skeletonLabel: {
     width: 22,
     height: theme.fontSize.base,
