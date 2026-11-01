@@ -100,6 +100,17 @@ test.each([
         const events = await collectSessionTurnEvents(session, "say hello", {
           signal: AbortSignal.timeout(20_000),
         });
+        if (turn === 0) {
+          const usage = await session.getContextUsage?.();
+          expect(usage?.rawMaxTokens).toBeGreaterThan(0);
+          expect(usage?.categories).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ id: "system_prompt", kind: "used" }),
+              expect.objectContaining({ id: "free_space", kind: "free" }),
+              expect.objectContaining({ kind: "deferred" }),
+            ]),
+          );
+        }
         const expectedTokens = 20_236 + turn + cacheTokens + 64;
         expect(events).toContainEqual(
           expect.objectContaining({
