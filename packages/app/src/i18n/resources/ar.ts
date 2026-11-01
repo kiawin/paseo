@@ -2319,6 +2319,12 @@ export const ar: TranslationResources = {
     dismiss: "رفض",
   },
   contextWindow: {
+    notInWindow: "خارج النافذة",
+    skills: "المهارات",
+    mcpTools: "أدوات MCP",
+    memoryFiles: "ملفات الذاكرة",
+    agents: "الوكلاء",
+    itemTokens: "{{tokens}} رمز",
     noData: "لا توجد بيانات للسياق",
     accessibilityNoData: "نافذة السياق: لا توجد بيانات للسياق",
     title: "نافذة السياق",

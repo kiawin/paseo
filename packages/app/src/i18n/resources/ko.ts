@@ -2331,6 +2331,12 @@ export const ko: TranslationResources = {
     dismiss: "닫기",
   },
   contextWindow: {
+    notInWindow: "컨텍스트 창 밖",
+    skills: "스킬",
+    mcpTools: "MCP 도구",
+    memoryFiles: "메모리 파일",
+    agents: "에이전트",
+    itemTokens: "토큰 {{tokens}}개",
     noData: "컨텍스트 데이터 없음",
     accessibilityNoData: "컨텍스트 창: 컨텍스트 데이터 없음",
     title: "컨텍스트 윈도우",

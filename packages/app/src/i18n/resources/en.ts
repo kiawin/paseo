@@ -2345,6 +2345,12 @@ export const en = {
     dismiss: "Dismiss",
   },
   contextWindow: {
+    notInWindow: "Not in window",
+    skills: "Skills",
+    mcpTools: "MCP tools",
+    memoryFiles: "Memory files",
+    agents: "Agents",
+    itemTokens: "{{tokens}} tokens",
     noData: "No context data",
     accessibilityNoData: "Context window: No context data",
     title: "Context window",

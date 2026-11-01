@@ -2370,6 +2370,12 @@ export const es: TranslationResources = {
     dismiss: "Despedir",
   },
   contextWindow: {
+    notInWindow: "Fuera de la ventana",
+    skills: "Habilidades",
+    mcpTools: "Herramientas MCP",
+    memoryFiles: "Archivos de memoria",
+    agents: "Agentes",
+    itemTokens: "{{tokens}} tokens",
     noData: "No hay datos de contexto",
     accessibilityNoData: "Ventana de contexto: No hay datos de contexto",
     title: "ventana contextual",
