@@ -572,6 +572,8 @@ export const SPACING = {
 export const FONT_SIZE = {
   code: 12,
   content: 15,
+  // One step below `sm`, for deliberately subordinate text.
+  xs: 11,
   sm: 12,
   base: 14,
   lg: 16,

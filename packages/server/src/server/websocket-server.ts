@@ -2101,6 +2101,7 @@ export class VoiceAssistantWebSocketServer {
         usageSetting: true,
         usageSources: true,
         providerInstallation: true,
+        agentContextUsage: true,
         ownedSubscriptions: true,
         providerOptionControls: true,
         entityMetadata: true,
@@ -3136,39 +3137,26 @@ export class VoiceAssistantWebSocketServer {
     }
   }
 
-<<<<<<< HEAD
-  // An agent can finish many times while its first finish is unread, for example when it
-  // reacts to each event of a background task. The user hears about an unread finish once.
-  // A finish that was not delivered, because the user had the agent on screen, does not count.
   private planOncePerUnreadFinish(
     params: { agentId: string; reason: string; attentionTimestamp: Date | null },
     plan: NotificationPlan,
   ): NotificationPlan {
-    if (params.reason !== "finished" || params.attentionTimestamp === null) {
-      return plan;
-    }
-    const unreadFinishAt = params.attentionTimestamp.getTime();
-    if (this.notifiedUnreadFinishAt.get(params.agentId) === unreadFinishAt) {
+    if (params.reason !== "finished" || params.attentionTimestamp === null) return plan;
+    const at = params.attentionTimestamp.getTime();
+    if (this.notifiedUnreadFinishAt.get(params.agentId) === at)
       return { inAppRecipientIndex: null, shouldPush: false };
-    }
-    if (plan.shouldPush || plan.inAppRecipientIndex !== null) {
-      this.notifiedUnreadFinishAt.set(params.agentId, unreadFinishAt);
-    }
+    if (plan.shouldPush || plan.inAppRecipientIndex !== null)
+      this.notifiedUnreadFinishAt.set(params.agentId, at);
     return plan;
-=======
+  }
+
   private resolveTerminalRequesterLabel(terminalId: string): string | null {
-    const requestedByAgentId = this.terminalManager?.getRequestedByAgentId(terminalId);
-    if (!requestedByAgentId) {
-      return null;
-    }
-    const agent = this.agentManager.getAgent(requestedByAgentId);
-    if (!agent) {
-      return null;
-    }
-    const providerLabel = this.providerSnapshotManager.getProviderLabel(agent.provider);
-    const agentTitle = agent.config.title?.trim();
-    return agentTitle ? `${providerLabel} (${agentTitle})` : providerLabel;
->>>>>>> 233aae1d7 (feat(terminal): let an agent open a terminal for the user to type into (#73))
+    const id = this.terminalManager?.getRequestedByAgentId(terminalId);
+    if (!id) return null;
+    const agent = this.agentManager.getAgent(id);
+    if (!agent) return null;
+    const label = this.providerSnapshotManager.getProviderLabel(agent.provider);
+    return agent.config.title?.trim() ? `${label} (${agent.config.title.trim()})` : label;
   }
 
   private async broadcastTerminalAttention(params: {

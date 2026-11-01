@@ -47,6 +47,7 @@ function scaleFontSize(
     "4xl": Math.round(FONT_SIZE["4xl"] * r),
     content: contentSize, // absolute, NOT scaled
     code: codeSize, // absolute, NOT scaled
+    xs: Math.round(FONT_SIZE.xs * r),
   };
 }
 
