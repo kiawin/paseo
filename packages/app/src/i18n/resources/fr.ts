@@ -2340,6 +2340,12 @@ export const fr: TranslationResources = {
     dismiss: "Ignorer",
   },
   contextWindow: {
+    notInWindow: "Hors de la fenêtre",
+    skills: "Compétences",
+    mcpTools: "Outils MCP",
+    memoryFiles: "Fichiers de mémoire",
+    agents: "Agents",
+    itemTokens: "{{tokens}} jetons",
     noData: "Aucune donnée de contexte",
     accessibilityNoData: "Fenêtre de contexte : aucune donnée de contexte",
     title: "Fenêtre de contexte",

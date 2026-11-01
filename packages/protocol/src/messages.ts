@@ -2180,6 +2180,82 @@ export const AgentConfigApplyResponseMessageSchema = z.object({
   payload: AgentActionResponsePayloadSchema,
 });
 
+export const AgentContextUsageSchema = z.object({
+  categories: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        name: z.string().optional(),
+        tokens: z.number().optional(),
+        kind: z.enum(["used", "free", "buffer", "deferred"]).optional(),
+      }),
+    )
+    .optional(),
+  totalTokens: z.number().optional(),
+  rawMaxTokens: z.number().optional(),
+  percentage: z.number().optional(),
+  overLimit: z
+    .object({
+      tokensOver: z.number().optional(),
+      kind: z.enum(["hard_limit", "compaction_window"]).optional(),
+    })
+    .optional(),
+  mcpTools: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        serverName: z.string().optional(),
+        tokens: z.number().optional(),
+        isLoaded: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  memoryFiles: z
+    .array(
+      z.object({
+        path: z.string().optional(),
+        type: z.string().optional(),
+        tokens: z.number().optional(),
+      }),
+    )
+    .optional(),
+  agents: z
+    .array(
+      z.object({
+        agentType: z.string().optional(),
+        source: z.string().optional(),
+        tokens: z.number().optional(),
+      }),
+    )
+    .optional(),
+  skills: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        source: z.string().optional(),
+        pluginName: z.string().optional(),
+        tokens: z.number().optional(),
+      }),
+    )
+    .optional(),
+});
+
+export type AgentContextUsage = z.infer<typeof AgentContextUsageSchema>;
+
+export const AgentContextUsageRequestSchema = z.object({
+  type: z.literal("agent.context.usage.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+
+export const AgentContextUsageResponseSchema = z.object({
+  type: z.literal("agent.context.usage.response"),
+  payload: z.object({
+    requestId: z.string(),
+    usage: AgentContextUsageSchema.optional(),
+  }),
+});
+
 export const AgentDetachRequestMessageSchema = z.object({
   type: z.literal("agent.detach.request"),
   agentId: z.string(),
@@ -3847,6 +3923,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentThinkingRequestMessageSchema,
   SetAgentFeatureRequestMessageSchema,
   AgentConfigApplyRequestMessageSchema,
+  AgentContextUsageRequestSchema,
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
@@ -4172,6 +4249,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(usageSetting): added in v0.14, remove after 2027-05-01.
         usageSetting: z.boolean().optional(),
         usageSources: z.boolean().optional(),
+        agentContextUsage: z.boolean().optional(),
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
         providersSnapshotCwd: z.boolean().optional(),
         // COMPAT(directorySync): added in v0.3.x, remove gate after 2027-02-12.
@@ -8048,6 +8126,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentThinkingResponseMessageSchema,
   SetAgentFeatureResponseMessageSchema,
   AgentConfigApplyResponseMessageSchema,
+  AgentContextUsageResponseSchema,
   AgentDetachResponseMessageSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
