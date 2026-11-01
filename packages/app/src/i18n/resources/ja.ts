@@ -2380,6 +2380,12 @@ export const ja: TranslationResources = {
     dismiss: "閉じる",
   },
   contextWindow: {
+    notInWindow: "ウィンドウ外",
+    skills: "スキル",
+    mcpTools: "MCPツール",
+    memoryFiles: "メモリファイル",
+    agents: "エージェント",
+    itemTokens: "{{tokens}} トークン",
     noData: "コンテキストデータがありません",
     accessibilityNoData: "コンテキストウィンドウ：コンテキストデータがありません",
     title: "コンテキストウィンドウ",
