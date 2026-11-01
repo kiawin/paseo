@@ -25,6 +25,7 @@ import {
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
+import type { AgentContextUsage } from "@getpaseo/protocol/messages";
 import {
   mapClaudeCanceledToolCall,
   mapClaudeCompletedToolCall,
@@ -3805,6 +3806,50 @@ class ClaudeAgentSession implements AgentSession {
       env: this.harnessEnvironment,
       sessionKey: this.usageSessionKey,
     };
+  }
+
+  async getContextUsage(): Promise<AgentContextUsage | null> {
+    const query = this.query;
+    if (!query || this.closed) return null;
+    try {
+      const report = await query.getContextUsage();
+      if (!report || this.closed || this.query !== query) return null;
+
+      const categories: NonNullable<AgentContextUsage["categories"]> = [];
+      for (const category of report.categories) {
+        // The Claude process returns these fields, but SDK 0.3.246 omits them from the
+        // control-response type. Older processes without a kind cannot be classified safely.
+        if (!("kind" in category)) return null;
+        const { kind } = category;
+        if (kind !== "used" && kind !== "free" && kind !== "buffer" && kind !== "deferred") {
+          return null;
+        }
+        const id = "id" in category && typeof category.id === "string" ? category.id : undefined;
+        categories.push({
+          name: category.name,
+          tokens: category.tokens,
+          kind,
+          ...(id ? { id } : {}),
+        });
+      }
+
+      return {
+        categories,
+        totalTokens: report.totalTokens,
+        rawMaxTokens: report.rawMaxTokens,
+        percentage: report.percentage,
+        ...(report.totalTokens > report.rawMaxTokens
+          ? { overLimit: { tokensOver: report.totalTokens - report.rawMaxTokens } }
+          : {}),
+        mcpTools: report.mcpTools,
+        memoryFiles: report.memoryFiles,
+        agents: report.agents,
+        skills: report.skills?.skillFrontmatter,
+      };
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to read Claude context usage");
+      return null;
+    }
   }
 
   private buildSdkEnv() {

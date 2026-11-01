@@ -163,6 +163,7 @@ import type {
 } from "@getpaseo/protocol/agent-types";
 import type {
   AgentConfigApply,
+  AgentContextUsage,
   ArtifactRecordPayload,
   ArtifactSearchMatch,
   NoteRecordPayload,
@@ -6277,6 +6278,17 @@ export class DaemonClient {
     });
     if (!payload.success) throw new Error(payload.error ?? "Failed to search artifacts.");
     return payload.matches;
+  }
+
+  /** Gate on `server_info.features.agentContextUsage` before calling. */
+  async getAgentContextUsage(agentId: string): Promise<AgentContextUsage | null> {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message: { type: "agent.context.usage.request", agentId, requestId },
+      responseType: "agent.context.usage.response",
+    });
+    return payload.usage ?? null;
   }
 
   /**
