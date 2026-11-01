@@ -2327,6 +2327,12 @@ export const ptBR: TranslationResources = {
     dismiss: "Dispensar",
   },
   contextWindow: {
+    notInWindow: "Fora da janela",
+    skills: "Habilidades",
+    mcpTools: "Ferramentas MCP",
+    memoryFiles: "Arquivos de memória",
+    agents: "Agentes",
+    itemTokens: "{{tokens}} tokens",
     noData: "Sem dados de contexto",
     accessibilityNoData: "Janela de contexto: sem dados de contexto",
     title: "Janela de contexto",

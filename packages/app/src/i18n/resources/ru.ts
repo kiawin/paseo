@@ -2328,6 +2328,12 @@ export const ru: TranslationResources = {
     dismiss: "Закрыть",
   },
   contextWindow: {
+    notInWindow: "Вне окна",
+    skills: "Навыки",
+    mcpTools: "Инструменты MCP",
+    memoryFiles: "Файлы памяти",
+    agents: "Агенты",
+    itemTokens: "{{tokens}} токенов",
     noData: "Нет данных о контексте",
     accessibilityNoData: "Контекстное окно: нет данных о контексте",
     title: "Контекстное окно",
