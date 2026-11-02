@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { discover, fetchUsage } from "./usage.js";
+import { discover, discoverSession, fetchUsage } from "./usage.js";
 import type { UsageReport } from "@getpaseo/plugin/server/usage";
 
 function mockFetch(handlers: Map<string, () => Response>): typeof fetch {
@@ -33,6 +33,8 @@ describe("copilot usage source", () => {
     for (const key of [
       "APPDATA",
       "COPILOT_TOKEN",
+      "COPILOT_GITHUB_TOKEN",
+      "GH_TOKEN",
       "GITHUB_TOKEN",
       "GITHUB_PAT",
       "CURSOR_ACCESS_TOKEN",
@@ -107,8 +109,176 @@ describe("copilot usage source", () => {
     expect(copilot).toMatchObject({
       status: "available",
       planLabel: "business",
+      windows: [],
+      balances: [],
       details: [{ id: "reset", label: "Quota reset", value: "2026-07-01T00:00:00Z" }],
     });
+  });
+});
+
+function snapshot(overrides: Record<string, unknown>) {
+  return {
+    overage_count: 0,
+    overage_permitted: false,
+    percent_remaining: 100,
+    quota_remaining: 0,
+    unlimited: true,
+    has_quota: true,
+    quota_reset_at: 0,
+    token_based_billing: true,
+    credits_used: 0,
+    overage_entitlement: 0,
+    remaining: 0,
+    entitlement: 0,
+    ...overrides,
+  };
+}
+
+async function fetchBody(body: unknown) {
+  const previous = process.env["COPILOT_TOKEN"];
+  try {
+    process.env["COPILOT_TOKEN"] = "fixture-token";
+    return await fetchUsage({ store: "env", locator: "COPILOT_TOKEN" }, async () =>
+      jsonResponse(body),
+    );
+  } finally {
+    if (previous === undefined) delete process.env["COPILOT_TOKEN"];
+    else process.env["COPILOT_TOKEN"] = previous;
+  }
+}
+
+describe("quota snapshots", () => {
+  // Shape captured from an enterprise seat with token-based billing.
+  it("reports credits used on an unlimited enterprise seat without a cap", async () => {
+    const report = await fetchBody({
+      copilot_plan: "enterprise",
+      access_type_sku: "copilot_enterprise_seat_quota",
+      quota_reset_date: "2026-12-01",
+      token_based_billing: true,
+      quota_snapshots: {
+        chat: snapshot({ quota_id: "chat" }),
+        completions: snapshot({ quota_id: "completions" }),
+        premium_interactions: snapshot({
+          quota_id: "premium_interactions",
+          overage_permitted: true,
+          credits_used: 243,
+        }),
+      },
+    });
+
+    expect(report).toEqual({
+      status: "available",
+      planLabel: "enterprise",
+      windows: [],
+      balances: [
+        {
+          id: "premium_interactions",
+          label: "Premium requests",
+          used: 243,
+          remaining: null,
+          limit: null,
+          unit: "credits",
+          resetsAt: "2026-12-01",
+          tone: "default",
+        },
+      ],
+      details: [
+        { id: "credit_value", label: "Credit value", value: "$2.43" },
+        { id: "overage", label: "Overage", value: "Permitted" },
+      ],
+    });
+  });
+
+  it("reports a capped premium quota as a summary window and balance", async () => {
+    const report = await fetchBody({
+      copilot_plan: "individual",
+      quota_reset_date: "2026-12-01",
+      quota_reset_date_utc: "2026-12-01T00:00:00.000Z",
+      quota_snapshots: {
+        premium_interactions: snapshot({
+          unlimited: false,
+          token_based_billing: false,
+          credits_used: null,
+          entitlement: 300,
+          remaining: 75,
+          percent_remaining: 25,
+          overage_permitted: true,
+          overage_count: 4,
+        }),
+      },
+    });
+
+    expect(report).toMatchObject({
+      status: "available",
+      windows: [
+        {
+          id: "premium_interactions",
+          label: "Premium requests",
+          shortLabel: "prem",
+          summary: true,
+          usedPct: 75,
+          remainingPct: 25,
+          resetsAt: "2026-12-01T00:00:00.000Z",
+          tone: "ok",
+        },
+      ],
+      balances: [],
+      details: [{ id: "overage", label: "Overage", value: "Permitted · 4 used" }],
+    });
+  });
+
+  it("skips a malformed snapshot and keeps the others", async () => {
+    const report = await fetchBody({
+      quota_snapshots: {
+        chat: { unlimited: "yes" },
+        premium_interactions: snapshot({ credits_used: 5 }),
+      },
+    });
+
+    expect(report).toMatchObject({
+      status: "available",
+      balances: [{ id: "premium_interactions", used: 5 }],
+    });
+  });
+});
+
+describe("session discovery", () => {
+  const session = (env: Record<string, string>, provider = "copilot") =>
+    ({ kind: "session", provider, env }) as const;
+
+  it("ignores other providers", async () => {
+    expect(await discoverSession(session({ GH_TOKEN: "x" }, "codex"))).toEqual([]);
+  });
+
+  it("names an env token this process shares with the session", async () => {
+    const previous = process.env["GH_TOKEN"];
+    try {
+      process.env["GH_TOKEN"] = "shared-token";
+      expect(await discoverSession(session({ GH_TOKEN: "shared-token" }))).toEqual([
+        { key: "default", input: { store: "env", locator: "GH_TOKEN" } },
+      ]);
+      expect(await discoverSession(session({ GH_TOKEN: "session-only-token" }))).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env["GH_TOKEN"];
+      else process.env["GH_TOKEN"] = previous;
+    }
+  });
+
+  it("falls back to the GitHub CLI login in the session's config directory", async () => {
+    const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+    const directory = await mkdtemp(join(tmpdir(), "usage-gh-"));
+    try {
+      await writeFile(
+        join(directory, "hosts.yml"),
+        "github.com:\n    oauth_token: gho_fixture\n    user: someone\n",
+      );
+      expect(await discoverSession(session({ GH_CONFIG_DIR: directory }))).toEqual([
+        { key: "default", input: { store: "file", locator: join(directory, "hosts.yml") } },
+      ]);
+      expect(await discoverSession(session({ HOME: directory }))).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
 
