@@ -140,12 +140,25 @@ export async function fetchUsage(
   if (!res.ok) throw new Error(`Copilot usage API returned ${res.status}`);
 
   const resp = CopilotUsageResponseSchema.parse(await res.json());
+  const { windows, balances, details } = quotaRows(resp);
+  // Rows already show their reset; the date alone is only useful when there are no rows.
+  if (resp.quota_reset_date && windows.length === 0 && balances.length === 0)
+    details.unshift({ id: "reset", label: "Quota reset", value: resp.quota_reset_date });
+
+  return {
+    status: "available",
+    planLabel: resp.copilot_plan || undefined,
+    windows,
+    balances,
+    details,
+  };
+}
+
+function quotaRows(resp: z.infer<typeof CopilotUsageResponseSchema>) {
   const resetsAt = resp.quota_reset_date_utc ?? resp.quota_reset_date ?? null;
   const windows: UsageWindow[] = [];
   const balances: UsageBalance[] = [];
-  const details: UsageDetail[] = resp.quota_reset_date
-    ? [{ id: "reset", label: "Quota reset", value: resp.quota_reset_date }]
-    : [];
+  const details: UsageDetail[] = [];
 
   for (const quota of QUOTAS) {
     const parsed = QuotaSnapshotSchema.safeParse(resp.quota_snapshots?.[quota.id]);
@@ -153,8 +166,10 @@ export async function fetchUsage(
     const snapshot = parsed.data;
     const balance = quotaBalance(quota, snapshot, resp.token_based_billing, resetsAt);
     if (!balance) continue;
-    balances.push(balance);
-    if (balance.limit != null)
+    // One row per quota: a capped quota is a window, so it can be pinned to the sidebar summary;
+    // an unlimited one has no percentage and stays a balance.
+    if (balance.limit == null) balances.push(balance);
+    else
       windows.push(
         windowFromUsedPct({
           id: quota.id,
@@ -171,14 +186,7 @@ export async function fetchUsage(
       );
     if (quota.id === "premium_interactions") details.push(...premiumDetails(balance, snapshot));
   }
-
-  return {
-    status: "available",
-    planLabel: resp.copilot_plan || undefined,
-    windows,
-    balances,
-    details,
-  };
+  return { windows, balances, details };
 }
 
 function premiumDetails(balance: UsageBalance, snapshot: QuotaSnapshot): UsageDetail[] {

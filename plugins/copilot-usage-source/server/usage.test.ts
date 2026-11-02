@@ -183,7 +183,6 @@ describe("quota snapshots", () => {
         },
       ],
       details: [
-        { id: "reset", label: "Quota reset", value: "2026-12-01" },
         { id: "credit_value", label: "Credit value", value: "$2.43" },
         { id: "overage", label: "Overage", value: "Permitted" },
       ],
@@ -223,20 +222,8 @@ describe("quota snapshots", () => {
           tone: "ok",
         },
       ],
-      balances: [
-        {
-          id: "premium_interactions",
-          used: 225,
-          remaining: 75,
-          limit: 300,
-          unit: "requests",
-          tone: "ok",
-        },
-      ],
-      details: [
-        { id: "reset", label: "Quota reset", value: "2026-12-01" },
-        { id: "overage", label: "Overage", value: "Permitted · 4 used" },
-      ],
+      balances: [],
+      details: [{ id: "overage", label: "Overage", value: "Permitted · 4 used" }],
     });
   });
 
