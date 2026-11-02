@@ -4,10 +4,16 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import {
+  balanceToneFromRemaining,
   unavailable,
+  usedPctOf,
+  windowFromUsedPct,
   type UsageAccount,
-  type UsageReport,
+  type UsageBalance,
   type UsageDetail,
+  type UsageReport,
+  type UsageScope,
+  type UsageWindow,
 } from "@getpaseo/plugin/server/usage";
 
 const ApiOptionalStringSchema = z.preprocess(
@@ -15,10 +21,52 @@ const ApiOptionalStringSchema = z.preprocess(
   z.coerce.string().optional(),
 );
 
+const ApiOptionalNumberSchema = z.preprocess(
+  (value) => (value == null ? undefined : value),
+  z.number().finite().optional(),
+);
+
+const ApiOptionalBooleanSchema = z.preprocess(
+  (value) => (value == null ? undefined : value),
+  z.boolean().optional(),
+);
+
+const QuotaSnapshotSchema = z.object({
+  unlimited: ApiOptionalBooleanSchema,
+  entitlement: ApiOptionalNumberSchema,
+  remaining: ApiOptionalNumberSchema,
+  percent_remaining: ApiOptionalNumberSchema,
+  credits_used: ApiOptionalNumberSchema,
+  overage_permitted: ApiOptionalBooleanSchema,
+  overage_count: ApiOptionalNumberSchema,
+  token_based_billing: ApiOptionalBooleanSchema,
+});
+type QuotaSnapshot = z.infer<typeof QuotaSnapshotSchema>;
+
 const CopilotUsageResponseSchema = z.object({
   copilot_plan: ApiOptionalStringSchema,
   quota_reset_date: ApiOptionalStringSchema,
+  quota_reset_date_utc: ApiOptionalStringSchema,
+  token_based_billing: ApiOptionalBooleanSchema,
+  // Each snapshot is parsed on its own so one malformed quota cannot hide the others.
+  quota_snapshots: z.record(z.string(), z.unknown()).nullish(),
 });
+
+// The quota IDs Copilot reports. Premium requests are the metered quota; chat and completions
+// are unlimited on paid plans and only shown when they are capped or carry usage.
+const QUOTAS = [
+  { id: "premium_interactions", label: "Premium requests", shortLabel: "prem", summary: true },
+  { id: "chat", label: "Chat", shortLabel: "chat", summary: false },
+  { id: "completions", label: "Completions", shortLabel: "comp", summary: false },
+] as const;
+
+const TOKEN_ENV_KEYS = ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"] as const;
+
+// GitHub's published rate for every plan; see
+// https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing. This is the list
+// value of the credits used, not a bill: Business and Enterprise seats draw from an org-wide
+// included pool first, and this endpoint does not report that pool.
+const USD_PER_AI_CREDIT = 0.01;
 
 async function readToken(input: UsageInput): Promise<string | undefined> {
   if (input.store === "env") return process.env[input.locator];
@@ -31,7 +79,7 @@ async function readToken(input: UsageInput): Promise<string | undefined> {
 }
 
 export async function discover(): Promise<UsageAccount[]> {
-  const candidates: UsageInput[] = ["COPILOT_TOKEN", "GITHUB_TOKEN", "GITHUB_PAT"].map(
+  const candidates: UsageInput[] = ["COPILOT_TOKEN", ...TOKEN_ENV_KEYS, "GITHUB_PAT"].map(
     (locator) => ({ store: "env", locator }),
   );
   if (process.env.APPDATA)
@@ -42,6 +90,30 @@ export async function discover(): Promise<UsageAccount[]> {
   candidates.push({ store: "file", locator: join(homedir(), ".config", "gh", "hosts.yml") });
   for (const input of candidates) if (await readToken(input)) return [{ key: "default", input }];
   return [];
+}
+
+// Mirrors Copilot CLI's login order: token env vars first, then the GitHub CLI login. An env
+// token can only be named by an input when this process sees the same value; otherwise the
+// session runs on a credential we cannot reach, and any other store would report a different
+// login. Copilot CLI's own `copilot login` keyring entry is not read.
+export async function discoverSession(
+  scope: Extract<UsageScope, { kind: "session" }>,
+): Promise<UsageAccount[]> {
+  if (scope.provider !== "copilot") return [];
+  const envKey = TOKEN_ENV_KEYS.find((key) => scope.env[key]);
+  if (envKey) {
+    if (process.env[envKey] !== scope.env[envKey]) return [];
+    return [{ key: "default", input: { store: "env", locator: envKey } }];
+  }
+  const input: UsageInput = { store: "file", locator: ghHostsPath(scope.env) };
+  return (await readToken(input)) ? [{ key: "default", input }] : [];
+}
+
+function ghHostsPath(env: Record<string, string>): string {
+  if (env.GH_CONFIG_DIR) return join(env.GH_CONFIG_DIR, "hosts.yml");
+  if (env.XDG_CONFIG_HOME) return join(env.XDG_CONFIG_HOME, "gh", "hosts.yml");
+  if (env.APPDATA) return join(env.APPDATA, "GitHub CLI", "hosts.yml");
+  return join(env.HOME || env.USERPROFILE || homedir(), ".config", "gh", "hosts.yml");
 }
 
 export async function fetchUsage(
@@ -68,15 +140,98 @@ export async function fetchUsage(
   if (!res.ok) throw new Error(`Copilot usage API returned ${res.status}`);
 
   const resp = CopilotUsageResponseSchema.parse(await res.json());
-  const details: UsageDetail[] = resp.quota_reset_date
-    ? [{ id: "reset", label: "Quota reset", value: resp.quota_reset_date }]
-    : [];
+  const { windows, balances, details } = quotaRows(resp);
+  // Rows already show their reset; the date alone is only useful when there are no rows.
+  if (resp.quota_reset_date && windows.length === 0 && balances.length === 0)
+    details.unshift({ id: "reset", label: "Quota reset", value: resp.quota_reset_date });
 
   return {
     status: "available",
     planLabel: resp.copilot_plan || undefined,
-    windows: [],
-    balances: [],
+    windows,
+    balances,
     details,
   };
+}
+
+function quotaRows(resp: z.infer<typeof CopilotUsageResponseSchema>) {
+  const resetsAt = resp.quota_reset_date_utc ?? resp.quota_reset_date ?? null;
+  const windows: UsageWindow[] = [];
+  const balances: UsageBalance[] = [];
+  const details: UsageDetail[] = [];
+
+  for (const quota of QUOTAS) {
+    const parsed = QuotaSnapshotSchema.safeParse(resp.quota_snapshots?.[quota.id]);
+    if (!parsed.success || resp.quota_snapshots?.[quota.id] == null) continue;
+    const snapshot = parsed.data;
+    const balance = quotaBalance(quota, snapshot, resp.token_based_billing, resetsAt);
+    if (!balance) continue;
+    // One row per quota: a capped quota is a window, so it can be pinned to the sidebar summary;
+    // an unlimited one has no percentage and stays a balance.
+    if (balance.limit == null) balances.push(balance);
+    else
+      windows.push(
+        windowFromUsedPct({
+          id: quota.id,
+          label: quota.label,
+          shortLabel: quota.shortLabel,
+          summary: quota.summary,
+          utilizationPct:
+            snapshot.percent_remaining !== undefined
+              ? 100 - snapshot.percent_remaining
+              : usedPctOf(balance.used, balance.limit),
+          resetsAt,
+          tone: balance.tone,
+        }),
+      );
+    if (quota.id === "premium_interactions") details.push(...premiumDetails(balance, snapshot));
+  }
+  return { windows, balances, details };
+}
+
+function premiumDetails(balance: UsageBalance, snapshot: QuotaSnapshot): UsageDetail[] {
+  const details: UsageDetail[] = [];
+  if (balance.unit === "credits" && typeof balance.used === "number")
+    details.push({
+      id: "credit_value",
+      label: "Credit value",
+      value: `$${(balance.used * USD_PER_AI_CREDIT).toFixed(2)}`,
+    });
+  if (snapshot.overage_permitted !== undefined)
+    details.push({
+      id: "overage",
+      label: "Overage",
+      value: overageValue(snapshot.overage_permitted, snapshot.overage_count),
+    });
+  return details;
+}
+
+function quotaBalance(
+  quota: (typeof QUOTAS)[number],
+  snapshot: QuotaSnapshot,
+  accountTokenBilling: boolean | undefined,
+  resetsAt: string | null,
+): UsageBalance | null {
+  // Unlimited quotas report entitlement and remaining as 0; they are not a cap.
+  const limit = snapshot.unlimited ? null : (snapshot.entitlement ?? null);
+  const remaining = snapshot.unlimited ? null : (snapshot.remaining ?? null);
+  const used =
+    snapshot.credits_used ?? (limit !== null && remaining !== null ? limit - remaining : null);
+  if (limit === null && !quota.summary && !(used !== null && used > 0)) return null;
+  const tokenBilling = snapshot.token_based_billing ?? accountTokenBilling ?? false;
+  return {
+    id: quota.id,
+    label: quota.label,
+    used,
+    remaining,
+    limit,
+    unit: tokenBilling ? "credits" : "requests",
+    resetsAt,
+    tone: limit === null ? "default" : balanceToneFromRemaining(remaining),
+  };
+}
+
+function overageValue(permitted: boolean, count: number | undefined): string {
+  if (!permitted) return "Not permitted";
+  return count ? `Permitted · ${count} used` : "Permitted";
 }
