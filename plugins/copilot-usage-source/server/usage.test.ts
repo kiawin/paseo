@@ -335,6 +335,7 @@ describe("macOS Keychain", () => {
     original = { ...process.env };
     for (const key of Object.keys(process.env)) delete process.env[key];
     process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
   });
   afterEach(() => {
     for (const key of Object.keys(process.env)) delete process.env[key];
