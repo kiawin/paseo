@@ -1,7 +1,9 @@
 import type { UsageInput } from "../shared/input.js";
+import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { z } from "zod";
 import {
   balanceToneFromRemaining,
@@ -68,8 +70,44 @@ const TOKEN_ENV_KEYS = ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"] as c
 // included pool first, and this endpoint does not report that pool.
 const USD_PER_AI_CREDIT = 0.01;
 
-async function readToken(input: UsageInput): Promise<string | undefined> {
+// macOS Keychain services holding a GitHub login, in Copilot CLI's order: its own
+// `copilot login` entry (a raw token), then the GitHub CLI's (go-keyring, often prefixed). The
+// service is the input's locator.
+const KEYCHAIN_SERVICES = ["copilot-cli", "gh:github.com"] as const;
+const KEYCHAIN_TIMEOUT_MS = 2_000;
+const execFileAsync = promisify(execFile);
+
+export type SecurityCommandRunner = (args: string[]) => Promise<string | null>;
+
+async function runSecurityCommand(args: string[]): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("security", args, { timeout: KEYCHAIN_TIMEOUT_MS });
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+// go-keyring stores values as-is, base64 behind "go-keyring-base64:", or hex behind
+// "go-keyring-encoded:".
+export function decodeKeyringValue(raw: string): string | undefined {
+  let value = raw;
+  if (raw.startsWith("go-keyring-base64:"))
+    value = Buffer.from(raw.slice("go-keyring-base64:".length), "base64").toString("utf8");
+  else if (raw.startsWith("go-keyring-encoded:"))
+    value = Buffer.from(raw.slice("go-keyring-encoded:".length), "hex").toString("utf8");
+  return value.trim() || undefined;
+}
+
+async function readToken(
+  input: UsageInput,
+  runSecurity: SecurityCommandRunner = runSecurityCommand,
+): Promise<string | undefined> {
   if (input.store === "env") return process.env[input.locator];
+  if (input.store === "keychain") {
+    const raw = await runSecurity(["find-generic-password", "-s", input.locator, "-w"]);
+    return raw ? decodeKeyringValue(raw) : undefined;
+  }
   try {
     const raw = await fs.readFile(input.locator, "utf8");
     return raw.match(/oauth_token:\s*["']?([a-zA-Z0-9_-]+)["']?/)?.[1];
@@ -78,7 +116,10 @@ async function readToken(input: UsageInput): Promise<string | undefined> {
   }
 }
 
-export async function discover(): Promise<UsageAccount[]> {
+export async function discover(
+  platform: NodeJS.Platform = process.platform,
+  runSecurity: SecurityCommandRunner = runSecurityCommand,
+): Promise<UsageAccount[]> {
   const candidates: UsageInput[] = ["COPILOT_TOKEN", ...TOKEN_ENV_KEYS, "GITHUB_PAT"].map(
     (locator) => ({ store: "env", locator }),
   );
@@ -88,16 +129,27 @@ export async function discover(): Promise<UsageAccount[]> {
       locator: join(process.env.APPDATA, "GitHub CLI", "hosts.yml"),
     });
   candidates.push({ store: "file", locator: join(homedir(), ".config", "gh", "hosts.yml") });
-  for (const input of candidates) if (await readToken(input)) return [{ key: "default", input }];
+  // The Keychain goes last: reading it can raise a macOS access prompt, so it runs only when no
+  // other store holds a login.
+  if (platform === "darwin") candidates.push(...keychainInputs());
+  for (const input of candidates)
+    if (await readToken(input, runSecurity)) return [{ key: "default", input }];
   return [];
 }
 
-// Mirrors Copilot CLI's login order: token env vars first, then the GitHub CLI login. An env
+function keychainInputs(): UsageInput[] {
+  return KEYCHAIN_SERVICES.map((locator) => ({ store: "keychain", locator }));
+}
+
+// Mirrors Copilot CLI's login order: token env vars first, then the stored logins. An env
 // token can only be named by an input when this process sees the same value; otherwise the
 // session runs on a credential we cannot reach, and any other store would report a different
-// login. Copilot CLI's own `copilot login` keyring entry is not read.
+// login. On macOS, where gh and `copilot login` keep the token in the Keychain, the Keychain
+// is read after hosts.yml so a plain-text login never costs an access prompt.
 export async function discoverSession(
   scope: Extract<UsageScope, { kind: "session" }>,
+  platform: NodeJS.Platform = process.platform,
+  runSecurity: SecurityCommandRunner = runSecurityCommand,
 ): Promise<UsageAccount[]> {
   if (scope.provider !== "copilot") return [];
   const envKey = TOKEN_ENV_KEYS.find((key) => scope.env[key]);
@@ -105,8 +157,11 @@ export async function discoverSession(
     if (process.env[envKey] !== scope.env[envKey]) return [];
     return [{ key: "default", input: { store: "env", locator: envKey } }];
   }
-  const input: UsageInput = { store: "file", locator: ghHostsPath(scope.env) };
-  return (await readToken(input)) ? [{ key: "default", input }] : [];
+  const candidates: UsageInput[] = [{ store: "file", locator: ghHostsPath(scope.env) }];
+  if (platform === "darwin") candidates.push(...keychainInputs());
+  for (const input of candidates)
+    if (await readToken(input, runSecurity)) return [{ key: "default", input }];
+  return [];
 }
 
 function ghHostsPath(env: Record<string, string>): string {
@@ -119,8 +174,9 @@ function ghHostsPath(env: Record<string, string>): string {
 export async function fetchUsage(
   input: UsageInput,
   fetchApi: typeof fetch = fetch,
+  runSecurity: SecurityCommandRunner = runSecurityCommand,
 ): Promise<UsageReport> {
-  const token = await readToken(input);
+  const token = await readToken(input, runSecurity);
   if (!token) throw new Error("Copilot login store no longer exists");
 
   const res = await fetchApi("https://api.github.com/copilot_internal/user", {
