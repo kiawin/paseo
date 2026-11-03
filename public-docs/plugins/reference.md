@@ -501,20 +501,23 @@ has a 20-second deadline.
 
 Built-in session routes:
 
-| Source                 | Session                                       | Login store                                                                                                                                                    |
-| ---------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude                 | `claude`                                      | `CLAUDE_CONFIG_DIR`, or the default; on macOS, the directory's Keychain entry takes precedence                                                                 |
-| Claude                 | `pi`, `omp` with `anthropic/…` model          | That harness's Anthropic login store                                                                                                                           |
-| Codex                  | `codex`                                       | `CODEX_HOME/auth.json`, or the default                                                                                                                         |
-| Codex                  | `pi`, `opencode`, `omp` with `openai/…` model | That harness's OpenAI login store                                                                                                                              |
-| Cursor                 | `cursor`                                      | cursor-agent's `auth.json` for that session's `XDG_CONFIG_HOME`, `APPDATA`, or home directory; on macOS, the Keychain unless `AGENT_CLI_CREDENTIAL_STORE=file` |
-| Muse                   | `muse`                                        | That session's own Muse launch/config                                                                                                                          |
-| Other built-in sources | Any                                           | No session discovery                                                                                                                                           |
+| Source                 | Session                                       | Login store                                                                                                                                                                      |
+| ---------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude                 | `claude`                                      | `CLAUDE_CONFIG_DIR`, or the default; on macOS, the directory's Keychain entry takes precedence                                                                                   |
+| Claude                 | `pi`, `omp` with `anthropic/…` model          | That harness's Anthropic login store                                                                                                                                             |
+| Codex                  | `codex`                                       | `CODEX_HOME/auth.json`, or the default                                                                                                                                           |
+| Codex                  | `pi`, `opencode`, `omp` with `openai/…` model | That harness's OpenAI login store                                                                                                                                                |
+| Copilot                | `copilot`                                     | A token env var this daemon shares; else gh's `hosts.yml` for that session's `GH_CONFIG_DIR`, `XDG_CONFIG_HOME`, or home; on macOS, then Copilot CLI's and gh's Keychain entries |
+| Cursor                 | `cursor`                                      | cursor-agent's `auth.json` for that session's `XDG_CONFIG_HOME`, `APPDATA`, or home directory; on macOS, the Keychain unless `AGENT_CLI_CREDENTIAL_STORE=file`                   |
+| Muse                   | `muse`                                        | That session's own Muse launch/config                                                                                                                                            |
+| Other built-in sources | Any                                           | No session discovery                                                                                                                                                             |
 
 Claude excludes Bedrock, Vertex, and foreign `ANTHROPIC_BASE_URL` sessions. Codex excludes sessions
 with `OPENAI_BASE_URL` set. Cursor excludes sessions that authenticate with `CURSOR_API_KEY` or
-`CURSOR_AUTH_TOKEN`. Reading cursor-agent's Keychain entry can raise a macOS access prompt the
-first time; the host-wide lookup tries it only after every file store.
+`CURSOR_AUTH_TOKEN`. Reading cursor-agent's or Copilot's Keychain entry can raise a macOS access
+prompt the first time; the host-wide lookup tries it only after every env and file store. Copilot
+reads the `copilot-cli` entry from `copilot login`, then gh's `gh:github.com` entry, which gh
+writes in place of an `oauth_token` in `hosts.yml` when it uses the keyring.
 
 Use a stable account key: 1–128 characters from `[A-Za-z0-9._-]`. It identifies the account or
 organization whose quota is metered and survives token rotation. Never use a credential or raw
