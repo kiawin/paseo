@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { discover, discoverSession, fetchUsage } from "./usage.js";
+import { decodeKeyringValue, discover, discoverSession, fetchUsage } from "./usage.js";
 import type { UsageReport } from "@getpaseo/plugin/server/usage";
 
 function mockFetch(handlers: Map<string, () => Response>): typeof fetch {
@@ -13,6 +13,13 @@ function mockFetch(handlers: Map<string, () => Response>): typeof fetch {
     return handler();
   }) as unknown as typeof fetch;
 }
+
+// Stands in for the `security` CLI so Keychain lookups run on any platform. Maps a service to
+// its stored value.
+function keychainWith(entries: Record<string, string>) {
+  return vi.fn(async (args: string[]) => entries[args[args.indexOf("-s") + 1]!] ?? null);
+}
+const noKeychain = async () => null;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -254,7 +261,9 @@ describe("session discovery", () => {
     ({ kind: "session", provider, env }) as const;
 
   it("ignores other providers", async () => {
-    expect(await discoverSession(session({ GH_TOKEN: "x" }, "codex"))).toEqual([]);
+    expect(
+      await discoverSession(session({ GH_TOKEN: "x" }, "codex"), "darwin", noKeychain),
+    ).toEqual([]);
   });
 
   it("names an env token this process shares with the session", async () => {
@@ -282,10 +291,122 @@ describe("session discovery", () => {
       expect(await discoverSession(session({ GH_CONFIG_DIR: directory }))).toEqual([
         { key: "default", input: { store: "file", locator: join(directory, "hosts.yml") } },
       ]);
-      expect(await discoverSession(session({ HOME: directory }))).toEqual([]);
+      expect(await discoverSession(session({ HOME: directory }), "darwin", noKeychain)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("falls back to the Keychain on macOS when hosts.yml holds no token", async () => {
+    const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+    const directory = await mkdtemp(join(tmpdir(), "usage-gh-"));
+    try {
+      // gh with the keyring store writes hosts.yml without an oauth_token.
+      await writeFile(join(directory, "hosts.yml"), "github.com:\n    user: someone\n");
+      const keychain = keychainWith({ "gh:github.com": "go-keyring-base64:Z2hvX2tleWNoYWlu" });
+      expect(
+        await discoverSession(session({ GH_CONFIG_DIR: directory }), "darwin", keychain),
+      ).toEqual([{ key: "default", input: { store: "keychain", locator: "gh:github.com" } }]);
+      expect(keychain).toHaveBeenCalledWith(["find-generic-password", "-s", "copilot-cli", "-w"]);
+      expect(
+        await discoverSession(session({ GH_CONFIG_DIR: directory }), "linux", keychain),
+      ).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers hosts.yml over the Keychain in a session", async () => {
+    const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+    const directory = await mkdtemp(join(tmpdir(), "usage-gh-"));
+    try {
+      await writeFile(join(directory, "hosts.yml"), "github.com:\n    oauth_token: gho_file\n");
+      const keychain = keychainWith({ "copilot-cli": "gho_keychain" });
+      expect(
+        await discoverSession(session({ GH_CONFIG_DIR: directory }), "darwin", keychain),
+      ).toEqual([
+        { key: "default", input: { store: "file", locator: join(directory, "hosts.yml") } },
+      ]);
+      expect(keychain).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("macOS Keychain", () => {
+  let homeDir: string;
+  let original: NodeJS.ProcessEnv;
+  beforeEach(() => {
+    homeDir = mkdtempSync(join(tmpdir(), "usage-keychain-"));
+    original = { ...process.env };
+    for (const key of Object.keys(process.env)) delete process.env[key];
+    process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+  });
+  afterEach(() => {
+    for (const key of Object.keys(process.env)) delete process.env[key];
+    Object.assign(process.env, original);
+    rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it("falls back to Copilot CLI's Keychain login when no other store holds one", async () => {
+    const keychain = keychainWith({ "copilot-cli": "gho_copilot", "gh:github.com": "gho_gh" });
+    const accounts = await discover("darwin", keychain);
+    expect(accounts).toEqual([
+      { key: "default", input: { store: "keychain", locator: "copilot-cli" } },
+    ]);
+
+    let authorization: string | null = null;
+    const report = await fetchUsage(
+      accounts[0]!.input as Parameters<typeof fetchUsage>[0],
+      (async (_url: RequestInfo | URL, init?: RequestInit) => {
+        authorization =
+          (init?.headers as Record<string, string> | undefined)?.Authorization ?? null;
+        return jsonResponse({ copilot_plan: "enterprise", quota_snapshots: {} });
+      }) as unknown as typeof fetch,
+      keychain,
+    );
+    expect(authorization).toBe("token gho_copilot");
+    expect(report).toMatchObject({ status: "available", planLabel: "enterprise" });
+  });
+
+  it("uses gh's Keychain login when Copilot CLI has none", async () => {
+    const keychain = keychainWith({ "gh:github.com": "go-keyring-base64:Z2hvX2do" });
+    expect(await discover("darwin", keychain)).toEqual([
+      { key: "default", input: { store: "keychain", locator: "gh:github.com" } },
+    ]);
+  });
+
+  it("reads env and file stores before the Keychain", async () => {
+    const keychain = keychainWith({ "copilot-cli": "gho_keychain" });
+    process.env.GH_TOKEN = "gho_env";
+    expect(await discover("darwin", keychain)).toEqual([
+      { key: "default", input: { store: "env", locator: "GH_TOKEN" } },
+    ]);
+    delete process.env.GH_TOKEN;
+    const hostsPath = join(homeDir, ".config", "gh", "hosts.yml");
+    mkdirSync(join(homeDir, ".config", "gh"), { recursive: true });
+    writeFileSync(hostsPath, "github.com:\n    oauth_token: gho_file\n");
+    expect(await discover("darwin", keychain)).toEqual([
+      { key: "default", input: { store: "file", locator: hostsPath } },
+    ]);
+    expect(keychain).not.toHaveBeenCalled();
+  });
+
+  it("never reads the Keychain outside macOS", async () => {
+    const keychain = keychainWith({ "copilot-cli": "gho_keychain" });
+    expect(await discover("linux", keychain)).toEqual([]);
+    expect(await discover("win32", keychain)).toEqual([]);
+    expect(keychain).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a raw token", "gho_raw", "gho_raw"],
+    ["go-keyring base64", "go-keyring-base64:Z2hvX2I2NA==", "gho_b64"],
+    ["go-keyring hex", "go-keyring-encoded:67686f5f686578", "gho_hex"],
+  ])("decodes %s", (_name, raw, token) => {
+    expect(decodeKeyringValue(raw)).toBe(token);
   });
 });
 
@@ -299,7 +420,7 @@ it("discovery returns a locator when fetch finds copilot credentials", async () 
       return new Response(null, { status: 401 });
     });
     expect(requested).toBe(true);
-    expect(await discover()).toEqual([
+    expect(await discover(process.platform, noKeychain)).toEqual([
       { key: "default", input: { store: "env", locator: "COPILOT_TOKEN" } },
     ]);
   } finally {
@@ -318,7 +439,7 @@ describe("account discovery", () => {
       process.env.HOME = directory;
       process.env.USERPROFILE = directory;
       if (scenario === "unrelated files") await writeFile(join(directory, "unrelated.json"), "{}");
-      expect(await discover()).toEqual([]);
+      expect(await discover("darwin", noKeychain)).toEqual([]);
     } finally {
       for (const key of Object.keys(process.env)) delete process.env[key];
       Object.assign(process.env, original);
@@ -328,7 +449,7 @@ describe("account discovery", () => {
 });
 
 async function fetchFirst(fetchApi: typeof fetch) {
-  const accounts = await discover();
+  const accounts = await discover(process.platform, noKeychain);
   const account = accounts[0];
   if (!account) throw new Error("No configured account");
   return fetchUsage(account.input as Parameters<typeof fetchUsage>[0], fetchApi);
