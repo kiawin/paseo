@@ -115,6 +115,16 @@ const beforeSchemas = {
     type: true,
     requestId: true,
   }).strict(),
+  "terminal.create.before": z
+    .object({
+      cwd: z.string(),
+      workspaceId: z.string(),
+      name: z.string().optional(),
+      command: z.string().min(1).optional(),
+      args: z.array(z.string()).optional(),
+      env: z.record(z.string(), z.string()),
+    })
+    .strict(),
 };
 
 const sessionOpenLocalResultSchema = beforeSchemas["agent.open.before"].extend({
@@ -219,6 +229,37 @@ export function publishAgentStream(
   }
 }
 
+function agentOpenTargetChanged(
+  previous: ReturnType<(typeof beforeSchemas)["agent.open.before"]["parse"]>,
+  next: ReturnType<(typeof beforeSchemas)["agent.open.before"]["parse"]>,
+): boolean {
+  return (
+    previous.agentId !== next.agentId ||
+    previous.workspaceId !== next.workspaceId ||
+    previous.provider !== next.provider ||
+    previous.cwd !== next.cwd ||
+    previous.reason !== next.reason ||
+    previous.purpose !== next.purpose ||
+    previous.title !== next.title ||
+    !isDeepStrictEqual(previous.labels, next.labels) ||
+    (next.metadata !== undefined && !isDeepStrictEqual(previous.metadata, next.metadata))
+  );
+}
+
+function terminalLocationChanged(
+  previous: ReturnType<(typeof beforeSchemas)["terminal.create.before"]["parse"]>,
+  next: ReturnType<(typeof beforeSchemas)["terminal.create.before"]["parse"]>,
+): boolean {
+  return previous.cwd !== next.cwd || previous.workspaceId !== next.workspaceId;
+}
+
+function worktreeSourceChanged(
+  previous: ReturnType<(typeof beforeSchemas)["worktree.create.before"]["parse"]>,
+  next: ReturnType<(typeof beforeSchemas)["worktree.create.before"]["parse"]>,
+): boolean {
+  return previous.repoRoot !== next.repoRoot || previous.sourceCheckout !== next.sourceCheckout;
+}
+
 export async function validateBeforeResult<Name extends keyof PluginWireBeforeRequests>(
   name: Name,
   input: PluginWireBeforeRequests[Name],
@@ -228,17 +269,7 @@ export async function validateBeforeResult<Name extends keyof PluginWireBeforeRe
   if (name === "agent.open.before") {
     const previous = beforeSchemas["agent.open.before"].parse(input);
     const next = beforeSchemas["agent.open.before"].parse(result);
-    if (
-      previous.agentId !== next.agentId ||
-      previous.workspaceId !== next.workspaceId ||
-      previous.provider !== next.provider ||
-      previous.cwd !== next.cwd ||
-      previous.reason !== next.reason ||
-      previous.purpose !== next.purpose ||
-      previous.title !== next.title ||
-      !isDeepStrictEqual(previous.labels, next.labels) ||
-      (next.metadata !== undefined && !isDeepStrictEqual(previous.metadata, next.metadata))
-    ) {
+    if (agentOpenTargetChanged(previous, next)) {
       throw new Error("agent.open.before hooks can only change env, tools, and mcpServers");
     }
     return { ...result, metadata: previous.metadata };
@@ -258,10 +289,17 @@ export async function validateBeforeResult<Name extends keyof PluginWireBeforeRe
     // Omitted means unchanged; an explicit {} still replaces.
     return { ...result, metadata: next.metadata ?? previous.metadata };
   }
+  if (name === "terminal.create.before") {
+    const previous = beforeSchemas["terminal.create.before"].parse(input);
+    const next = beforeSchemas["terminal.create.before"].parse(result);
+    if (terminalLocationChanged(previous, next)) {
+      throw new Error("terminal.create.before hooks cannot change cwd or workspaceId");
+    }
+  }
   if (name === "worktree.create.before") {
     const previous = beforeSchemas["worktree.create.before"].parse(input);
     const next = beforeSchemas["worktree.create.before"].parse(result);
-    if (previous.repoRoot !== next.repoRoot || previous.sourceCheckout !== next.sourceCheckout) {
+    if (worktreeSourceChanged(previous, next)) {
       throw new Error("worktree.create.before hooks cannot change repoRoot or sourceCheckout");
     }
   }
