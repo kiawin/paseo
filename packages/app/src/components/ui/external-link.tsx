@@ -14,6 +14,7 @@ export interface ExternalLinkProps {
   tooltip?: ReactNode;
   testID?: string;
   accessibilityLabel?: string;
+  openUrl?: (url: string) => Promise<void>;
 }
 
 /**
@@ -29,10 +30,11 @@ export function ExternalLink({
   tooltip,
   testID,
   accessibilityLabel,
+  openUrl = openExternalUrl,
 }: ExternalLinkProps) {
   const handlePress = useCallback(() => {
-    void openExternalUrl(href).catch(onError ?? console.error);
-  }, [href, onError]);
+    void openUrl(href).catch(onError ?? console.error);
+  }, [href, onError, openUrl]);
 
   const trigger = (
     <Pressable
