@@ -152,6 +152,12 @@ export interface ExternalLinkProps {
 }
 export declare const ExternalLink: ComponentType<ExternalLinkProps>;
 
+export interface LinkProps extends ExternalLinkProps {
+  kind?: import("./index.js").PluginLinkKind;
+}
+/** A link that honors Agent links (default) or Pull request links in the containing workspace. */
+export declare const Link: ComponentType<LinkProps>;
+
 export type SidebarIcon = PluginIcon;
 export interface SidebarRowProps {
   /**
