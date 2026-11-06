@@ -1208,6 +1208,7 @@ export const zhCN: TranslationResources = {
     },
     display: {
       showBackground: "显示后台工作区",
+      showHidden: "显示已隐藏的项目",
       trigger: "显示偏好",
       heading: "显示",
       sort: {
@@ -1316,6 +1317,8 @@ export const zhCN: TranslationResources = {
         openFolderFailed: "Couldn't open folder",
         remove: "移除 project",
         removing: "正在移除...",
+        hide: "从侧边栏隐藏",
+        show: "在侧边栏中显示",
       },
       confirmations: {
         removeTitle: "移除 project？",
@@ -1327,6 +1330,9 @@ export const zhCN: TranslationResources = {
         hostDisconnected: "Host 未连接",
         removeFailed: "部分 workspace 移除失败",
         updateHostToRemove: "更新 host 以移除 projects。",
+        hidden: "已隐藏 {{projectName}}。可在 设置 → 项目 中重新显示。",
+        hideFailed: "无法隐藏项目",
+        showFailed: "无法显示项目",
       },
       empty: {
         title: "还没有 projects",
@@ -2432,6 +2438,10 @@ export const zhCN: TranslationResources = {
     projectList: {
       hostLoadFailed: "无法从 Host {{hostName}} 加载 projects：{{message}}",
       editProject: "编辑 {{projectName}}",
+      hiddenTitle: "已从侧边栏隐藏",
+      hiddenInfo: "这些项目及其工作区不会显示在侧边栏中。仍可通过搜索、链接和插件打开。",
+      show: "显示",
+      showProject: "在侧边栏中显示 {{projectName}}",
     },
     groupInfo: "关于 {{title}}",
     sections: {

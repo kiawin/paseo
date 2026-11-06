@@ -1230,6 +1230,7 @@ export const ja: TranslationResources = {
     },
     display: {
       showBackground: "バックグラウンドを表示",
+      showHidden: "非表示のプロジェクトを表示",
       trigger: "表示設定",
       heading: "表示",
       sort: {
@@ -1340,6 +1341,8 @@ export const ja: TranslationResources = {
         openFolderFailed: "Couldn't open folder",
         remove: "プロジェクトを削除",
         removing: "削除中...",
+        hide: "サイドバーから非表示",
+        show: "サイドバーに表示",
       },
       confirmations: {
         removeTitle: "プロジェクトを削除しますか？",
@@ -1352,6 +1355,9 @@ export const ja: TranslationResources = {
         hostDisconnected: "ホストが接続されていません",
         removeFailed: "一部のワークスペースの削除に失敗しました",
         updateHostToRemove: "プロジェクトを削除するにはホストを更新してください。",
+        hidden: "{{projectName}}を非表示にしました。設定 → プロジェクトから再表示できます。",
+        hideFailed: "プロジェクトを非表示にできませんでした",
+        showFailed: "プロジェクトを表示できませんでした",
       },
       empty: {
         title: "プロジェクトがまだありません",
@@ -2482,6 +2488,11 @@ export const ja: TranslationResources = {
     projectList: {
       hostLoadFailed: "ホスト{{hostName}}からプロジェクトを読み込めませんでした: {{message}}",
       editProject: "{{projectName}}を編集",
+      hiddenTitle: "サイドバーで非表示",
+      hiddenInfo:
+        "これらのプロジェクトとそのワークスペースはサイドバーに表示されません。検索、リンク、プラグインからは引き続き開けます。",
+      show: "表示",
+      showProject: "{{projectName}}をサイドバーに表示",
     },
     groupInfo: "{{title}}について",
     sections: {

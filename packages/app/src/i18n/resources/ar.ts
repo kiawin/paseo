@@ -1217,6 +1217,7 @@ export const ar: TranslationResources = {
     },
     display: {
       showBackground: "إظهار مساحات العمل في الخلفية",
+      showHidden: "إظهار المشاريع المخفية",
       trigger: "تفضيلات العرض",
       heading: "العرض",
       sort: {
@@ -1326,6 +1327,8 @@ export const ar: TranslationResources = {
         openFolderFailed: "Couldn't open folder",
         remove: "إزالة المشروع",
         removing: "جارٍ الإزالة...",
+        hide: "إخفاء من الشريط الجانبي",
+        show: "إظهار في الشريط الجانبي",
       },
       confirmations: {
         removeTitle: "هل تريد إزالة المشروع؟",
@@ -1338,6 +1341,9 @@ export const ar: TranslationResources = {
         hostDisconnected: "Host غير متصل",
         removeFailed: "فشل في إزالة بعض مساحات العمل",
         updateHostToRemove: "قم بتحديث Host لإزالة المشاريع.",
+        hidden: "تم إخفاء {{projectName}}. أظهِره مجددًا من الإعدادات ← المشاريع.",
+        hideFailed: "تعذّر إخفاء المشروع",
+        showFailed: "تعذّر إظهار المشروع",
       },
       empty: {
         title: "لا توجد مشاريع حتى الآن",
@@ -2493,6 +2499,11 @@ export const ar: TranslationResources = {
     projectList: {
       hostLoadFailed: "تعذر تحميل المشاريع من المضيف{{hostName}}:{{message}}",
       editProject: "تحرير{{projectName}}",
+      hiddenTitle: "مخفية من الشريط الجانبي",
+      hiddenInfo:
+        "هذه المشاريع ومساحات عملها لا تظهر في الشريط الجانبي. لا يزال بالإمكان فتحها من البحث والروابط والإضافات.",
+      show: "إظهار",
+      showProject: "إظهار {{projectName}} في الشريط الجانبي",
     },
     groupInfo: "حول{{title}}",
     sections: {
