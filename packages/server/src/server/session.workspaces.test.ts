@@ -4182,6 +4182,7 @@ test("archiving the last workspace emits a remove carrying the now-empty project
       projectKind: "git",
       projectWorktreeLocation: null,
       projectPrAutomation: null,
+      projectHidden: false,
     },
   });
 });

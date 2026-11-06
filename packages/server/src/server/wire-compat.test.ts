@@ -399,6 +399,7 @@ describe("wire compatibility", () => {
             projectKind: "git",
             projectWorktreeLocation: null,
             projectPrAutomation: null,
+            projectHidden: false,
           },
         },
       },
