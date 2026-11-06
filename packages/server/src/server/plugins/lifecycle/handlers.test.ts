@@ -100,6 +100,32 @@ test("session-open hooks reject changes to session identity instead of silently 
   ).rejects.toThrow("agent.open.before hooks can only change env");
 });
 
+test("terminal hooks change the program and environment but not where it runs", async () => {
+  const hooks = new PluginHookHandlers(() => {});
+  hooks.addHook("terminal.create.before", async ({ request }) => ({
+    ...request,
+    command: "claude",
+    args: ["--strict-mcp-config"],
+    env: { ...request.env, BOT: "scout" },
+  }));
+  const input = { cwd: "/bots/scout", workspaceId: "workspace", env: {} };
+  expect(await hooks.invoke("operation", "terminal.create.before", input, paseo)).toEqual({
+    ...input,
+    command: "claude",
+    args: ["--strict-mcp-config"],
+    env: { BOT: "scout" },
+  });
+
+  const moving = new PluginHookHandlers(() => {});
+  moving.addHook("terminal.create.before", async ({ request }) => ({
+    ...request,
+    cwd: "/elsewhere",
+  }));
+  await expect(moving.invoke("operation", "terminal.create.before", input, paseo)).rejects.toThrow(
+    "terminal.create.before hooks cannot change cwd or workspaceId",
+  );
+});
+
 test.each([{ title: "Changed" }, { labels: { changed: "true" } }])(
   "session-open targeting metadata is read-only: %j",
   async (patch) => {
