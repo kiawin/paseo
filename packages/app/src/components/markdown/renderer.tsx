@@ -16,6 +16,7 @@ import { matchCommandLink, useAgentCommandHints, type CommandHints } from "@/age
 import { useForgeShorthand } from "@/git/forge-shorthand";
 import { pluginOverviewUrl } from "@getpaseo/protocol/plugin-overview";
 import { openExternalUrl } from "@/utils/open-external-url";
+import { useOpenLink } from "@/plugins/use-open-link";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import type { Theme } from "@/styles/theme";
 import { isWeb } from "@/constants/platform";
@@ -111,6 +112,7 @@ const MarkdownPart = memo(function MarkdownPart({
   const actions = useAssistantFileLinkActions();
   const workspaceForgeShorthand = useForgeShorthand();
   const forgeShorthand = external ? null : workspaceForgeShorthand;
+  const openForgeLink = useOpenLink("forge");
   const client =
     imageContext.client ??
     (environment.client?.readFile
@@ -150,7 +152,7 @@ const MarkdownPart = memo(function MarkdownPart({
     }
     const forgeUrl = sourceType === "text" ? forgeShorthand?.resolve(url) : null;
     if (forgeUrl) {
-      void openExternalUrl(forgeUrl);
+      void openForgeLink(forgeUrl);
       return;
     }
     const source = linkSource(url, sourceType);
