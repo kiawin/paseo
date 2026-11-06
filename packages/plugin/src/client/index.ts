@@ -121,6 +121,9 @@ export declare function useHosts(): readonly PluginHostSummary[];
 export declare function getPaseoClient(serverId: string): import("@getpaseo/client").PaseoApi;
 /** Open an absolute HTTP(S) URL using the client platform’s external opener. */
 export declare function openExternalUrl(url: string): Promise<void>;
+export type PluginLinkKind = "agent" | "forge";
+/** Open HTTP(S) links using the client's preference and containing workspace browser. */
+export declare function useOpenLink(kind?: PluginLinkKind): (url: string) => Promise<void>;
 
 export { defineTranslations, useTranslation } from "./translations.js";
 export type { PluginI18n } from "./translations.js";
