@@ -14,6 +14,13 @@ import { loadAppSettingsFromStorage } from "@/hooks/use-settings";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { useFileLink } from "./use-file-link";
 import type { OpenFileDisposition } from "@/workspace/file-open";
+import { useOpenLink } from "@/plugins/use-open-link";
+import type { LinkBehavior } from "@/utils/link-destination";
+
+const pluginLinkSettings = vi.hoisted(() => ({
+  agentLinkBehavior: "in-app" as LinkBehavior,
+  forgeLinkBehavior: "external" as LinkBehavior,
+}));
 
 vi.mock("@/utils/open-external-url", () => ({
   openExternalUrl: vi.fn(async () => {}),
@@ -25,6 +32,7 @@ vi.mock("@/desktop/host", () => ({
 
 vi.mock("@/hooks/use-settings", () => ({
   loadAppSettingsFromStorage: vi.fn(async () => ({ agentLinkBehavior: "external" })),
+  useAppSettings: () => ({ settings: pluginLinkSettings }),
 }));
 
 const SOURCE = {
@@ -463,3 +471,70 @@ describe("useFileLink external link routing", () => {
 });
 
 const WorkspaceSwitchContext = React.createContext<(workspaceRoot: string) => void>(() => {});
+
+describe("plugin useOpenLink", () => {
+  beforeEach(() => {
+    vi.mocked(openExternalUrl).mockReset().mockResolvedValue();
+    vi.mocked(isElectronRuntime).mockReturnValue(true);
+    pluginLinkSettings.agentLinkBehavior = "in-app";
+    pluginLinkSettings.forgeLinkBehavior = "external";
+  });
+  afterEach(cleanup);
+
+  function wrapper({ children }: { children: ReactNode }) {
+    return (
+      <AssistantFileLinkResolverProvider onOpenUrlInBrowserTab={openInBrowser}>
+        {children}
+      </AssistantFileLinkResolverProvider>
+    );
+  }
+  const openInBrowser = vi.fn();
+  beforeEach(() => openInBrowser.mockClear());
+
+  it("honors agent and forge preferences independently and updates after a setting change", async () => {
+    const { result, rerender } = renderHook(
+      () => ({ agent: useOpenLink(), forge: useOpenLink("forge") }),
+      { wrapper },
+    );
+    await result.current.agent("https://example.com/agent");
+    await result.current.forge("https://example.com/pr");
+    expect(openInBrowser).toHaveBeenCalledExactlyOnceWith("https://example.com/agent");
+    expect(openExternalUrl).toHaveBeenCalledExactlyOnceWith("https://example.com/pr");
+    pluginLinkSettings.agentLinkBehavior = "external";
+    rerender();
+    await result.current.agent("https://example.com/changed");
+    expect(openExternalUrl).toHaveBeenLastCalledWith("https://example.com/changed");
+    expect(openInBrowser).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens externally without a containing workspace", async () => {
+    const { result } = renderHook(() => useOpenLink());
+    await result.current("https://example.com");
+    expect(openExternalUrl).toHaveBeenCalledExactlyOnceWith("https://example.com");
+  });
+
+  it("opens externally outside Electron even with a workspace", async () => {
+    vi.mocked(isElectronRuntime).mockReturnValue(false);
+    const { result } = renderHook(() => useOpenLink(), { wrapper });
+    await result.current("https://example.com");
+    expect(openExternalUrl).toHaveBeenCalledExactlyOnceWith("https://example.com");
+    expect(openInBrowser).not.toHaveBeenCalled();
+  });
+
+  it.each(["javascript:alert(1)", "file:///tmp/a", "/relative", "invalid"])(
+    "ignores unsafe or malformed URLs: %s",
+    async (url) => {
+      const { result } = renderHook(() => useOpenLink(), { wrapper });
+      await result.current(url);
+      expect(openInBrowser).not.toHaveBeenCalled();
+      expect(openExternalUrl).not.toHaveBeenCalled();
+    },
+  );
+
+  it("propagates opener failures to the caller", async () => {
+    const error = new Error("Could not open browser");
+    vi.mocked(openExternalUrl).mockRejectedValueOnce(error);
+    const { result } = renderHook(() => useOpenLink());
+    await expect(result.current("https://example.com")).rejects.toBe(error);
+  });
+});
