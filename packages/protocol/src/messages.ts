@@ -1095,6 +1095,15 @@ export const ProjectIconSetRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// COMPAT(projectHidden): added in v0.15.x, remove after 2027-05-06.
+// Gate on server_info.features.projectHidden before sending.
+export const ProjectHiddenSetRequestSchema = z.object({
+  type: z.literal("project.hidden.set.request"),
+  projectId: z.string(),
+  hidden: z.boolean(),
+  requestId: z.string(),
+});
+
 export const ProjectRemoveRequestSchema = z.object({
   type: z.literal("project.remove.request"),
   projectId: z.string(),
@@ -2378,6 +2387,17 @@ export const ProjectIconSetResponseSchema = z.object({
     requestId: z.string(),
     projectId: z.string(),
     accepted: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const ProjectHiddenSetResponseSchema = z.object({
+  type: z.literal("project.hidden.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    projectId: z.string(),
+    accepted: z.boolean(),
+    hidden: z.boolean(),
     error: z.string().nullable(),
   }),
 });
@@ -3896,6 +3916,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectWorktreeLocationSetRequestSchema,
   WorkspaceWorktreeRemoveRequestSchema,
   ProjectIconSetRequestSchema,
+  ProjectHiddenSetRequestSchema,
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
   WorkspacePinSetRequestSchema,
@@ -4524,6 +4545,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceScriptManagement: z.boolean().optional(),
         // COMPAT(projectCustomIcon): added in v0.2.0, remove after 2027-01-20.
         projectCustomIcon: z.boolean().optional(),
+        // COMPAT(projectHidden): added in v0.15.x, remove gate after 2027-05-06.
+        projectHidden: z.boolean().optional(),
         // COMPAT(fsEntryOps): added in v0.3.0, remove gate after 2027-02-08.
         fsEntryOps: z.boolean().optional(),
         // COMPAT(fsEntryDuplicate): added in v0.3.0, remove gate after 2027-02-09.
@@ -5039,6 +5062,9 @@ export const WorkspaceProjectDescriptorPayloadSchema = z.object({
   // COMPAT(prAutoFix): added in v0.12.x, remove optional after 2028-10-17.
   // Absent or null means every automation is off.
   projectPrAutomation: ProjectPrAutomationSchema.nullable().optional(),
+  // Left out of the sidebar's project list. Absent means shown.
+  // COMPAT(projectHidden): added in v0.15.x, remove optional after 2027-05-06.
+  projectHidden: z.boolean().optional(),
   // COMPAT(directorySync): sequence of this latest directory projection.
   syncSeq: z.number().int().positive().optional(),
 });
@@ -8253,6 +8279,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ProjectWorktreeLocationSetResponseSchema,
   WorkspaceWorktreeRemoveResponseSchema,
   ProjectIconSetResponseSchema,
+  ProjectHiddenSetResponseSchema,
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,
   WorkspacePinSetResponseSchema,
@@ -8486,6 +8513,7 @@ export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessa
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
 export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
 export type ProjectIconSetResponse = z.infer<typeof ProjectIconSetResponseSchema>;
+export type ProjectHiddenSetResponse = z.infer<typeof ProjectHiddenSetResponseSchema>;
 export type ProjectRemoveResponse = z.infer<typeof ProjectRemoveResponseSchema>;
 export type WorkspaceTitleSetResponse = z.infer<typeof WorkspaceTitleSetResponseSchema>;
 export type WorkspaceTitleSetResponsePayload = z.infer<
@@ -8654,6 +8682,7 @@ export type WorktreeRemovalRefusal = z.infer<typeof WorktreeRemovalRefusalSchema
 export type WorkspaceWorktreeRemoveRequest = z.infer<typeof WorkspaceWorktreeRemoveRequestSchema>;
 export type WorkspaceWorktreeRemoveResponse = z.infer<typeof WorkspaceWorktreeRemoveResponseSchema>;
 export type ProjectIconSetRequest = z.infer<typeof ProjectIconSetRequestSchema>;
+export type ProjectHiddenSetRequest = z.infer<typeof ProjectHiddenSetRequestSchema>;
 export type ProjectRemoveRequest = z.infer<typeof ProjectRemoveRequestSchema>;
 export type WorkspaceTitleSetRequest = z.infer<typeof WorkspaceTitleSetRequestSchema>;
 export type WorkspacePinSetRequest = z.infer<typeof WorkspacePinSetRequestSchema>;

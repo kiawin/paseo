@@ -7,6 +7,7 @@ function project(input: {
   key: string | null;
   root: string;
   name?: string;
+  hidden?: boolean;
 }): ProjectDescriptor {
   return {
     projectId: input.id,
@@ -15,6 +16,7 @@ function project(input: {
     projectCustomName: null,
     projectRootPath: input.root,
     projectKind: "git",
+    ...(input.hidden ? { projectHidden: true } : {}),
   };
 }
 
@@ -40,6 +42,76 @@ function workspace(id: string, projectId: string, root: string): WorkspaceDescri
 }
 
 describe("buildWorkspaceStructureProjects", () => {
+  test("excludeHidden leaves out a hidden project and its workspaces", () => {
+    const sessions = [
+      {
+        serverId: "host-a",
+        projects: [
+          project({ id: "prj_shown", key: null, root: "/a/shown", name: "shown" }),
+          project({ id: "prj_bot", key: null, root: "/a/bot", name: "bot", hidden: true }),
+        ],
+        workspaces: [
+          workspace("ws-shown", "prj_shown", "/a/shown"),
+          workspace("ws-bot", "prj_bot", "/a/bot"),
+        ],
+      },
+    ];
+
+    const visible = buildWorkspaceStructureProjects({ sessions, excludeHidden: true });
+    expect(visible.map((item) => item.hosts[0]?.projectId)).toEqual(["prj_shown"]);
+    expect(visible.flatMap((item) => item.workspaceKeys)).toEqual(["host-a:ws-shown"]);
+
+    const all = buildWorkspaceStructureProjects({ sessions });
+    expect(all.map((item) => item.hosts[0]?.projectId)).toEqual(["prj_bot", "prj_shown"]);
+    expect(all.map((item) => item.hosts[0]?.hidden ?? false)).toEqual([true, false]);
+  });
+
+  test("excludeHidden keeps a shared project on the hosts that did not hide it", () => {
+    const key = "remote:github.com/acme/app";
+    const result = buildWorkspaceStructureProjects({
+      excludeHidden: true,
+      sessions: [
+        {
+          serverId: "host-a",
+          projects: [project({ id: "prj_a", key, root: "/a/app", hidden: true })],
+          workspaces: [workspace("ws-a", "prj_a", "/a/app")],
+        },
+        {
+          serverId: "host-b",
+          projects: [project({ id: "prj_b", key, root: "/b/app" })],
+          workspaces: [workspace("ws-b", "prj_b", "/b/app")],
+        },
+      ],
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      viewKey: key,
+      hosts: [{ serverId: "host-b", projectId: "prj_b" }],
+      workspaceKeys: ["host-b:ws-b"],
+    });
+  });
+
+  test("hiding one same-key clone does not move the other's view key", () => {
+    const key = "remote:github.com/acme/app";
+    const sessions = (hidden: boolean) => [
+      {
+        serverId: "host-a",
+        projects: [
+          project({ id: "prj_one", key, root: "/repos/one" }),
+          project({ id: "prj_two", key, root: "/repos/two", hidden }),
+        ],
+        workspaces: [],
+      },
+    ];
+    const viewKeyOfOne = (hidden: boolean) =>
+      buildWorkspaceStructureProjects({ sessions: sessions(hidden), excludeHidden: true }).find(
+        (item) => item.hosts[0]?.projectId === "prj_one",
+      )?.viewKey;
+
+    expect(viewKeyOfOne(true)).toBe(viewKeyOfOne(false));
+  });
+
   test("groups the same project key across hosts and keeps host-local ids", () => {
     const key = "remote:github.com/acme/app";
     const result = buildWorkspaceStructureProjects({

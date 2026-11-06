@@ -1,15 +1,20 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { ChevronRight } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { ProjectIconView } from "@/components/project-icon-view";
+import { SettingsSection } from "@/components/settings/headings/settings-section";
+import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { useToast } from "@/contexts/toast-context";
 import { useProjects, type ProjectHostError } from "@/hooks/use-projects";
 import { useProjectIcons } from "@/projects/icons";
 import { createProjectIconTarget } from "@/projects/icon-target";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { settingsStyles } from "@/styles/settings";
 import { openProjectSettings } from "@/navigation/settings-navigation";
+import { toErrorMessage } from "@/utils/error-messages";
 import type { ProjectHostEntry, ProjectSummary } from "@/utils/projects";
 
 interface ProjectsScreenProps {
@@ -32,6 +37,14 @@ export default function ProjectsScreen({ serverId }: ProjectsScreenProps) {
           .map((host) => ({ project, host })),
       ),
     [projects, serverId],
+  );
+  const shownProjects = useMemo(
+    () => hostProjects.filter(({ host }) => !host.hidden),
+    [hostProjects],
+  );
+  const hiddenProjects = useMemo(
+    () => hostProjects.filter(({ host }) => host.hidden),
+    [hostProjects],
   );
   const scopedErrors = hostErrors.filter((error) => error.serverId === serverId);
   const iconTargets = useMemo(
@@ -68,17 +81,39 @@ export default function ProjectsScreen({ serverId }: ProjectsScreenProps) {
   return (
     <View testID="projects-list">
       {scopedErrors.length > 0 ? <HostErrorsBanner errors={scopedErrors} /> : null}
-      <View style={settingsStyles.card}>
-        {hostProjects.map(({ project, host }, index) => (
-          <ProjectRow
-            key={host.projectId}
-            project={project}
-            host={host}
-            isFirst={index === 0}
-            iconDataUri={iconDataByProjectViewKey.get(project.viewKey) ?? null}
-          />
-        ))}
-      </View>
+      {shownProjects.length > 0 ? (
+        <View style={settingsStyles.card}>
+          {shownProjects.map(({ project, host }, index) => (
+            <ProjectRow
+              key={host.projectId}
+              project={project}
+              host={host}
+              isFirst={index === 0}
+              iconDataUri={iconDataByProjectViewKey.get(project.viewKey) ?? null}
+            />
+          ))}
+        </View>
+      ) : null}
+      {hiddenProjects.length > 0 ? (
+        <SettingsSection
+          title={t("settings.projectList.hiddenTitle")}
+          info={t("settings.projectList.hiddenInfo")}
+          style={shownProjects.length > 0 ? styles.hiddenSection : undefined}
+          testID="projects-hidden"
+        >
+          <View style={settingsStyles.card}>
+            {hiddenProjects.map(({ project, host }, index) => (
+              <HiddenProjectRow
+                key={host.projectId}
+                project={project}
+                host={host}
+                isFirst={index === 0}
+                iconDataUri={iconDataByProjectViewKey.get(project.viewKey) ?? null}
+              />
+            ))}
+          </View>
+        </SettingsSection>
+      ) : null}
     </View>
   );
 }
@@ -151,6 +186,67 @@ function ProjectRow({ project, host, isFirst, iconDataUri }: ProjectRowProps) {
   );
 }
 
+/** A project left out of the sidebar: the name still opens its settings, and Show puts it back. */
+function HiddenProjectRow({ project, host, isFirst, iconDataUri }: ProjectRowProps) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const client = useHostRuntimeClient(host.serverId);
+  const { viewKey } = project;
+  const { projectName } = host;
+  const handleNavigate = useCallback(() => {
+    openProjectSettings(host.serverId, host.projectId);
+  }, [host.projectId, host.serverId]);
+  const [isShowing, setIsShowing] = useState(false);
+  const handleShow = useCallback(() => {
+    if (!client) {
+      toast.error(t("sidebar.project.toasts.hostDisconnected"));
+      return;
+    }
+    setIsShowing(true);
+    // On success the project.update moves this row back to the shown list.
+    void client
+      .setProjectHidden(host.projectId, false)
+      .catch((error) => toast.error(toErrorMessage(error)))
+      .finally(() => setIsShowing(false));
+  }, [client, host.projectId, t, toast]);
+
+  return (
+    <View
+      style={[settingsStyles.row, !isFirst && settingsStyles.rowBorder, styles.row]}
+      testID={`project-hidden-row-${viewKey}`}
+    >
+      <Pressable
+        style={styles.rowMain}
+        onPress={handleNavigate}
+        accessibilityRole="button"
+        accessibilityLabel={t("settings.projectList.editProject", { projectName })}
+        testID={`project-row-${viewKey}`}
+      >
+        <View style={styles.leading}>
+          <ProjectRowIcon
+            iconDataUri={iconDataUri}
+            projectName={projectName}
+            projectViewKey={viewKey}
+          />
+        </View>
+        <Text style={settingsStyles.rowTitle} numberOfLines={1}>
+          {projectName}
+        </Text>
+      </Pressable>
+      <Button
+        variant="secondary"
+        size="sm"
+        onPress={handleShow}
+        loading={isShowing}
+        accessibilityLabel={t("settings.projectList.showProject", { projectName })}
+        testID={`project-show-${viewKey}`}
+      >
+        {t("settings.projectList.show")}
+      </Button>
+    </View>
+  );
+}
+
 function ProjectRowIcon({
   iconDataUri,
   projectName,
@@ -197,6 +293,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   row: {
     gap: theme.spacing[3],
+  },
+  hiddenSection: {
+    marginTop: theme.spacing[6],
   },
   rowMain: {
     flex: 1,
