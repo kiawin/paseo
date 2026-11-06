@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectHostEntry, ProjectSummary, WorkspaceSummary } from "@/utils/projects";
 import type { ProjectHostError, UseProjectsResult } from "@/hooks/use-projects";
 
-const { projectsState, push } = vi.hoisted(() => ({
+const { projectsState, push, setProjectHidden, toastError } = vi.hoisted(() => ({
   projectsState: {
     current: {
       projects: [],
@@ -18,6 +18,8 @@ const { projectsState, push } = vi.hoisted(() => ({
     } as UseProjectsResult,
   },
   push: vi.fn(),
+  setProjectHidden: vi.fn(async () => {}),
+  toastError: vi.fn(),
 }));
 
 vi.mock("react-native", async (importOriginal) => {
@@ -171,6 +173,43 @@ vi.mock("@/projects/icons", () => ({
   useProjectIcons: () => new Map(),
 }));
 
+vi.mock("@/runtime/host-runtime", () => ({
+  useHostRuntimeClient: () => ({ setProjectHidden }),
+}));
+
+vi.mock("@/contexts/toast-context", () => ({
+  useToast: () => ({ show: vi.fn(), copied: vi.fn(), error: toastError }),
+}));
+
+vi.mock("@/components/settings/headings/settings-section", () => ({
+  SettingsSection: ({
+    title,
+    testID,
+    children,
+  }: {
+    title: string;
+    testID?: string;
+    children?: React.ReactNode;
+  }) => React.createElement("section", { "data-testid": testID }, title, children),
+}));
+
+vi.mock("@/components/ui/button", () => ({
+  Button: ({
+    children,
+    onPress,
+    testID,
+  }: {
+    children?: React.ReactNode;
+    onPress?: () => void;
+    testID?: string;
+  }) =>
+    React.createElement(
+      "button",
+      { type: "button", "data-testid": testID, onClick: () => onPress?.() },
+      children,
+    ),
+}));
+
 import { i18n } from "@/i18n/i18next";
 import ProjectsScreen from "./projects-screen";
 
@@ -198,6 +237,7 @@ function hostEntry(overrides: Partial<ProjectHostEntry> = {}): ProjectHostEntry 
     repoRoot: "/home/me/proj",
     workspaceCount: 1,
     workspaces: [workspaceSummary()],
+    hidden: false,
     ...overrides,
   };
 }
@@ -249,6 +289,8 @@ describe("ProjectsScreen", () => {
     root = createRoot(container);
     setProjectsState({});
     push.mockReset();
+    setProjectHidden.mockClear();
+    toastError.mockClear();
   });
 
   afterEach(() => {
@@ -373,6 +415,58 @@ describe("ProjectsScreen", () => {
 
     expect(container?.textContent).not.toContain("Host A");
     expect(container?.textContent).toContain("Host B");
+  });
+
+  it("lists hidden projects in their own section, apart from the shown ones", () => {
+    setProjectsState({
+      projects: [
+        project({
+          viewKey: "shown",
+          hosts: [hostEntry({ projectId: "project-shown", projectName: "Shown" })],
+        }),
+        project({
+          viewKey: "bot",
+          hosts: [hostEntry({ projectId: "project-bot", projectName: "Bot", hidden: true })],
+        }),
+      ],
+    });
+
+    render();
+
+    const hiddenSection = container?.querySelector('[data-testid="projects-hidden"]');
+    expect(hiddenSection?.textContent).toContain("Hidden from sidebar");
+    expect(hiddenSection?.textContent).toContain("Bot");
+    expect(hiddenSection?.textContent).not.toContain("Shown");
+    expect(container?.querySelector('[data-testid="project-show-shown"]')).toBeNull();
+  });
+
+  it("shows a hidden project again from its Show button", () => {
+    setProjectsState({
+      projects: [
+        project({
+          viewKey: "bot",
+          hosts: [hostEntry({ projectId: "project-bot", projectName: "Bot", hidden: true })],
+        }),
+      ],
+    });
+
+    render();
+
+    const show = container?.querySelector<HTMLElement>('[data-testid="project-show-bot"]');
+    act(() => {
+      show?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(setProjectHidden).toHaveBeenCalledWith("project-bot", false);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("leaves out the hidden section when no project is hidden", () => {
+    setProjectsState({ projects: [project()] });
+
+    render();
+
+    expect(container?.querySelector('[data-testid="projects-hidden"]')).toBeNull();
   });
 
   it("does not include the word 'checkout' anywhere in the rendered tree", () => {

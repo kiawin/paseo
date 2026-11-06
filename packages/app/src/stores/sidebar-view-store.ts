@@ -50,6 +50,8 @@ interface SidebarViewStoreState {
   groupMode: SidebarGroupMode;
   workspaceSort: WorkspaceSort;
   showBackground: boolean;
+  /** Lists projects hidden from the sidebar too, so they can be shown again from their menu. */
+  showHidden: boolean;
   // Empty means "all hosts". A non-empty list pins the sidebar to those hosts.
   hostFilters: string[];
   /**
@@ -65,6 +67,7 @@ interface SidebarViewStoreState {
   projectFilters: string[];
   labelFilter: SidebarLabelFilter;
   toggleBackground: () => void;
+  toggleHidden: () => void;
   setGroupMode: (mode: SidebarGroupMode) => void;
   setWorkspaceSort: (sort: WorkspaceSort) => void;
   toggleHostFilter: (serverId: string) => void;
@@ -81,6 +84,7 @@ interface SidebarViewPersistedState {
   groupMode: SidebarGroupMode;
   workspaceSort: WorkspaceSort;
   showBackground: boolean;
+  showHidden: boolean;
   hostFilters: string[];
   projectFilters: string[];
   labelFilter: SidebarLabelFilter;
@@ -93,6 +97,7 @@ const SidebarLabelFilterSchema = z.object({
 const SidebarViewPersistedStateSchema = z.strictObject({
   workspaceSort: z.enum(["manual", "created", "lastPrompt"]).optional(),
   showBackground: z.boolean().optional(),
+  showHidden: z.boolean().optional(),
   groupMode: PersistedSidebarGroupModeSchema.optional(),
   hostFilters: z.array(z.string()).optional(),
   hostFilter: z.string().nullable().optional(),
@@ -132,6 +137,7 @@ export function migrateSidebarViewState(persistedState: unknown): SidebarViewPer
   if (!result.success) {
     return {
       showBackground: false,
+      showHidden: false,
       groupMode: "project",
       workspaceSort: "created",
       hostFilters: [],
@@ -145,6 +151,7 @@ export function migrateSidebarViewState(persistedState: unknown): SidebarViewPer
   if (legacyGroupMode) {
     return {
       showBackground: false,
+      showHidden: false,
       groupMode: legacyGroupMode,
       workspaceSort: "created",
       hostFilters: [],
@@ -155,6 +162,7 @@ export function migrateSidebarViewState(persistedState: unknown): SidebarViewPer
 
   return {
     showBackground: state.showBackground ?? false,
+    showHidden: state.showHidden ?? false,
     groupMode: state.groupMode === "status" ? "status" : "project",
     workspaceSort: state.workspaceSort ?? "created",
     hostFilters: readHostFilters(state),
@@ -194,12 +202,14 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
   persist(
     (set) => ({
       showBackground: false,
+      showHidden: false,
       groupMode: "project",
       workspaceSort: "created",
       hostFilters: [],
       projectFilters: [],
       labelFilter: emptyLabelFilter(),
       toggleBackground: () => set((state) => ({ showBackground: !state.showBackground })),
+      toggleHidden: () => set((state) => ({ showHidden: !state.showHidden })),
       setGroupMode: (mode) => set({ groupMode: mode }),
       setWorkspaceSort: (workspaceSort) => set({ workspaceSort }),
       toggleHostFilter: (serverId) =>
@@ -248,6 +258,7 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
       ),
       partialize: (state) => ({
         showBackground: state.showBackground ?? false,
+        showHidden: state.showHidden,
         groupMode: state.groupMode,
         workspaceSort: state.workspaceSort,
         hostFilters: state.hostFilters,

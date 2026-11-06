@@ -205,6 +205,11 @@ export interface PaseoWorkspaceHandle {
 
 export interface PaseoProjectActions {
   list(options?: PaseoProjectListOptions): Promise<PaseoProjectListResult>;
+  /**
+   * Leaves the project and its workspaces out of the app sidebar's project list, or shows it
+   * again. Requires `server_info.features.projectHidden`.
+   */
+  setHidden(projectId: string, hidden: boolean): Promise<void>;
   subscribe(handler: PaseoProjectUpdateHandler): () => void;
 }
 
@@ -737,6 +742,7 @@ export function createPaseoApi(
     terminals,
     projects: {
       list: (options) => daemonClient.listProjects(options),
+      setHidden: (projectId, hidden) => daemonClient.setProjectHidden(projectId, hidden),
       subscribe: (handler) => {
         return subscribeEvent("project.update", (message) => {
           if (message.type === "project.update") handler(message.payload);
