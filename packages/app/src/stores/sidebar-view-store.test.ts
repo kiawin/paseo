@@ -34,6 +34,7 @@ describe("sidebar view store", () => {
     useSidebarViewStore.setState({
       workspaceSort: "created",
       showBackground: false,
+      showHidden: false,
       groupMode: "project",
       hostFilters: [],
       projectFilters: [],
@@ -88,6 +89,7 @@ describe("sidebar view store", () => {
     ).toEqual({
       workspaceSort: "created",
       showBackground: false,
+      showHidden: false,
       groupMode: "status",
       hostFilters: [],
       projectFilters: [],
@@ -104,6 +106,7 @@ describe("sidebar view store", () => {
     ).toEqual({
       workspaceSort: "created",
       showBackground: false,
+      showHidden: false,
       groupMode: "status",
       hostFilters: ["host-a"],
       projectFilters: [],
@@ -120,6 +123,7 @@ describe("sidebar view store", () => {
     ).toEqual({
       workspaceSort: "created",
       showBackground: false,
+      showHidden: false,
       groupMode: "status",
       hostFilters: ["host-a", "host-b"],
       projectFilters: [],
@@ -232,6 +236,7 @@ describe("sidebar view store", () => {
     ).toEqual({
       workspaceSort: "created",
       showBackground: false,
+      showHidden: false,
       groupMode: "project",
       hostFilters: ["host-a"],
       projectFilters: ["project-a", "project-b"],
@@ -239,10 +244,19 @@ describe("sidebar view store", () => {
     });
   });
 
+  it("defaults Show hidden projects to off and keeps it once turned on", () => {
+    expect(migrateSidebarViewState({ groupMode: "project" }).showHidden).toBe(false);
+    expect(migrateSidebarViewState({ showHidden: true }).showHidden).toBe(true);
+
+    useSidebarViewStore.getState().toggleHidden();
+    expect(useSidebarViewStore.getState().showHidden).toBe(true);
+  });
+
   it("never keeps project filters from state the schema rejects", () => {
     expect(migrateSidebarViewState({ projectFilters: "project-a" })).toEqual({
       workspaceSort: "created",
       showBackground: false,
+      showHidden: false,
       groupMode: "project",
       hostFilters: [],
       projectFilters: [],

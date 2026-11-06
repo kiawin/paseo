@@ -202,6 +202,8 @@ export interface ProjectDescriptor {
   projectCustomIconRevision?: string | null;
   projectWorktreeLocation?: WorktreeLocation | null;
   projectPrAutomation?: ProjectPrAutomation | null;
+  /** Left out of the sidebar's project list; still listed in settings. */
+  projectHidden?: boolean;
   projectIconRevision?: string;
   projectRootPath: string;
   projectKind: WorkspaceDescriptorPayload["projectKind"];
@@ -218,6 +220,7 @@ export function normalizeProjectDescriptor(
     projectCustomIconRevision: payload.projectCustomIconRevision ?? null,
     projectWorktreeLocation: payload.projectWorktreeLocation ?? null,
     projectPrAutomation: payload.projectPrAutomation ?? null,
+    projectHidden: payload.projectHidden ?? false,
     projectIconRevision: payload.projectIconRevision,
     projectRootPath: payload.projectRootPath,
     projectKind: payload.projectKind,

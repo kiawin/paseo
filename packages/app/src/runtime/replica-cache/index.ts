@@ -357,6 +357,7 @@ const StoredProjectSchema = z.strictObject({
   // Host-local project settings. Optional so rows cached before they existed still load.
   projectWorktreeLocation: WorktreeLocationSchema.nullable().optional(),
   projectPrAutomation: ProjectPrAutomationSchema.nullable().optional(),
+  projectHidden: z.boolean().optional(),
   projectIconRevision: z.string().optional(),
   projectRootPath: z.string(),
   projectKind: z.enum(["git", "non_git", "directory"]),
@@ -826,6 +827,7 @@ function serializeProject(project: ProjectDescriptor): StoredProject {
     projectCustomIconRevision: project.projectCustomIconRevision ?? null,
     projectWorktreeLocation: project.projectWorktreeLocation ?? null,
     projectPrAutomation: project.projectPrAutomation ?? null,
+    projectHidden: project.projectHidden ?? false,
     projectIconRevision: project.projectIconRevision,
     projectRootPath: project.projectRootPath,
     projectKind: project.projectKind,
