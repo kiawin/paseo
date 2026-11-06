@@ -137,7 +137,8 @@ export function SidebarModelProvider({
         const workspaces = project.workspaces.filter((workspace) =>
           visibleWorkspaceKeys.has(workspace.workspaceKey),
         );
-        return workspaces.length > 0 || (!hasActiveLabelFilter && project.workspaces.length === 0)
+        // Background-only projects stay as empty rows, like projects with no workspaces.
+        return workspaces.length > 0 || !hasActiveLabelFilter
           ? [workspaces.length === project.workspaces.length ? project : { ...project, workspaces }]
           : [];
       });

@@ -142,13 +142,16 @@ export function useSidebarWorkspacesList(options?: {
 
   const workspaceSort = useSidebarViewStore((state) => state.workspaceSort);
   const groupMode = useSidebarViewStore((state) => state.groupMode);
+  const showHidden = useSidebarViewStore((state) => state.showHidden);
   const sortSupport = useHostFeatureMap(directoryServerIds, "workspaceSortTimes");
   const workspaceSortSupported = [...sortSupport.values()].every(Boolean);
   const sort =
     groupMode === "project" && (workspaceSort === "manual" || workspaceSortSupported)
       ? workspaceSort
       : undefined;
-  const { projects: hostProjects } = useWorkspaceStructure(directoryServerIds, sort);
+  const { projects: hostProjects } = useWorkspaceStructure(directoryServerIds, sort, {
+    excludeHidden: !showHidden,
+  });
 
   const selectPlacements = useMemo(createSidebarWorkspacePlacementSelector, []);
   const sidebarModel = useMemo(
