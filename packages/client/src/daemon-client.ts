@@ -3870,6 +3870,16 @@ export class DaemonClient {
     if (!payload.accepted) throw new Error(payload.error ?? "setProjectIcon rejected");
   }
 
+  /** Gate on `server_info.features.projectHidden`: older daemons reject the request type. */
+  async setProjectHidden(projectId: string, hidden: boolean, requestId?: string): Promise<void> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"project.hidden.set.response">({
+        requestId,
+        message: { type: "project.hidden.set.request", projectId, hidden },
+      });
+    if (!payload.accepted) throw new Error(payload.error ?? "setProjectHidden rejected");
+  }
+
   async removeProject(
     projectId: string,
     requestId?: string,
