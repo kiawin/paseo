@@ -422,6 +422,14 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
           >
             {t("sidebar.display.showBackground")}
           </MenuItem>
+          <MenuItem
+            selected={preferences.showHidden}
+            closeOnSelect={false}
+            onSelect={preferences.toggleHidden}
+            testID="sidebar-display-show-hidden"
+          >
+            {t("sidebar.display.showHidden")}
+          </MenuItem>
         </MenuSurface>
       </MenuRoot>
       <WorkspaceLabelManagerModal visible={managerOpen} onClose={closeManager} />

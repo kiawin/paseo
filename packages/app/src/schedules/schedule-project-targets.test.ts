@@ -29,6 +29,7 @@ function makeHost(overrides: Partial<ProjectSummary["hosts"][number]>) {
     repoRoot: "/tmp/project",
     workspaceCount: 0,
     workspaces: [],
+    hidden: false,
     ...overrides,
   };
 }

@@ -1260,6 +1260,7 @@ export const es: TranslationResources = {
     },
     display: {
       showBackground: "Mostrar espacios en segundo plano",
+      showHidden: "Mostrar proyectos ocultos",
       trigger: "Preferencias de visualización",
       heading: "Visualización",
       sort: {
@@ -1369,6 +1370,8 @@ export const es: TranslationResources = {
         openFolderFailed: "Couldn't open folder",
         remove: "Eliminar proyecto",
         removing: "Eliminando...",
+        hide: "Ocultar de la barra lateral",
+        show: "Mostrar en la barra lateral",
       },
       confirmations: {
         removeTitle: "¿Quitar proyecto?",
@@ -1381,6 +1384,9 @@ export const es: TranslationResources = {
         hostDisconnected: "Hostno está conectado",
         removeFailed: "No se pudieron eliminar algunos espacios de trabajo",
         updateHostToRemove: "Actualiza el host para eliminar proyectos.",
+        hidden: "{{projectName}} está oculto. Vuelve a mostrarlo en Ajustes → Proyectos.",
+        hideFailed: "No se pudo ocultar el proyecto",
+        showFailed: "No se pudo mostrar el proyecto",
       },
       empty: {
         title: "Aún no hay proyectos",
@@ -2515,6 +2521,11 @@ export const es: TranslationResources = {
     projectList: {
       hostLoadFailed: "No se pudieron cargar proyectos desde el host {{hostName}}:{{message}}",
       editProject: "Editar {{projectName}}",
+      hiddenTitle: "Ocultos en la barra lateral",
+      hiddenInfo:
+        "Estos proyectos y sus espacios de trabajo no aparecen en la barra lateral. Aún se abren desde la búsqueda, enlaces y plugins.",
+      show: "Mostrar",
+      showProject: "Mostrar {{projectName}} en la barra lateral",
     },
     groupInfo: "Acerca de {{title}}",
     sections: {
