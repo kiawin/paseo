@@ -57,7 +57,9 @@ export const CodexProviderOptionsSchema = z
         network_proxy: z.union([z.boolean(), NetworkPolicySchema]).optional(),
         multi_agent_v2: z.boolean().optional(),
       })
-      .strict()
+      // Any other Codex feature flag, e.g. { plugins: false, hooks: false }. Codex merges
+      // these with the user's [features] table, so unnamed flags keep their values.
+      .catchall(z.boolean())
       .optional(),
   })
   .strict() satisfies z.ZodType<ProviderOptions>;
