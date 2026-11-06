@@ -1,4 +1,4 @@
-import type { WorkspaceSort } from "@/projects/workspace-structure";
+import type { WorkspaceSort, WorkspaceStructureOptions } from "@/projects/workspace-structure";
 import { useMemo } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
@@ -97,10 +97,12 @@ export function useWorkspaceDirectory(
 export function useWorkspaceStructure(
   serverIds: string[],
   workspaceSort?: WorkspaceSort,
+  options?: WorkspaceStructureOptions,
 ): WorkspaceStructure {
+  const excludeHidden = options?.excludeHidden ?? false;
   const selectProjects = useMemo(
-    () => createWorkspaceStructureProjectsSelector(serverIds, workspaceSort),
-    [serverIds, workspaceSort],
+    () => createWorkspaceStructureProjectsSelector(serverIds, workspaceSort, { excludeHidden }),
+    [serverIds, workspaceSort, excludeHidden],
   );
   const projects = useStoreWithEqualityFn(
     useSessionStore,
