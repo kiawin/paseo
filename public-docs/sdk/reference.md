@@ -121,10 +121,11 @@ workspace the call creates is background too. With a `parent` and no value, the 
 
 ## `client.projects`
 
-| Method               | Result                   | Behavior                                                                                       |
-| -------------------- | ------------------------ | ---------------------------------------------------------------------------------------------- |
-| `list(options?)`     | `PaseoProjectListResult` | Lists every registered project, including projects with no active workspaces.                  |
-| `subscribe(handler)` | Unsubscribe function     | Requests future project updates; unsubscribe releases demand. `list()` supplies initial state. |
+| Method                         | Result                   | Behavior                                                                                                                                                            |
+| ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list(options?)`               | `PaseoProjectListResult` | Lists every registered project, including projects with no active workspaces.                                                                                       |
+| `setHidden(projectId, hidden)` | `void`                   | Hides the project and its workspaces from the app sidebar's project list, or shows it again. The user can show it from Settings. Requires `features.projectHidden`. |
+| `subscribe(handler)`           | Unsubscribe function     | Requests future project updates; unsubscribe releases demand. `list()` supplies initial state.                                                                      |
 
 See [events](./events.md#follow-provider-catalog-changes) for explicit event observation and cleanup.
 

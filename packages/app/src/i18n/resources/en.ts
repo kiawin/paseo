@@ -1307,6 +1307,7 @@ export const en = {
         openFolderFailed: "Couldn't open folder",
         remove: "Remove project",
         removing: "Removing...",
+        hide: "Hide from sidebar",
       },
       confirmations: {
         removeTitle: "Remove project?",
@@ -1319,6 +1320,8 @@ export const en = {
         hostDisconnected: "Host is not connected",
         removeFailed: "Failed to remove some workspaces",
         updateHostToRemove: "Update the host to remove projects.",
+        hidden: "{{projectName}} is hidden. Show it again in Settings → Projects.",
+        hideFailed: "Couldn't hide the project",
       },
       empty: {
         title: "No projects yet",
@@ -2448,6 +2451,11 @@ export const en = {
     projectList: {
       hostLoadFailed: "Couldn't load projects from host {{hostName}}: {{message}}",
       editProject: "Edit {{projectName}}",
+      hiddenTitle: "Hidden from sidebar",
+      hiddenInfo:
+        "These projects and their workspaces are left out of the sidebar. They still open from search, links and plugins.",
+      show: "Show",
+      showProject: "Show {{projectName}} in the sidebar",
     },
     groupInfo: "About {{title}}",
     sections: {

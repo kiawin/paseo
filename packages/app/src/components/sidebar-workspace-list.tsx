@@ -37,7 +37,7 @@ import { getSidebarRowBackdrop } from "@/components/sidebar/sidebar-row-backdrop
 import { type GestureType } from "react-native-gesture-handler";
 import { WorkspaceRenameModal } from "@/components/workspace-rename-modal";
 import { useWorkspaceClipboardActions } from "@/hooks/use-workspace-clipboard-actions";
-import { ExternalLink, Settings, MoreVertical, Plus, Trash2 } from "lucide-react-native";
+import { EyeOff, ExternalLink, Settings, MoreVertical, Plus, Trash2 } from "lucide-react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { DraggableList, type DraggableRenderItemInfo } from "./draggable-list";
 import type { DraggableListDragHandleProps } from "./draggable-list.types";
@@ -170,6 +170,7 @@ const ThemedPlus = withUnistyles(Plus);
 const ThemedMoreVertical = withUnistyles(MoreVertical);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
+const ThemedEyeOff = withUnistyles(EyeOff);
 
 const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
@@ -265,6 +266,8 @@ interface ProjectHeaderRowProps {
   menuController: ReturnType<typeof useContextMenu> | null;
   onRemoveProject?: () => void;
   removeProjectStatus?: "idle" | "pending";
+  /** Absent when a host behind the row predates hiding projects. */
+  onHideProject?: () => void;
   dragHandleProps?: DraggableListDragHandleProps;
 }
 
@@ -421,6 +424,7 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup,
   onRemoveProject,
   removeProjectStatus,
+  onHideProject,
 }: {
   projectViewKey: string;
   displayName: string;
@@ -433,6 +437,7 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup: () => void;
   onRemoveProject?: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  onHideProject?: () => void;
 }) {
   const actionsVisible = isHovered || platformIsNative || isMobileBreakpoint;
   return (
@@ -457,6 +462,7 @@ function ProjectRowTrailingActions({
             projectPath={projectPath}
             onRemoveProject={onRemoveProject}
             removeProjectStatus={removeProjectStatus}
+            onHideProject={onHideProject}
           />
         </View>
       ) : null}
@@ -466,6 +472,7 @@ function ProjectRowTrailingActions({
 
 const trash2LeadingIcon = <ThemedTrash2 size={14} uniProps={foregroundMutedColorMapping} />;
 const settingsLeadingIcon = <ThemedSettings size={14} uniProps={foregroundMutedColorMapping} />;
+const eyeOffLeadingIcon = <ThemedEyeOff size={14} uniProps={foregroundMutedColorMapping} />;
 const openInNewWindowLeadingIcon = (
   <ThemedExternalLink size={14} uniProps={foregroundMutedColorMapping} />
 );
@@ -485,12 +492,14 @@ function ProjectKebabMenu({
   projectPath,
   onRemoveProject,
   removeProjectStatus,
+  onHideProject,
 }: {
   projectViewKey: string;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  onHideProject?: () => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -512,6 +521,7 @@ function ProjectKebabMenu({
           projectPath={projectPath}
           onRemoveProject={onRemoveProject}
           removeProjectStatus={removeProjectStatus}
+          onHideProject={onHideProject}
         />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -540,6 +550,7 @@ function ProjectMenuItems({
   projectPath,
   onRemoveProject,
   removeProjectStatus,
+  onHideProject,
 }: {
   surface: ProjectMenuSurface;
   projectViewKey: string;
@@ -547,6 +558,7 @@ function ProjectMenuItems({
   projectPath: string;
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  onHideProject?: () => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -593,6 +605,16 @@ function ProjectMenuItems({
         path={projectPath}
         testID={`sidebar-project-menu-open-folder-${projectViewKey}`}
       />
+      {onHideProject ? (
+        <ProjectMenuItem
+          surface={surface}
+          testID={`sidebar-project-menu-hide-${projectViewKey}`}
+          leading={eyeOffLeadingIcon}
+          onSelect={onHideProject}
+        >
+          {t("sidebar.project.actions.hide")}
+        </ProjectMenuItem>
+      ) : null}
       <ProjectMenuItem
         surface={surface}
         testID={`sidebar-project-menu-remove-${projectViewKey}`}
@@ -889,6 +911,7 @@ function ProjectHeaderRow({
   menuController,
   onRemoveProject,
   removeProjectStatus = "idle",
+  onHideProject,
   dragHandleProps,
 }: ProjectHeaderRowProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -994,6 +1017,7 @@ function ProjectHeaderRow({
         onBeginWorkspaceSetup={handleBeginWorkspaceSetup}
         onRemoveProject={onRemoveProject}
         removeProjectStatus={removeProjectStatus}
+        onHideProject={onHideProject}
       />
       {showShortcutBadge && shortcutNumber !== null ? (
         <View style={styles.projectShortcutBadgeOverlay} pointerEvents="none">
@@ -1063,6 +1087,7 @@ function ProjectHeaderRow({
           projectPath={projectPath}
           onRemoveProject={onRemoveProject}
           removeProjectStatus={removeProjectStatus}
+          onHideProject={onHideProject}
         />
       </ContextMenuContent>
     </ContextMenu>
@@ -1802,6 +1827,35 @@ function ProjectBlock({
     })();
   }, [isRemovingProject, displayName, t, toast, project.hosts]);
 
+  const projectServerIds = useMemo(
+    () => project.hosts.map((host) => host.serverId),
+    [project.hosts],
+  );
+  const supportsHidingByServerId = useHostFeatureMap(projectServerIds, "projectHidden");
+  const canHideProject =
+    project.hosts.length > 0 &&
+    project.hosts.every((host) => supportsHidingByServerId.get(host.serverId) === true);
+  const handleHideProject = useCallback(() => {
+    // The row stands for this project on every host it is on, so hiding it hides each of them.
+    void Promise.all(
+      project.hosts.map(async (host) => {
+        const client = getHostRuntimeStore().getClient(host.serverId);
+        if (!client) throw new Error(t("sidebar.project.toasts.hostDisconnected"));
+        await client.setProjectHidden(host.projectId, true);
+      }),
+    )
+      .then(() =>
+        toast.show(t("sidebar.project.toasts.hidden", { projectName: displayName }), {
+          variant: "success",
+        }),
+      )
+      .catch((error) => {
+        toast.error(
+          error instanceof Error ? error.message : t("sidebar.project.toasts.hideFailed"),
+        );
+      });
+  }, [displayName, project.hosts, t, toast]);
+
   const handleToggleCollapsed = useCallback(() => {
     onToggleCollapsed(project.viewKey);
   }, [onToggleCollapsed, project.viewKey]);
@@ -1886,6 +1940,7 @@ function ProjectBlock({
         menuController={null}
         onRemoveProject={handleRemoveProject}
         removeProjectStatus={isRemovingProject ? "pending" : "idle"}
+        onHideProject={canHideProject ? handleHideProject : undefined}
         dragHandleProps={dragHandleProps}
       />
 

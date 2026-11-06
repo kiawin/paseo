@@ -1306,6 +1306,7 @@ export const ko: TranslationResources = {
         openFolderFailed: "폴더를 열 수 없습니다.",
         remove: "프로젝트 제거",
         removing: "제거하는 중...",
+        hide: "사이드바에서 숨기기",
       },
       confirmations: {
         removeTitle: "프로젝트를 제거할까요?",
@@ -1318,6 +1319,8 @@ export const ko: TranslationResources = {
         hostDisconnected: "호스트가 연결되어 있지 않습니다",
         removeFailed: "일부 워크스페이스를 제거하지 못했습니다",
         updateHostToRemove: "프로젝트를 제거하려면 호스트를 업데이트하세요.",
+        hidden: "{{projectName}}을(를) 숨겼습니다. 설정 → 프로젝트에서 다시 표시할 수 있습니다.",
+        hideFailed: "프로젝트를 숨기지 못했습니다",
       },
       empty: {
         title: "아직 프로젝트가 없습니다",
@@ -2434,6 +2437,11 @@ export const ko: TranslationResources = {
     projectList: {
       hostLoadFailed: "{{hostName}} 호스트에서 프로젝트를 불러올 수 없습니다: {{message}}",
       editProject: "{{projectName}} 편집",
+      hiddenTitle: "사이드바에서 숨김",
+      hiddenInfo:
+        "이 프로젝트와 워크스페이스는 사이드바에 표시되지 않습니다. 검색, 링크, 플러그인에서는 계속 열 수 있습니다.",
+      show: "표시",
+      showProject: "사이드바에 {{projectName}} 표시",
     },
     groupInfo: "{{title}} 정보",
     sections: {

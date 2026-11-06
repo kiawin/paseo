@@ -1317,6 +1317,7 @@ export const ru: TranslationResources = {
         openFolderFailed: "Не удалось открыть папку",
         remove: "Удалить проект",
         removing: "Удаление...",
+        hide: "Скрыть из боковой панели",
       },
       confirmations: {
         removeTitle: "Удалить проект?",
@@ -1329,6 +1330,8 @@ export const ru: TranslationResources = {
         hostDisconnected: "Хост не подключён",
         removeFailed: "Не удалось удалить некоторые рабочие пространства.",
         updateHostToRemove: "Обновите хост, чтобы удалять проекты.",
+        hidden: "{{projectName}} скрыт. Вернуть его можно в Настройки → Проекты.",
+        hideFailed: "Не удалось скрыть проект",
       },
       empty: {
         title: "Пока нет проектов",
@@ -2458,6 +2461,11 @@ export const ru: TranslationResources = {
     projectList: {
       hostLoadFailed: "Не удалось загрузить проекты с хоста {{hostName}}: {{message}}",
       editProject: "Изменить {{projectName}}",
+      hiddenTitle: "Скрыты из боковой панели",
+      hiddenInfo:
+        "Эти проекты и их рабочие пространства не показываются в боковой панели. Их по-прежнему можно открыть из поиска, по ссылкам и из плагинов.",
+      show: "Показать",
+      showProject: "Показать {{projectName}} в боковой панели",
     },
     groupInfo: "О разделе «{{title}}»",
     sections: {

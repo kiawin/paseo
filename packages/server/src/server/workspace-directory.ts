@@ -603,6 +603,7 @@ export class WorkspaceDirectory {
         projectCustomIconRevision: project.customIconRevision ?? null,
         projectWorktreeLocation: project.worktreeLocation ?? null,
         projectPrAutomation: project.prAutomation ?? null,
+        projectHidden: project.hidden,
         projectRootPath: project.rootPath,
         projectKind: project.kind,
       }));

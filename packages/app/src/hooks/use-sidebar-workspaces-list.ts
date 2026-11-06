@@ -148,7 +148,9 @@ export function useSidebarWorkspacesList(options?: {
     groupMode === "project" && (workspaceSort === "manual" || workspaceSortSupported)
       ? workspaceSort
       : undefined;
-  const { projects: hostProjects } = useWorkspaceStructure(directoryServerIds, sort);
+  const { projects: hostProjects } = useWorkspaceStructure(directoryServerIds, sort, {
+    excludeHidden: true,
+  });
 
   const selectPlacements = useMemo(createSidebarWorkspacePlacementSelector, []);
   const sidebarModel = useMemo(

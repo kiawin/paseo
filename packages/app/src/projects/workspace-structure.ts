@@ -32,6 +32,14 @@ interface WorkspaceStructureSession {
 
 export type WorkspaceSort = "manual" | "created" | "lastPrompt";
 
+export interface WorkspaceStructureOptions {
+  /**
+   * Leaves out projects the user hid from the sidebar, and their workspaces. Only the sidebar's
+   * project list asks for this; settings, the command center and routes still see every project.
+   */
+  excludeHidden?: boolean;
+}
+
 interface WorkspaceSortItem {
   workspaceName: string;
   workspaceKey: string;
@@ -50,10 +58,12 @@ interface ProjectDraft {
 }
 
 /** The single app boundary that turns host-local projects into grouped display projects. */
-export function buildWorkspaceStructureProjects(input: {
-  sessions: WorkspaceStructureSession[];
-  workspaceSort?: WorkspaceSort;
-}): WorkspaceStructureProject[] {
+export function buildWorkspaceStructureProjects(
+  input: {
+    sessions: WorkspaceStructureSession[];
+    workspaceSort?: WorkspaceSort;
+  } & WorkspaceStructureOptions,
+): WorkspaceStructureProject[] {
   const byProject = new Map<string, ProjectDraft>();
   const projectEntries: Array<{ serverId: string; project: ProjectDescriptor }> = [];
   const keyCountsByServer = new Map<string, Map<string, number>>();
@@ -75,6 +85,9 @@ export function buildWorkspaceStructureProjects(input: {
   );
 
   for (const { serverId, project } of projectEntries) {
+    // Skipped after the shared-key counts above, so hiding one project never moves another's
+    // view key. Its workspaces find no view key below and drop out with it.
+    if (input.excludeHidden && project.projectHidden) continue;
     const viewKey = addProjectToView({
       byProject,
       keyCountsByServer,

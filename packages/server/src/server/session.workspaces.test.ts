@@ -8389,6 +8389,86 @@ test("project.icon.set.request publishes a custom icon that project.icon.get ser
   rmSync(tempDir, { recursive: true, force: true });
 });
 
+test("project.hidden.set.request stores the flag and publishes it on project.update", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const session = asTestSession(
+    createSessionForWorkspaceTests({ onMessage: (message) => emitted.push(message) }),
+  );
+  session.updateClientCapabilities({ [CLIENT_CAPS.projectUpdates]: true });
+
+  const project = createPersistedProjectRecord({
+    projectId: "prj_hidden",
+    rootPath: "/tmp/repo",
+    kind: "git",
+    displayName: "repo",
+    createdAt: "2026-07-22T12:00:00.000Z",
+    updatedAt: "2026-07-22T12:00:00.000Z",
+  });
+  const projects = new Map([[project.projectId, project]]);
+  session.projectRegistry.update = async (id, updater) => {
+    const current = projects.get(id);
+    if (!current) return null;
+    const updated = updater(current);
+    projects.set(id, updated);
+    return updated;
+  };
+
+  await session.handleMessage({
+    type: "project.hidden.set.request",
+    projectId: project.projectId,
+    hidden: true,
+    requestId: "req-hide",
+  });
+
+  expect(findByType(emitted, "project.hidden.set.response")?.payload).toEqual({
+    requestId: "req-hide",
+    projectId: project.projectId,
+    accepted: true,
+    hidden: true,
+    error: null,
+  });
+  expect(projects.get(project.projectId)?.hidden).toBe(true);
+  expect(findByType(emitted, "project.update")?.payload).toMatchObject({
+    kind: "upsert",
+    project: { projectId: project.projectId, projectHidden: true },
+  });
+
+  emitted.length = 0;
+  await session.handleMessage({
+    type: "project.hidden.set.request",
+    projectId: project.projectId,
+    hidden: false,
+    requestId: "req-show",
+  });
+  expect(projects.get(project.projectId)?.hidden).toBe(false);
+  expect(findByType(emitted, "project.update")?.payload).toMatchObject({
+    project: { projectHidden: false },
+  });
+});
+
+test("project.hidden.set.request rejects an unknown project", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const session = asTestSession(
+    createSessionForWorkspaceTests({ onMessage: (message) => emitted.push(message) }),
+  );
+  session.projectRegistry.update = async () => null;
+
+  await session.handleMessage({
+    type: "project.hidden.set.request",
+    projectId: "prj_missing",
+    hidden: true,
+    requestId: "req-missing",
+  });
+
+  expect(findByType(emitted, "project.hidden.set.response")?.payload).toEqual({
+    requestId: "req-missing",
+    projectId: "prj_missing",
+    accepted: false,
+    hidden: true,
+    error: "Project not found",
+  });
+});
+
 test("project.rename.request stores customName and emits an updated workspace descriptor", async () => {
   const emitted: SessionOutboundMessage[] = [];
   const session = asTestSession(
