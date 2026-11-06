@@ -9,6 +9,7 @@ export {
 } from "@/components/settings";
 
 export { ExternalLink } from "@/components/ui/external-link";
+export { Link } from "./link";
 
 export { SidebarRow, SidebarSeparator } from "@/plugins/sidebar-items/kit";
 export { WorkspaceRowBadge } from "@/plugins/workspace-row-badge-items/kit";
