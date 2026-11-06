@@ -202,6 +202,44 @@ test("a session-open hook that returns its own object without metadata or backgr
   });
 });
 
+test("terminal hooks change the program and environment but not where it runs", async () => {
+  const hooks = new PluginHookHandlers(() => {});
+  hooks.addHook("terminal.create.before", async ({ request }) => ({
+    ...request,
+    command: "claude",
+    args: ["--strict-mcp-config"],
+    env: { ...request.env, BOT: "scout" },
+  }));
+  const input = {
+    cwd: "/bots/scout",
+    workspaceId: "workspace",
+    source: "client" as const,
+    name: null,
+    command: null,
+    args: [],
+    input: null,
+    env: {},
+  };
+  expect(await hooks.invoke("operation", "terminal.create.before", input, paseo)).toEqual({
+    ...input,
+    source: "client",
+    name: null,
+    command: "claude",
+    args: ["--strict-mcp-config"],
+    input: null,
+    env: { BOT: "scout" },
+  });
+
+  const moving = new PluginHookHandlers(() => {});
+  moving.addHook("terminal.create.before", async ({ request }) => ({
+    ...request,
+    cwd: "/elsewhere",
+  }));
+  await expect(moving.invoke("operation", "terminal.create.before", input, paseo)).rejects.toThrow(
+    "terminal.create.before hooks cannot change workspaceId, cwd, source, or input",
+  );
+});
+
 test.each([{ title: "Changed" }, { labels: { changed: "true" } }, { background: true }])(
   "session-open targeting metadata is read-only: %j",
   async (patch) => {
@@ -502,11 +540,17 @@ test("terminal and command hooks can change env and wrap", async () => {
   await expect(
     validateBeforeResult("terminal.create.before", terminalRequest, {
       ...terminalRequest,
+      name: "sandboxed",
+      command: "/usr/bin/sandbox",
+      args: ["--profile", "terminal"],
       env: { WRAPPED: "1" },
       wrap: ["/usr/bin/sandbox", "--workspace", "wks_a"],
     }),
   ).resolves.toEqual({
     ...terminalRequest,
+    name: "sandboxed",
+    command: "/usr/bin/sandbox",
+    args: ["--profile", "terminal"],
     env: { WRAPPED: "1" },
     wrap: ["/usr/bin/sandbox", "--workspace", "wks_a"],
   });
@@ -524,14 +568,21 @@ test.each<[string, "terminal.create.before" | "command.run.before", object, obje
     "terminal.create.before",
     terminalRequest,
     { cwd: "/elsewhere" },
-    "terminal.create.before hooks can only change env and wrap",
+    "terminal.create.before hooks cannot change workspaceId, cwd, source, or input",
   ],
   [
-    "a terminal's program",
+    "a terminal's source",
     "terminal.create.before",
     terminalRequest,
-    { command: "/usr/bin/sandbox" },
-    "terminal.create.before hooks can only change env and wrap",
+    { source: "agent" },
+    "terminal.create.before hooks cannot change workspaceId, cwd, source, or input",
+  ],
+  [
+    "a terminal's input",
+    "terminal.create.before",
+    terminalRequest,
+    { input: "echo changed" },
+    "terminal.create.before hooks cannot change workspaceId, cwd, source, or input",
   ],
   [
     "a command's text",

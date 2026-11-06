@@ -63,7 +63,7 @@ Paseo 只观察返回的 Promise，因此独立任务没有错误报告，也没
 | `agent.turn.after`        | 否   | `{ agent, turnId, outcome }`                           |                                                                         |
 | `agent.permission.before` | 否   | `{ agent, request }`                                   |                                                                         |
 | `agent.permission.after`  | 否   | `{ agent, requestId, resolution }`                     |                                                                         |
-| `terminal.create.before`  | 是   | `{ request }`                                          | `env`、`wrap`；抛出错误则拒绝                                           |
+| `terminal.create.before`  | 是   | `{ request }`                                          | `name`、`command`、`args`、`env`、`wrap`；抛出错误则拒绝                |
 | `command.run.before`      | 是   | `{ request }`                                          | `env`、`wrap`；抛出错误则拒绝                                           |
 
 ## 共享载荷 {#shared-payloads}
@@ -248,7 +248,7 @@ Paseo 在工作区中启动终端之前等待此钩子：
 - Agent 通过 Paseo 工具打开的终端
 - 运行 `paseo.json` 脚本、服务和 worktree 终端的终端
 
-钩子收到 `{ request }`，返回替换请求，或返回 `undefined` 保持原值。只能修改 `env` 和 `wrap`。抛出错误会拒绝创建终端，请求方收到 `Plugin <id> terminal.create.before failed: …`。
+钩子收到 `{ request }`，返回替换请求，或返回 `undefined` 保持原值。`workspaceId`、`cwd`、`source` 和 `input` 只读；`name`、`command`、`args`、`env` 和 `wrap` 可修改。抛出错误会拒绝创建终端，请求方收到 `Plugin <id> terminal.create.before failed: …`。
 
 ```ts
 server.addHook("terminal.create.before", async ({ request }) => {
@@ -262,9 +262,9 @@ server.addHook("terminal.create.before", async ({ request }) => {
 | `workspaceId`     | 只读，终端所属的工作区                                                                                                                         |
 | `cwd`             | 只读，终端的起始目录                                                                                                                           |
 | `source`          | 只读。`agent`：Agent 的 Paseo 工具。`script`：`paseo.json` 脚本或服务。`worktree`：`paseo.json` worktree 终端。`client`：应用、CLI、SDK 或插件 |
-| `name`            | 只读，标签页名称，没有时为 null                                                                                                                |
+| `name`            | 标签页名称，没有时为 null                                                                                                                      |
 | `input`           | 只读。对于 `script` 和 `worktree`，是 shell 启动后 Paseo 输入的命令；其他情况为 null                                                           |
-| `command`、`args` | 只读，要运行的程序及其参数。启动默认 shell 时 `command` 为 null                                                                                |
+| `command`、`args` | 要运行的程序及其参数。启动默认 shell 时 `command` 为 null                                                                                      |
 | `env`             | Paseo 添加到终端环境中的变量                                                                                                                   |
 | `wrap`            | 可选的[启动包装](#launch-wraps)。Paseo 启动 `[...wrap, command, ...args]`；没有 `command` 时，把默认 shell 放在包装之后                        |
 

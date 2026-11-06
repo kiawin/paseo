@@ -65,7 +65,7 @@ Paseo only sees the returned promise, so detached work gets no error reporting a
 | `agent.turn.after`        | no    | `{ agent, turnId, outcome }`                           |                                                                        |
 | `agent.permission.before` | no    | `{ agent, request }`                                   |                                                                        |
 | `agent.permission.after`  | no    | `{ agent, requestId, resolution }`                     |                                                                        |
-| `terminal.create.before`  | yes   | `{ request }`                                          | `env`, `wrap`; throw to refuse                                         |
+| `terminal.create.before`  | yes   | `{ request }`                                          | `name`, `command`, `args`, `env`, `wrap`; throw to refuse              |
 | `command.run.before`      | yes   | `{ request }`                                          | `env`, `wrap`; throw to refuse                                         |
 
 ## Shared payloads
@@ -251,7 +251,7 @@ Paseo waits for this hook before it starts a terminal in a workspace:
 - terminals agents open with Paseo tools
 - the terminals `paseo.json` scripts, services, and worktree terminals run in
 
-Receives `{ request }`; return a replacement request or `undefined`. Only `env` and `wrap` may change. Throwing refuses the terminal, and whoever asked for it gets `Plugin <id> terminal.create.before failed: …`.
+Receives `{ request }`; return a replacement request or `undefined`. `workspaceId`, `cwd`, `source`, and `input` are read-only; `name`, `command`, `args`, `env`, and `wrap` may change. Throwing refuses the terminal, and whoever asked for it gets `Plugin <id> terminal.create.before failed: …`.
 
 ```ts
 server.addHook("terminal.create.before", async ({ request }) => {
@@ -265,9 +265,9 @@ server.addHook("terminal.create.before", async ({ request }) => {
 | `workspaceId`     | Read-only; the terminal's workspace                                                                                                                                           |
 | `cwd`             | Read-only; where the terminal starts                                                                                                                                          |
 | `source`          | Read-only. `agent`: an agent's Paseo tool. `script`: a `paseo.json` script or service. `worktree`: a `paseo.json` worktree terminal. `client`: the app, CLI, SDK, or a plugin |
-| `name`            | Read-only; the tab name, or null                                                                                                                                              |
+| `name`            | The tab name, or null                                                                                                                                                         |
 | `input`           | Read-only. For `script` and `worktree`, the command Paseo types into the shell once it starts; otherwise null                                                                 |
-| `command`, `args` | Read-only; the program and its arguments. `command` is null for the default shell                                                                                             |
+| `command`, `args` | The program and its arguments. `command` is null for the default shell                                                                                                        |
 | `env`             | Variables Paseo adds to the terminal's environment                                                                                                                            |
 | `wrap`            | Optional [launch wrap](#launch-wraps). Paseo starts `[...wrap, command, ...args]`; with no `command`, it puts the default shell after the wrap                                |
 

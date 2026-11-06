@@ -85,10 +85,10 @@ export interface PluginTerminalCreateRequest {
    * `paseo.json` worktree terminal. `client`: everything else (the app, CLI, SDK, plugins).
    */
   readonly source: "client" | "agent" | "script" | "worktree";
-  readonly name: string | null;
+  name: string | null;
   /** The program the terminal starts, or `null` for the user's default shell. */
-  readonly command: string | null;
-  readonly args: readonly string[];
+  command: string | null;
+  args: string[];
   /** What Paseo types into the shell once it starts: the command of a script or worktree terminal. */
   readonly input: string | null;
   /** Environment overrides for the terminal; excludes the daemon's inherited environment. */

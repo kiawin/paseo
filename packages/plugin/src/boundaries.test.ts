@@ -442,8 +442,9 @@ describe("lifecycle hook SDK types", () => {
           const program: string | null = request.command;
           // @ts-expect-error The terminal's workspace is read-only.
           request.workspaceId = "wks_other";
-          // @ts-expect-error The terminal's program is read-only; return a wrap instead.
           request.command = "/usr/bin/other";
+          request.name = "Sandboxed terminal";
+          request.args = ["--strict"];
           const wrap: PluginLaunchWrap = ["/usr/bin/sandbox", "--workspace", request.workspaceId];
           return { ...request, env: { A: "1" }, wrap };
         });
