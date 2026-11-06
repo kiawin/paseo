@@ -1,3 +1,4 @@
+import type { PluginTerminalCreateRequest } from "@getpaseo/plugin/server";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory, type BackgroundVisibility } from "./agent/directory.js";
@@ -1231,6 +1232,7 @@ export class Session {
       sessionLogger: this.sessionLogger,
       listTerminalWorkspaceRefs: () => this.listActiveWorkspaceRefs(),
       getClientBufferedAmount: (source) => this.getTransportBufferedAmount(source),
+      beforeCreateTerminal: (request) => this.prepareTerminal(request),
     });
     this.agentDirectory = new AgentDirectory({
       manager: this.agentManager,
@@ -7786,6 +7788,14 @@ export class Session {
     return creationRequest.source.kind === "directory"
       ? this.handleWorkspaceCreateLocal(creationRequest, workspaceId)
       : this.handleWorkspaceCreateWorktree(creationRequest, workspaceId);
+  }
+
+  private async prepareTerminal(
+    request: PluginTerminalCreateRequest,
+  ): Promise<PluginTerminalCreateRequest> {
+    return this.pluginRuntime
+      ? await this.pluginRuntime.before("terminal.create.before", request)
+      : request;
   }
 
   private async handleWorkspaceCreateLocal(

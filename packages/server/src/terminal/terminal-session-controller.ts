@@ -1,4 +1,5 @@
 import type pino from "pino";
+import type { PluginTerminalCreateRequest } from "@getpaseo/plugin/server";
 import type {
   OwnedSubscription,
   SessionDelivery,
@@ -96,6 +97,10 @@ export interface TerminalSessionControllerOptions {
   // Bytes queued on the client transport but not yet sent, or null when the
   // transport exposes no backpressure signal (e.g. the multiplexed relay socket).
   getClientBufferedAmount?: (source: object) => number | null;
+  // Plugins' terminal.create.before hooks, which may change the program and environment.
+  beforeCreateTerminal?: (
+    request: PluginTerminalCreateRequest,
+  ) => Promise<PluginTerminalCreateRequest>;
 }
 
 interface TerminalWorkspaceRef {
@@ -589,12 +594,24 @@ export class TerminalSessionController {
         throw new Error(`Workspace ${workspaceId} is not active or does not exist`);
       }
 
+      const request: PluginTerminalCreateRequest = {
+        cwd: msg.cwd,
+        workspaceId,
+        ...(msg.name !== undefined ? { name: msg.name } : {}),
+        ...(msg.command ? { command: msg.command } : {}),
+        ...(msg.args ? { args: msg.args } : {}),
+        env: {},
+      };
+      const prepared = this.options.beforeCreateTerminal
+        ? await this.options.beforeCreateTerminal(request)
+        : request;
       const session = await this.terminalManager.createTerminal({
         cwd: msg.cwd,
         workspaceId,
-        name: msg.name,
-        command: msg.command,
-        args: msg.args,
+        name: prepared.name,
+        command: prepared.command,
+        args: prepared.args,
+        ...(Object.keys(prepared.env).length > 0 ? { env: prepared.env } : {}),
         rows: msg.size?.rows,
         cols: msg.size?.cols,
       });
