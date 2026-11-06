@@ -123,6 +123,16 @@ const beforeSchemas = {
     type: true,
     requestId: true,
   }).strict(),
+  "terminal.create.before": z
+    .object({
+      cwd: z.string(),
+      workspaceId: z.string(),
+      name: z.string().optional(),
+      command: z.string().min(1).optional(),
+      args: z.array(z.string()).optional(),
+      env: z.record(z.string(), z.string()),
+    })
+    .strict(),
 };
 
 const sessionOpenLocalResultSchema = beforeSchemas["agent.open.before"].extend({
@@ -308,6 +318,13 @@ export async function validateBeforeResult<Name extends keyof PluginWireBeforeRe
     const previous = beforeSchemas["worktree.create.before"].parse(input);
     const next = beforeSchemas["worktree.create.before"].parse(result);
     return validateWorktreeBeforeResult(previous, next) as PluginWireBeforeRequests[Name];
+  }
+  if (name === "terminal.create.before") {
+    const previous = beforeSchemas["terminal.create.before"].parse(input);
+    const next = beforeSchemas["terminal.create.before"].parse(result);
+    if (previous.cwd !== next.cwd || previous.workspaceId !== next.workspaceId) {
+      throw new Error("terminal.create.before hooks cannot change cwd or workspaceId");
+    }
   }
   return result;
 }

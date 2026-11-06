@@ -65,6 +65,7 @@ Paseo only sees the returned promise, so detached work gets no error reporting a
 | `agent.turn.after`        | no    | `{ agent, turnId, outcome }`              |                                                                |
 | `agent.permission.before` | no    | `{ agent, request }`                      |                                                                |
 | `agent.permission.after`  | no    | `{ agent, requestId, resolution }`        |                                                                |
+| `terminal.create.before`  | yes   | `{ request }`                             | `name`, `command`, `args`, `env`                               |
 
 ## Shared payloads
 
