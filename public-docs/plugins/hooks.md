@@ -65,6 +65,7 @@ Paseo only sees the returned promise, so detached work gets no error reporting a
 | `agent.turn.after`        | no    | `{ agent, turnId, outcome }`              |                                                |
 | `agent.permission.before` | no    | `{ agent, request }`                      |                                                |
 | `agent.permission.after`  | no    | `{ agent, requestId, resolution }`        |                                                |
+| `terminal.create.before`  | yes   | `{ request }`                             | `name`, `command`, `args`, `env`               |
 
 ## Shared payloads
 
@@ -640,6 +641,23 @@ server.addHook("agent.turn.after", async ({ agent }) => {
 ```
 
 `background` is fixed when the agent is created and a hook cannot change it. An agent created in a background workspace without `background: true` reads `false`. Hosts older than 0.16.0 omit the field, so it reads as `undefined`.
+
+## terminal.create.before
+
+Someone opens a terminal in a workspace: a shell, or a terminal profile such as "Claude Code". Receives `{ request: { cwd, workspaceId, name?, command?, args?, env } }` before the process starts. `command` and `args` are the profile's program; both are absent for the default shell. `env` starts empty and is added to the terminal's environment. You cannot change `cwd` or `workspaceId`. A throw, invalid result, or timeout fails the terminal. Terminals that agents open and workspace scripts do not run this hook.
+
+### Run a profile's CLI with a project's settings
+
+```ts
+server.addHook("terminal.create.before", async ({ request }) => {
+  if (request.command !== "claude" || !request.cwd.startsWith("/srv/sandbox")) return;
+  return {
+    ...request,
+    args: [...(request.args ?? []), "--setting-sources", "project,local"],
+    env: { ...request.env, SANDBOX: "1" },
+  };
+});
+```
 
 ## Ordering and returned values
 

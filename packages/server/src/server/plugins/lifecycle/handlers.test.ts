@@ -202,6 +202,32 @@ test("a session-open hook that returns its own object without metadata or backgr
   });
 });
 
+test("terminal hooks change the program and environment but not where it runs", async () => {
+  const hooks = new PluginHookHandlers(() => {});
+  hooks.addHook("terminal.create.before", async ({ request }) => ({
+    ...request,
+    command: "claude",
+    args: ["--strict-mcp-config"],
+    env: { ...request.env, BOT: "scout" },
+  }));
+  const input = { cwd: "/bots/scout", workspaceId: "workspace", env: {} };
+  expect(await hooks.invoke("operation", "terminal.create.before", input, paseo)).toEqual({
+    ...input,
+    command: "claude",
+    args: ["--strict-mcp-config"],
+    env: { BOT: "scout" },
+  });
+
+  const moving = new PluginHookHandlers(() => {});
+  moving.addHook("terminal.create.before", async ({ request }) => ({
+    ...request,
+    cwd: "/elsewhere",
+  }));
+  await expect(moving.invoke("operation", "terminal.create.before", input, paseo)).rejects.toThrow(
+    "terminal.create.before hooks cannot change cwd or workspaceId",
+  );
+});
+
 test.each([{ title: "Changed" }, { labels: { changed: "true" } }, { background: true }])(
   "session-open targeting metadata is read-only: %j",
   async (patch) => {

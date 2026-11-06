@@ -63,6 +63,7 @@ Paseo 只观察返回的 Promise，因此独立任务没有错误报告，也没
 | `agent.turn.after`        | 否   | `{ agent, turnId, outcome }`              |                                            |
 | `agent.permission.before` | 否   | `{ agent, request }`                      |                                            |
 | `agent.permission.after`  | 否   | `{ agent, requestId, resolution }`        |                                            |
+| `terminal.create.before`  | 是   | `{ request }`                             | `name`、`command`、`args`、`env`           |
 
 ## 共享载荷 {#shared-payloads}
 
@@ -624,6 +625,23 @@ server.addHook("agent.turn.after", async ({ agent }) => {
 ```
 
 `background` 在创建 Agent 时确定，钩子无法修改。在后台工作区中创建但没有传 `background: true` 的 Agent 读取到 `false`。早于 0.16.0 的主机不发送该字段，读取结果为 `undefined`。
+
+## terminal.create.before {#terminalcreatebefore}
+
+有人在工作区中打开终端时触发：默认 shell，或 "Claude Code" 这类终端配置。进程启动前收到 `{ request: { cwd, workspaceId, name?, command?, args?, env } }`。`command` 和 `args` 是终端配置要运行的程序；默认 shell 时两者都不存在。`env` 初始为空，会加入终端的环境变量。不能修改 `cwd` 或 `workspaceId`。抛出错误、返回无效结果或超时都会让终端创建失败。Agent 打开的终端和工作区脚本不会触发此钩子。
+
+### 用项目设置运行终端配置的 CLI {#run-a-profiles-cli-with-a-projects-settings}
+
+```ts
+server.addHook("terminal.create.before", async ({ request }) => {
+  if (request.command !== "claude" || !request.cwd.startsWith("/srv/sandbox")) return;
+  return {
+    ...request,
+    args: [...(request.args ?? []), "--setting-sources", "project,local"],
+    env: { ...request.env, SANDBOX: "1" },
+  };
+});
+```
 
 ## 顺序与返回值 {#ordering-and-returned-values}
 
