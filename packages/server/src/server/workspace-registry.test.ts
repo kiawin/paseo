@@ -523,6 +523,47 @@ describe("workspace registries", () => {
     expect(record?.displayName).toBe("acme/repo");
   });
 
+  test("project records written before the hidden flag load as shown", async () => {
+    const filePath = path.join(tmpDir, "projects", "projects.json");
+    await writeJsonFileAtomic(filePath, [
+      {
+        projectId: "prj_legacy",
+        rootPath: "/tmp/repo",
+        kind: "git",
+        displayName: "repo",
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+        archivedAt: null,
+      },
+    ]);
+    const registry = new FileBackedProjectRegistry(filePath, logger);
+    await registry.initialize();
+
+    expect((await registry.get("prj_legacy"))?.hidden).toBe(false);
+  });
+
+  test("project record persists the hidden flag across a reload", async () => {
+    await projectRegistry.initialize();
+    await projectRegistry.upsert(
+      createPersistedProjectRecord({
+        projectId: "prj_hidden",
+        rootPath: "/tmp/repo",
+        kind: "git",
+        displayName: "repo",
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      }),
+    );
+    await projectRegistry.update("prj_hidden", (record) => ({ ...record, hidden: true }));
+
+    const reloaded = new FileBackedProjectRegistry(
+      path.join(tmpDir, "projects", "projects.json"),
+      logger,
+    );
+    await reloaded.initialize();
+    expect((await reloaded.get("prj_hidden"))?.hidden).toBe(true);
+  });
+
   test("creates, updates, archives, deletes, and lists workspace records", async () => {
     await workspaceRegistry.initialize();
     const mutations: WorkspaceMutation[] = [];
