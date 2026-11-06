@@ -301,6 +301,36 @@ and does not promise delivery while the app is suspended or closed.
 
 ### External links and workspace browsers
 
+Use `Link` for URLs published by an agent. It honors **Agent links** in the client's settings.
+Pass `kind="forge"` for pull requests, CI checks, and review comments to honor **Pull request links**:
+
+```tsx
+import { Link } from "@getpaseo/plugin/client/ui";
+
+<Link href="https://example.com">Open page</Link>;
+<Link kind="forge" href="https://github.com/getpaseo/paseo/pull/1">
+  Open pull request
+</Link>;
+```
+
+`Link` takes the same props as `ExternalLink`, plus optional `kind: "agent" | "forge"`
+(default `"agent"`). For custom controls and actions, call the corresponding hook:
+
+```tsx
+import { useOpenLink } from "@getpaseo/plugin/client";
+
+const openLink = useOpenLink(); // or useOpenLink("forge")
+// Call from a user interaction; handle rejection in your action's error UI.
+await openLink("https://example.com");
+```
+
+`useOpenLink(kind?): (url: string) => Promise<void>` follows changes to the selected preference.
+When the preference is **Open in Paseo**, Electron uses the containing workspace's browser
+opener. The containing surface must supply workspace link context (as agent timelines do).
+Without that context, or outside Electron, links open externally. The hook does not infer
+an active workspace from another pane. Malformed URLs and non-HTTP(S) schemes are ignored;
+opener failures reject. `Link` forwards failures to `onError`, or logs them when it is omitted.
+
 Use `ExternalLink` to open documentation outside Paseo:
 
 ```tsx
