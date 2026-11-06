@@ -39,7 +39,15 @@ import { getSidebarRowBackdrop } from "@/components/sidebar/sidebar-row-backdrop
 import { type GestureType } from "react-native-gesture-handler";
 import { useSidebarWorkspaceRename } from "@/workspace-rename";
 import { useWorkspaceClipboardActions } from "@/hooks/use-workspace-clipboard-actions";
-import { ExternalLink, Settings, MoreVertical, Plus, Trash2 } from "lucide-react-native";
+import {
+  Eye,
+  EyeOff,
+  ExternalLink,
+  Settings,
+  MoreVertical,
+  Plus,
+  Trash2,
+} from "lucide-react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { DraggableList, type DraggableRenderItemInfo } from "./draggable-list";
 import type { DraggableListDragHandleProps } from "./draggable-list.types";
@@ -172,6 +180,14 @@ const ThemedPlus = withUnistyles(Plus);
 const ThemedMoreVertical = withUnistyles(MoreVertical);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
+const ThemedEye = withUnistyles(Eye);
+const ThemedEyeOff = withUnistyles(EyeOff);
+
+/** Hide or show again; `hidden` is whether the row is hidden now, which picks the label. */
+interface ProjectVisibilityAction {
+  hidden: boolean;
+  onSelect: () => void;
+}
 
 const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
@@ -267,6 +283,8 @@ interface ProjectHeaderRowProps {
   menuController: ReturnType<typeof useContextMenu> | null;
   onRemoveProject?: () => void;
   removeProjectStatus?: "idle" | "pending";
+  /** Absent when a host behind the row predates hiding projects. */
+  visibilityAction?: ProjectVisibilityAction;
   dragHandleProps?: DraggableListDragHandleProps;
 }
 
@@ -422,6 +440,7 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup,
   onRemoveProject,
   removeProjectStatus,
+  visibilityAction,
 }: {
   projectViewKey: string;
   displayName: string;
@@ -434,6 +453,7 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup: () => void;
   onRemoveProject?: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  visibilityAction?: ProjectVisibilityAction;
 }) {
   const actionsVisible = isHovered || platformIsNative || isMobileBreakpoint;
   return (
@@ -458,6 +478,7 @@ function ProjectRowTrailingActions({
             projectPath={projectPath}
             onRemoveProject={onRemoveProject}
             removeProjectStatus={removeProjectStatus}
+            visibilityAction={visibilityAction}
           />
         </View>
       ) : null}
@@ -467,6 +488,9 @@ function ProjectRowTrailingActions({
 
 const trash2LeadingIcon = <ThemedTrash2 size={14} uniProps={foregroundMutedColorMapping} />;
 const settingsLeadingIcon = <ThemedSettings size={14} uniProps={foregroundMutedColorMapping} />;
+const eyeOffLeadingIcon = <ThemedEyeOff size={14} uniProps={foregroundMutedColorMapping} />;
+const eyeLeadingIcon = <ThemedEye size={14} uniProps={foregroundMutedColorMapping} />;
+const hiddenMarkIcon = <ThemedEyeOff size={12} uniProps={foregroundMutedColorMapping} />;
 const openInNewWindowLeadingIcon = (
   <ThemedExternalLink size={14} uniProps={foregroundMutedColorMapping} />
 );
@@ -486,12 +510,14 @@ function ProjectKebabMenu({
   projectPath,
   onRemoveProject,
   removeProjectStatus,
+  visibilityAction,
 }: {
   projectViewKey: string;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  visibilityAction?: ProjectVisibilityAction;
 }) {
   const { t } = useTranslation();
   return (
@@ -513,6 +539,7 @@ function ProjectKebabMenu({
           projectPath={projectPath}
           onRemoveProject={onRemoveProject}
           removeProjectStatus={removeProjectStatus}
+          visibilityAction={visibilityAction}
         />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -541,6 +568,7 @@ function ProjectMenuItems({
   projectPath,
   onRemoveProject,
   removeProjectStatus,
+  visibilityAction,
 }: {
   surface: ProjectMenuSurface;
   projectViewKey: string;
@@ -548,6 +576,7 @@ function ProjectMenuItems({
   projectPath: string;
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  visibilityAction?: ProjectVisibilityAction;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -594,6 +623,18 @@ function ProjectMenuItems({
         path={projectPath}
         testID={`sidebar-project-menu-open-folder-${projectViewKey}`}
       />
+      {visibilityAction ? (
+        <ProjectMenuItem
+          surface={surface}
+          testID={`sidebar-project-menu-${visibilityAction.hidden ? "show" : "hide"}-${projectViewKey}`}
+          leading={visibilityAction.hidden ? eyeLeadingIcon : eyeOffLeadingIcon}
+          onSelect={visibilityAction.onSelect}
+        >
+          {visibilityAction.hidden
+            ? t("sidebar.project.actions.show")
+            : t("sidebar.project.actions.hide")}
+        </ProjectMenuItem>
+      ) : null}
       <ProjectMenuItem
         surface={surface}
         testID={`sidebar-project-menu-remove-${projectViewKey}`}
@@ -877,6 +918,28 @@ function NewWorkspaceGhostRow({
   );
 }
 
+/** A hidden project is only listed while "Show hidden projects" is on; it is dimmed and marked. */
+function ProjectRowTitle({
+  displayName,
+  hidden,
+  projectViewKey,
+}: {
+  displayName: string;
+  hidden: boolean;
+  projectViewKey: string;
+}) {
+  return (
+    <View style={styles.projectTitleGroup}>
+      <Text style={hidden ? styles.projectTitleHidden : styles.projectTitle} numberOfLines={1}>
+        {displayName}
+      </Text>
+      {hidden ? (
+        <View testID={`sidebar-project-hidden-mark-${projectViewKey}`}>{hiddenMarkIcon}</View>
+      ) : null}
+    </View>
+  );
+}
+
 function ProjectHeaderRow({
   project,
   displayName,
@@ -897,6 +960,7 @@ function ProjectHeaderRow({
   menuController,
   onRemoveProject,
   removeProjectStatus = "idle",
+  visibilityAction,
   dragHandleProps,
 }: ProjectHeaderRowProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -972,11 +1036,11 @@ function ProjectHeaderRow({
           isArchiving={isArchiving}
         />
 
-        <View style={styles.projectTitleGroup}>
-          <Text style={styles.projectTitle} numberOfLines={1}>
-            {displayName}
-          </Text>
-        </View>
+        <ProjectRowTitle
+          displayName={displayName}
+          hidden={visibilityAction?.hidden === true}
+          projectViewKey={project.viewKey}
+        />
       </View>
       <ProjectRowTrailingActions
         projectViewKey={project.viewKey}
@@ -990,6 +1054,7 @@ function ProjectHeaderRow({
         onBeginWorkspaceSetup={handleBeginWorkspaceSetup}
         onRemoveProject={onRemoveProject}
         removeProjectStatus={removeProjectStatus}
+        visibilityAction={visibilityAction}
       />
       {showShortcutBadge && shortcutNumber !== null ? (
         <View style={styles.projectShortcutBadgeOverlay} pointerEvents="none">
@@ -1061,6 +1126,7 @@ function ProjectHeaderRow({
           projectPath={projectPath}
           onRemoveProject={onRemoveProject}
           removeProjectStatus={removeProjectStatus}
+          visibilityAction={visibilityAction}
         />
       </ContextMenuContent>
     </ContextMenu>
@@ -1792,6 +1858,47 @@ function ProjectBlock({
     })();
   }, [isRemovingProject, displayName, t, toast, project.hosts]);
 
+  const projectServerIds = useMemo(
+    () => project.hosts.map((host) => host.serverId),
+    [project.hosts],
+  );
+  const supportsHidingByServerId = useHostFeatureMap(projectServerIds, "projectHidden");
+  const canHideProject =
+    project.hosts.length > 0 &&
+    project.hosts.every((host) => supportsHidingByServerId.get(host.serverId) === true);
+  // Only listed while "Show hidden" is on. A row whose hosts disagree is shown, so it reads as shown.
+  const isProjectHidden =
+    project.hosts.length > 0 && project.hosts.every((host) => host.hidden === true);
+  const handleToggleProjectHidden = useCallback(() => {
+    const hidden = !isProjectHidden;
+    // The row stands for this project on every host it is on, so the change applies to each.
+    void Promise.all(
+      project.hosts.map(async (host) => {
+        const client = getHostRuntimeStore().getClient(host.serverId);
+        if (!client) throw new Error(t("sidebar.project.toasts.hostDisconnected"));
+        await client.setProjectHidden(host.projectId, hidden);
+      }),
+    )
+      .then(() => {
+        if (!hidden) return null;
+        return toast.show(t("sidebar.project.toasts.hidden", { projectName: displayName }), {
+          variant: "success",
+        });
+      })
+      .catch((error) => {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t(hidden ? "sidebar.project.toasts.hideFailed" : "sidebar.project.toasts.showFailed"),
+        );
+      });
+  }, [displayName, isProjectHidden, project.hosts, t, toast]);
+  const visibilityAction = useMemo<ProjectVisibilityAction | undefined>(
+    () =>
+      canHideProject ? { hidden: isProjectHidden, onSelect: handleToggleProjectHidden } : undefined,
+    [canHideProject, handleToggleProjectHidden, isProjectHidden],
+  );
+
   const handleToggleCollapsed = useCallback(() => {
     onToggleCollapsed(project.viewKey);
   }, [onToggleCollapsed, project.viewKey]);
@@ -1880,6 +1987,7 @@ function ProjectBlock({
         menuController={null}
         onRemoveProject={handleRemoveProject}
         removeProjectStatus={isRemovingProject ? "pending" : "idle"}
+        visibilityAction={visibilityAction}
         dragHandleProps={dragHandleProps}
       />
 
@@ -2755,6 +2863,15 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: "400",
     minWidth: 0,
     flexShrink: 1,
+  },
+  // Only listed while "Show hidden" is on; dimmed so it reads as not normally there.
+  projectTitleHidden: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.base,
+    fontWeight: "400",
+    minWidth: 0,
+    flexShrink: 1,
+    opacity: 0.6,
   },
   projectActionButton: {
     flexDirection: "row",
