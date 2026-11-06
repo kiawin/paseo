@@ -36,7 +36,7 @@ import { WorkspaceSetupObservation } from "./workspace-setup-observation.js";
 import { SessionDelivery, type OwnedSubscription } from "./session/owned-subscriptions/index.js";
 import { v4 as uuidv4 } from "uuid";
 import { lstat, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
-import { basename, join, resolve, sep } from "path";
+import { basename, dirname, join, resolve, sep } from "path";
 import { homedir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import { formatPluginSourceReference } from "@getpaseo/protocol/plugin-source-reference";
@@ -50,6 +50,7 @@ import {
   type FirstAgentContext,
   type SessionInboundMessage,
   type SessionOutboundMessage,
+  type WorktreeLocation,
   type ScriptStatusUpdateMessage,
   type StartWorkspaceScriptRequest,
   type WorkspaceScriptListRequest,
@@ -262,9 +263,21 @@ import {
 import {
   createRealpathAwarePathMatcher,
   expandTilde,
+  getRealpathAwareRelativePath,
   isRealpathInsideRoot,
   normalizePathForIdentity,
 } from "../utils/path.js";
+import {
+  deletePaseoWorktree,
+  describeCustomWorktreeRootRejection,
+  resolveCustomWorktreeRoot,
+  resolveWorktreeHolderDir,
+} from "../utils/worktree.js";
+import {
+  isPaseoCreatedWorkspace,
+  resolveProjectWorktreeLocation,
+  resolveWorktreeDeletionPolicy,
+} from "./worktree/ownership.js";
 import {
   searchDirectoryEntries,
   WORKSPACE_SEARCH_HIDDEN_DIRECTORIES,
@@ -2868,6 +2881,7 @@ export class Session {
     (msg) => this.dispatchHubExecutionMessage(msg),
     (msg, source) => this.dispatchCreationMessage(msg, source),
     (msg) => this.dispatchAgentLifecycleMessage(msg),
+    (msg) => this.dispatchProjectSettingsMessage(msg),
     (msg) => this.dispatchAgentConfigMessage(msg),
     (msg) => this.dispatchCheckoutMessage(msg),
     (msg) => this.dispatchWorkspaceStateMessage(msg),
@@ -3448,10 +3462,6 @@ export class Session {
         return this.handleCloseItemsRequest(msg);
       case "update_agent_request":
         return this.handleUpdateAgentRequest(msg.agentId, msg.name, msg.labels, msg.requestId);
-      case "project.rename.request":
-        return this.handleProjectRenameRequest(msg.projectId, msg.customName, msg.requestId);
-      case "project.icon.set.request":
-        return this.handleProjectIconSetRequest(msg);
       case "send_agent_message_request":
         return this.handleSendAgentMessageRequest(msg);
       case "wait_for_finish_request":
@@ -3624,6 +3634,21 @@ export class Session {
     }
   }
 
+  private dispatchProjectSettingsMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "project.rename.request":
+        return this.handleProjectRenameRequest(msg.projectId, msg.customName, msg.requestId);
+      case "project.worktree.location.set.request":
+        return this.handleProjectWorktreeLocationSetRequest(msg);
+      case "project.hidden.set.request":
+        return this.handleProjectHiddenSetRequest(msg);
+      case "project.icon.set.request":
+        return this.handleProjectIconSetRequest(msg);
+      default:
+        return undefined;
+    }
+  }
+
   private dispatchWorkspaceAndProjectMessage(
     msg: SessionInboundMessage,
   ): Promise<void> | undefined {
@@ -3688,6 +3713,8 @@ export class Session {
 
   private dispatchWorkspaceLabelMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
+      case "workspace.worktree.remove.request":
+        return this.handleWorkspaceWorktreeRemoveRequest(msg);
       case "workspace.label.list.request":
         return this.handleWorkspaceLabelList(msg);
       case "workspace.label.assignment.set.request":
@@ -4439,6 +4466,182 @@ export class Session {
           error: getErrorMessageOr(error, "Failed to rename project"),
         },
       });
+    }
+  }
+
+  private async handleProjectHiddenSetRequest(
+    request: Extract<SessionInboundMessage, { type: "project.hidden.set.request" }>,
+  ): Promise<void> {
+    const updated = await this.projectRegistry.update(request.projectId, (project) => ({
+      ...project,
+      hidden: request.hidden,
+      updatedAt: new Date().toISOString(),
+    }));
+    this.emit({
+      type: "project.hidden.set.response",
+      payload: {
+        requestId: request.requestId,
+        projectId: request.projectId,
+        accepted: updated !== null,
+        hidden: request.hidden,
+        error: updated ? null : "Project not found",
+      },
+    });
+    if (updated) await this.emitProjectUpdate({ kind: "upsert", project: updated });
+  }
+
+  private async findConflictingProjectForLocation(input: {
+    projectId: string;
+    repoRoot: string;
+    location: WorktreeLocation;
+  }): Promise<PersistedProjectRecord | null> {
+    const candidate = await resolveWorktreeHolderDir({
+      cwd: input.repoRoot,
+      repoRoot: input.repoRoot,
+      location: input.location,
+      paseoHome: this.paseoHome,
+      worktreesBaseRoot: this.worktreesRoot,
+    });
+    for (const other of await this.projectRegistry.list()) {
+      if (other.projectId === input.projectId || other.archivedAt) continue;
+      if ((other.worktreeLocation?.mode ?? "managed") === "managed") continue;
+      let otherHolder: string;
+      try {
+        otherHolder = await resolveWorktreeHolderDir({
+          cwd: other.rootPath,
+          repoRoot: other.rootPath,
+          location: other.worktreeLocation,
+          paseoHome: this.paseoHome,
+          worktreesBaseRoot: this.worktreesRoot,
+        });
+      } catch {
+        continue;
+      }
+      if (getRealpathAwareRelativePath(otherHolder, candidate) === "") return other;
+    }
+    return null;
+  }
+
+  private async handleProjectWorktreeLocationSetRequest(
+    request: Extract<SessionInboundMessage, { type: "project.worktree.location.set.request" }>,
+  ): Promise<void> {
+    const respond = (accepted: boolean, location: WorktreeLocation | null, error: string | null) =>
+      this.emit({
+        type: "project.worktree.location.set.response",
+        payload: {
+          requestId: request.requestId,
+          projectId: request.projectId,
+          accepted,
+          location,
+          error,
+        },
+      });
+    try {
+      const existing = await this.projectRegistry.get(request.projectId);
+      if (!existing) {
+        respond(false, null, "Project not found");
+        return;
+      }
+      let next = request.location?.mode === "managed" ? null : request.location;
+      if (next?.mode === "custom") {
+        const custom = resolveCustomWorktreeRoot(next.root, existing.rootPath, {
+          paseoHome: this.paseoHome,
+          ...(this.worktreesRoot === undefined ? {} : { worktreesRoot: this.worktreesRoot }),
+        });
+        if (!custom.ok) {
+          respond(false, null, describeCustomWorktreeRootRejection(custom.rejection));
+          return;
+        }
+        next = { ...next, root: custom.root };
+      }
+      if (next) {
+        const conflict = await this.findConflictingProjectForLocation({
+          projectId: existing.projectId,
+          repoRoot: existing.rootPath,
+          location: next,
+        });
+        if (conflict) {
+          respond(
+            false,
+            null,
+            `That directory is already used by ${resolveProjectDisplayName(conflict)}.`,
+          );
+          return;
+        }
+      }
+      const updated = { ...existing, worktreeLocation: next, updatedAt: new Date().toISOString() };
+      await this.projectRegistry.upsert(updated);
+      respond(true, next, null);
+      await this.emitProjectUpdate({ kind: "upsert", project: updated });
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, projectId: request.projectId, requestId: request.requestId },
+        "session: project.worktree.location.set.request error",
+      );
+      respond(false, null, getErrorMessageOr(error, "Failed to set worktree location"));
+    }
+  }
+
+  private async handleWorkspaceWorktreeRemoveRequest(
+    request: Extract<SessionInboundMessage, { type: "workspace.worktree.remove.request" }>,
+  ): Promise<void> {
+    const respond = (payload: {
+      removed: boolean;
+      worktreePath: string | null;
+      refusal: null;
+      recoverableWithForce: boolean;
+      error: string | null;
+    }) =>
+      this.emit({
+        type: "workspace.worktree.remove.response",
+        payload: { requestId: request.requestId, workspaceId: request.workspaceId, ...payload },
+      });
+    const failed = (error: string) =>
+      respond({
+        removed: false,
+        worktreePath: null,
+        refusal: null,
+        recoverableWithForce: false,
+        error,
+      });
+
+    try {
+      const workspace = await this.workspaceRegistry.get(request.workspaceId);
+      if (!workspace) return failed("Workspace not found");
+      if (!isPaseoCreatedWorkspace(workspace)) return failed("Paseo did not create this worktree");
+      if (!workspace.archivedAt)
+        return failed("Archive the workspace before removing its worktree");
+      const policy = resolveWorktreeDeletionPolicy({
+        workspace,
+        force: request.force === true,
+        options: { paseoHome: this.paseoHome, worktreesRoot: this.worktreesRoot },
+      });
+      if (policy.kind !== "git-validated") {
+        return failed("This worktree is removed automatically when its workspace is archived");
+      }
+      const worktreePath = workspace.worktreeRoot ?? workspace.cwd;
+      await deletePaseoWorktree({
+        cwd: workspace.mainRepoRoot,
+        worktreePath,
+        teardownCwds: [],
+        worktreesRoot: dirname(worktreePath),
+        paseoHome: this.paseoHome,
+        worktreesBaseRoot: this.worktreesRoot,
+        policy,
+      });
+      respond({
+        removed: true,
+        worktreePath,
+        refusal: null,
+        recoverableWithForce: false,
+        error: null,
+      });
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, workspaceId: request.workspaceId, requestId: request.requestId },
+        "session: workspace.worktree.remove.request error",
+      );
+      failed(getErrorMessageOr(error, "Failed to remove worktree"));
     }
   }
 
@@ -6922,6 +7125,9 @@ export class Session {
       projectIconRevision: icon.revision,
       projectRootPath: project.rootPath,
       projectKind: project.kind,
+      projectWorktreeLocation: project.worktreeLocation ?? null,
+      projectPrAutomation: project.prAutomation ?? null,
+      projectHidden: project.hidden ?? false,
     };
   }
 
@@ -8552,6 +8758,8 @@ export class Session {
         lifecycle: this.commandLifecycle,
         paseoHome: this.paseoHome,
         worktreesRoot: this.worktreesRoot,
+        resolveWorktreeLocation: (repoRoot) =>
+          resolveProjectWorktreeLocation(this.projectRegistry, repoRoot),
         createPaseoWorktree: (workflowInput, serviceOptions) =>
           this.createPaseoWorktree(workflowInput, serviceOptions),
         warmWorkspaceGitData: (workspace) => this.warmWorkspaceGitDataForWorkspace(workspace),
