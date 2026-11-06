@@ -1251,6 +1251,7 @@ export const fr: TranslationResources = {
     },
     display: {
       showBackground: "Afficher les espaces en arrière-plan",
+      showHidden: "Afficher les projets masqués",
       trigger: "Préférences d’affichage",
       heading: "Affichage",
       sort: {
@@ -1361,6 +1362,8 @@ export const fr: TranslationResources = {
         openFolderFailed: "Impossible d’ouvrir le dossier",
         remove: "Retirer le projet",
         removing: "Retrait…",
+        hide: "Masquer de la barre latérale",
+        show: "Afficher dans la barre latérale",
       },
       confirmations: {
         removeTitle: "Retirer le projet ?",
@@ -1373,6 +1376,9 @@ export const fr: TranslationResources = {
         hostDisconnected: "L’hôte n’est pas connecté",
         removeFailed: "Impossible de retirer certains espaces de travail",
         updateHostToRemove: "Mettez à jour l’hôte pour retirer des projets.",
+        hidden: "{{projectName}} est masqué. Réaffichez-le dans Réglages → Projets.",
+        hideFailed: "Impossible de masquer le projet",
+        showFailed: "Impossible d’afficher le projet",
       },
       empty: {
         title: "Aucun projet pour l’instant",
@@ -2514,6 +2520,11 @@ export const fr: TranslationResources = {
     projectList: {
       hostLoadFailed: "Impossible de charger les projets depuis l’hôte {{hostName}} : {{message}}",
       editProject: "Modifier {{projectName}}",
+      hiddenTitle: "Masqués dans la barre latérale",
+      hiddenInfo:
+        "Ces projets et leurs espaces de travail n’apparaissent pas dans la barre latérale. Ils restent accessibles depuis la recherche, les liens et les plugins.",
+      show: "Afficher",
+      showProject: "Afficher {{projectName}} dans la barre latérale",
     },
     groupInfo: "À propos de {{title}}",
     sections: {

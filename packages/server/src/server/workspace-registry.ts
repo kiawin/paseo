@@ -60,6 +60,13 @@ const PersistedProjectRecordSchema = z.object({
   prAutomation: ProjectPrAutomationSchema.nullable()
     .optional()
     .transform((value) => value ?? null),
+  // User-set: leaves the project and its workspaces out of the sidebar's
+  // project list. Machine-local, like customName. Nothing else reads it.
+  // COMPAT(projectHidden): added in v0.15.x, remove optional after 2027-05-06.
+  hidden: z
+    .boolean()
+    .optional()
+    .transform((value) => value ?? false),
   createdAt: z.string(),
   updatedAt: z.string(),
   archivedAt: z.string().nullable(),

@@ -3498,6 +3498,8 @@ export class Session {
         return this.handleProjectWorktreeLocationSetRequest(msg);
       case "project.pr_automation.set.request":
         return this.handleProjectPrAutomationSetRequest(msg);
+      case "project.hidden.set.request":
+        return this.handleProjectHiddenSetRequest(msg);
       case "workspace.worktree.remove.request":
         return this.handleWorkspaceWorktreeRemoveRequest(msg);
       case "workspace.label.list.request":
@@ -4567,6 +4569,42 @@ export class Session {
           error: getErrorMessageOr(error, "Failed to update project icon"),
         },
       });
+    }
+  }
+
+  private async handleProjectHiddenSetRequest(
+    request: Extract<SessionInboundMessage, { type: "project.hidden.set.request" }>,
+  ): Promise<void> {
+    const respond = (error: string | null) =>
+      this.emit({
+        type: "project.hidden.set.response",
+        payload: {
+          requestId: request.requestId,
+          projectId: request.projectId,
+          accepted: error === null,
+          hidden: request.hidden,
+          error,
+        },
+      });
+
+    try {
+      const updated = await this.projectRegistry.update(request.projectId, (existing) => ({
+        ...existing,
+        hidden: request.hidden,
+        updatedAt: new Date().toISOString(),
+      }));
+      if (!updated) {
+        respond("Project not found");
+        return;
+      }
+      respond(null);
+      await this.emitProjectUpdate({ kind: "upsert", project: updated });
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, projectId: request.projectId, requestId: request.requestId },
+        "session: project.hidden.set.request error",
+      );
+      respond(getErrorMessageOr(error, "Failed to update project visibility"));
     }
   }
 
@@ -6974,6 +7012,7 @@ export class Session {
       projectCustomIconRevision: project.customIconRevision ?? null,
       projectWorktreeLocation: project.worktreeLocation ?? null,
       projectPrAutomation: project.prAutomation ?? null,
+      projectHidden: project.hidden,
       projectIconRevision: icon.revision,
       projectRootPath: project.rootPath,
       projectKind: project.kind,

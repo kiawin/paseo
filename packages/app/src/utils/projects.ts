@@ -32,6 +32,8 @@ export interface ProjectHostEntry {
   customIconRevision?: string | null;
   worktreeLocation?: WorktreeLocation | null;
   prAutomation?: ProjectPrAutomation | null;
+  /** Left out of the sidebar's project list on this host. */
+  hidden: boolean;
   iconRevision?: string;
 }
 
@@ -97,6 +99,7 @@ interface HostGroup {
   customIconRevision?: string | null;
   worktreeLocation?: WorktreeLocation | null;
   prAutomation?: ProjectPrAutomation | null;
+  hidden: boolean;
   iconRevision?: string;
   // The project record exists before its first workspace. Keep its editable
   // root at the project boundary instead of deriving it from child rows.
@@ -118,6 +121,7 @@ function findProjectMetadata(
   displayName: string;
   worktreeLocation: WorktreeLocation | null;
   prAutomation: ProjectPrAutomation | null;
+  hidden: boolean;
 } | null {
   for (const project of host.projects) {
     if (project.projectId === projectId) {
@@ -126,6 +130,7 @@ function findProjectMetadata(
         displayName: project.projectDisplayName,
         worktreeLocation: project.projectWorktreeLocation ?? null,
         prAutomation: project.projectPrAutomation ?? null,
+        hidden: project.projectHidden ?? false,
       };
     }
   }
@@ -135,10 +140,11 @@ function findProjectMetadata(
 /** Host-local project settings the daemon sends on the project descriptor. */
 function hostProjectSettings(
   metadata: ReturnType<typeof findProjectMetadata>,
-): Pick<HostGroup, "worktreeLocation" | "prAutomation"> {
+): Pick<HostGroup, "worktreeLocation" | "prAutomation" | "hidden"> {
   return {
     worktreeLocation: metadata?.worktreeLocation ?? null,
     prAutomation: metadata?.prAutomation ?? null,
+    hidden: metadata?.hidden ?? false,
   };
 }
 
@@ -208,6 +214,7 @@ function toHostEntry(group: HostGroup): ProjectHostEntry {
     customIconRevision: canonical?.projectCustomIconRevision ?? group.customIconRevision,
     worktreeLocation: group.worktreeLocation ?? null,
     prAutomation: group.prAutomation ?? null,
+    hidden: group.hidden,
     iconRevision: group.iconRevision,
   };
 }
