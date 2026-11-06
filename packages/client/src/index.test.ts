@@ -376,6 +376,48 @@ test("project actions list registered projects through the existing RPC", async 
   await client.close();
 });
 
+test("project actions hide a project and surface a daemon rejection", async () => {
+  const { client, ws } = await connectClient();
+
+  const hidePromise = client.projects.setHidden("project_bot", true);
+  const request = parseSentSessionMessage(ws.sent.at(-1));
+  expect(request).toMatchObject({
+    type: "project.hidden.set.request",
+    projectId: "project_bot",
+    hidden: true,
+  });
+  ws.message(
+    sessionMessage({
+      type: "project.hidden.set.response",
+      payload: {
+        requestId: request.requestId,
+        projectId: "project_bot",
+        accepted: true,
+        hidden: true,
+        error: null,
+      },
+    }),
+  );
+  await expect(hidePromise).resolves.toBeUndefined();
+
+  const missingPromise = client.projects.setHidden("project_missing", true);
+  const missing = parseSentSessionMessage(ws.sent.at(-1));
+  ws.message(
+    sessionMessage({
+      type: "project.hidden.set.response",
+      payload: {
+        requestId: missing.requestId,
+        projectId: "project_missing",
+        accepted: false,
+        hidden: true,
+        error: "Project not found",
+      },
+    }),
+  );
+  await expect(missingPromise).rejects.toThrow("Project not found");
+  await client.close();
+});
+
 test("project actions subscribe to existing project updates", async () => {
   const { client, ws } = await connectClient();
   const updates: string[] = [];
