@@ -101,6 +101,7 @@ describe("openProjectDirectly", () => {
           projectRootPath: PROJECT_PATH,
           projectWorktreeLocation: null,
           projectPrAutomation: null,
+          projectHidden: false,
         },
       },
     ]);
@@ -199,6 +200,7 @@ describe("cloneGithubProjectDirectly", () => {
           projectCustomIconRevision: null,
           projectWorktreeLocation: null,
           projectPrAutomation: null,
+          projectHidden: false,
         },
       },
     ]);

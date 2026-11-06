@@ -2,6 +2,7 @@ import equal from "fast-deep-equal";
 import {
   buildWorkspaceStructureProjects,
   type WorkspaceSort,
+  type WorkspaceStructureOptions,
   type WorkspaceStructure,
   type WorkspaceStructureProject,
 } from "@/projects/workspace-structure";
@@ -153,6 +154,7 @@ export function selectWorkspaceStructureProjects(
   state: SessionsSnapshot,
   serverIds: readonly string[],
   workspaceSort?: WorkspaceSort,
+  options?: WorkspaceStructureOptions,
 ): WorkspaceStructureProject[] {
   const sessions: Array<{
     serverId: string;
@@ -178,12 +180,13 @@ export function selectWorkspaceStructureProjects(
     return EMPTY_WORKSPACE_STRUCTURE.projects;
   }
 
-  return buildWorkspaceStructureProjects({ sessions, workspaceSort });
+  return buildWorkspaceStructureProjects({ sessions, workspaceSort, ...options });
 }
 
 export function createWorkspaceStructureProjectsSelector(
   serverIds: readonly string[],
   workspaceSort?: WorkspaceSort,
+  options?: WorkspaceStructureOptions,
 ): (state: SessionsSnapshot) => WorkspaceStructureProject[] {
   let previousInputs: Array<{
     workspaces: Map<string, WorkspaceDescriptor> | undefined;
@@ -209,7 +212,7 @@ export function createWorkspaceStructureProjectsSelector(
     }
 
     previousInputs = inputs;
-    const next = selectWorkspaceStructureProjects(state, serverIds, workspaceSort);
+    const next = selectWorkspaceStructureProjects(state, serverIds, workspaceSort, options);
     const previousByKey = new Map(previousProjects?.map((project) => [project.viewKey, project]));
     previousProjects = next.map((project) => {
       const previous = previousByKey.get(project.viewKey);
