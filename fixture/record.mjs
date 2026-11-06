@@ -1,0 +1,64 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+const out=path.resolve('.dev/link-qa/evidence');
+await fs.mkdir(out,{recursive:true});
+const browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});
+const context=await browser.newContext({viewport:{width:1280,height:900},recordVideo:{dir:out,size:{width:1280,height:900}}});
+const page=await context.newPage();
+const errors=[];
+page.on('pageerror',e=>errors.push(e.stack));
+page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+const steps=[];
+await page.goto('http://127.0.0.1:8137',{waitUntil:'networkidle'});
+await page.getByRole('button',{name:'Open generated link',exact:true}).waitFor();
+await page.evaluate(()=>{
+ const pointer=document.createElement('div');
+ pointer.style.cssText='position:fixed;width:22px;height:22px;border:3px solid #e08e11;background:#ffbf3c44;border-radius:50%;pointer-events:none;z-index:10000;transform:translate(-50%,-50%)';
+ document.body.append(pointer);
+ window.addEventListener('mousemove',e=>{pointer.style.left=e.clientX+'px';pointer.style.top=e.clientY+'px'});
+});
+const pause=()=>page.waitForTimeout(900);
+async function select(label,value){const target=page.getByLabel(label,{exact:true});await target.scrollIntoViewIfNeeded();const box=await target.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2,{steps:10});await target.selectOption(value);await pause();}
+async function clickAndCheck(locator,destination,url,name){
+ const count=await page.getByTestId('events').locator('.event').count();
+ await locator.hover();await pause();await locator.click();
+ await page.waitForFunction(({destination,url})=>{
+  const el=document.querySelector('[data-testid="destination"]');
+  return el?.textContent.includes(destination)&&el.textContent.includes(url);
+ },{destination,url});
+ assert.ok(await page.getByTestId('events').locator('.event').count()>count || count===7);
+ steps.push({name,status:'passed',destination,url});await pause();
+}
+await select('Agent links','in-app');
+await select('Pull request links','external');
+await page.getByRole('button',{name:'Before fix',exact:true}).click();await pause();
+await clickAndCheck(page.getByRole('button',{name:'Open generated link',exact:true}),'External browser','https://example.com/action','Before: OpenUrl ignores Open in Paseo');
+await page.screenshot({path:path.join(out,'01-before.png')});
+await page.getByRole('button',{name:'After fix',exact:true}).click();await pause();
+await clickAndCheck(page.getByRole('button',{name:'Open generated link',exact:true}),'Paseo workspace browser','https://example.com/action','After: OpenUrl honors Open in Paseo');
+await clickAndCheck(page.getByRole('link',{name:'the documentation',exact:true}),'Paseo workspace browser','https://example.com/docs','After: Markdown link honors Open in Paseo');
+await clickAndCheck(page.getByRole('link',{name:/Source reference/}),'Paseo workspace browser','https://example.com/source','After: Sources link honors Open in Paseo');
+await clickAndCheck(page.getByRole('link',{name:'Open pull request',exact:true}),'External browser','https://github.com/getpaseo/paseo/pull/1','Forge links independently retain external preference');
+await page.screenshot({path:path.join(out,'02-after.png')});
+await select('Agent links','external');
+await select('Pull request links','in-app');
+await clickAndCheck(page.getByRole('button',{name:'Open generated link',exact:true}),'External browser','https://example.com/action','Changed agent preference opens externally');
+await clickAndCheck(page.getByRole('link',{name:'Open pull request',exact:true}),'Paseo workspace browser','https://github.com/getpaseo/paseo/pull/1','Changed forge preference opens in Paseo');
+await select('Agent links','in-app');
+await select('Workspace browser','false');
+await clickAndCheck(page.getByRole('button',{name:'Open generated link',exact:true}),'External browser','https://example.com/action','Missing workspace browser falls back externally');
+await page.screenshot({path:path.join(out,'03-fallback.png')});
+await page.reload({waitUntil:'networkidle'});
+await page.getByRole('button',{name:'Open generated link',exact:true}).waitFor();
+assert.equal(await page.getByLabel('Agent links',{exact:true}).inputValue(),'in-app');
+assert.equal(await page.getByLabel('Pull request links',{exact:true}).inputValue(),'in-app');
+steps.push({name:'Both real preferences persist across reload',status:'passed'});
+await clickAndCheck(page.getByRole('button',{name:'Open generated link',exact:true}),'Paseo workspace browser','https://example.com/action','Reloaded preference opens in restored workspace context');
+assert.deepEqual(errors,[]);
+const video=page.video();await context.close();
+await video.saveAs(path.join(out,'link-preferences.webm'));
+await browser.close();
+await fs.writeFile(path.join(out,'results.json'),JSON.stringify({success:true,environment:'Chromium browser integration fixture',boundary:'Desktop bridge and workspace browser callback instrumented; real settings persistence, host useOpenLink/Link, and GenUI sources. No installed plugin or daemon changes.',steps,errors},null,2));
+console.log(JSON.stringify({success:true,checks:steps.length,video:path.join(out,'link-preferences.webm')}));

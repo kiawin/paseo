@@ -1,0 +1,7 @@
+{
+  "paseoCommit": "38d469b331f447a1ab98c4ef94fa879718626c8a",
+  "genuiCommit": "4153b4039c9ba8d45ce9be0452e0efedd4fca49b",
+  "genuiBeforeCommit": "cd50b2a6b86583eb48915a17d919fd319f0c30ec",
+  "videoSha256": "dca0f5439b138878a89df12559d4a39dade8d50629f33fa2a55430eadc460a03",
+  "coverage": "Chromium integration fixture only; desktop bridge and workspace opener instrumented; no Electron shell or mobile testing"
+}

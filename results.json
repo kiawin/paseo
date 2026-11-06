@@ -1,0 +1,66 @@
+{
+  "success": true,
+  "environment": "Chromium browser integration fixture",
+  "boundary": "Desktop bridge and workspace browser callback instrumented; real settings persistence, host useOpenLink/Link, and GenUI sources. No installed plugin or daemon changes.",
+  "steps": [
+    {
+      "name": "Before: OpenUrl ignores Open in Paseo",
+      "status": "passed",
+      "destination": "External browser",
+      "url": "https://example.com/action"
+    },
+    {
+      "name": "After: OpenUrl honors Open in Paseo",
+      "status": "passed",
+      "destination": "Paseo workspace browser",
+      "url": "https://example.com/action"
+    },
+    {
+      "name": "After: Markdown link honors Open in Paseo",
+      "status": "passed",
+      "destination": "Paseo workspace browser",
+      "url": "https://example.com/docs"
+    },
+    {
+      "name": "After: Sources link honors Open in Paseo",
+      "status": "passed",
+      "destination": "Paseo workspace browser",
+      "url": "https://example.com/source"
+    },
+    {
+      "name": "Forge links independently retain external preference",
+      "status": "passed",
+      "destination": "External browser",
+      "url": "https://github.com/getpaseo/paseo/pull/1"
+    },
+    {
+      "name": "Changed agent preference opens externally",
+      "status": "passed",
+      "destination": "External browser",
+      "url": "https://example.com/action"
+    },
+    {
+      "name": "Changed forge preference opens in Paseo",
+      "status": "passed",
+      "destination": "Paseo workspace browser",
+      "url": "https://github.com/getpaseo/paseo/pull/1"
+    },
+    {
+      "name": "Missing workspace browser falls back externally",
+      "status": "passed",
+      "destination": "External browser",
+      "url": "https://example.com/action"
+    },
+    {
+      "name": "Both real preferences persist across reload",
+      "status": "passed"
+    },
+    {
+      "name": "Reloaded preference opens in restored workspace context",
+      "status": "passed",
+      "destination": "Paseo workspace browser",
+      "url": "https://example.com/action"
+    }
+  ],
+  "errors": []
+}

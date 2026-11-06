@@ -1,0 +1,6 @@
+{
+  "success": true,
+  "clientBytes": 635272,
+  "serverBytes": 656070,
+  "note": "Production compiler only; no plugin installation or activation."
+}
