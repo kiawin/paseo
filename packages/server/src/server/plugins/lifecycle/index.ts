@@ -117,6 +117,16 @@ const beforeSchemas = {
     type: true,
     requestId: true,
   }).strict(),
+  "terminal.create.before": z
+    .object({
+      cwd: z.string(),
+      workspaceId: z.string(),
+      name: z.string().optional(),
+      command: z.string().min(1).optional(),
+      args: z.array(z.string()).optional(),
+      env: z.record(z.string(), z.string()),
+    })
+    .strict(),
 };
 
 const sessionOpenLocalResultSchema = beforeSchemas["agent.open.before"].extend({
@@ -241,6 +251,20 @@ function changesSessionOpenTarget(previous: SessionOpenRequest, next: SessionOpe
   );
 }
 
+function terminalLocationChanged(
+  previous: ReturnType<(typeof beforeSchemas)["terminal.create.before"]["parse"]>,
+  next: ReturnType<(typeof beforeSchemas)["terminal.create.before"]["parse"]>,
+): boolean {
+  return previous.cwd !== next.cwd || previous.workspaceId !== next.workspaceId;
+}
+
+function worktreeSourceChanged(
+  previous: ReturnType<(typeof beforeSchemas)["worktree.create.before"]["parse"]>,
+  next: ReturnType<(typeof beforeSchemas)["worktree.create.before"]["parse"]>,
+): boolean {
+  return previous.repoRoot !== next.repoRoot || previous.sourceCheckout !== next.sourceCheckout;
+}
+
 export async function validateBeforeResult<Name extends keyof PluginWireBeforeRequests>(
   name: Name,
   input: PluginWireBeforeRequests[Name],
@@ -270,10 +294,17 @@ export async function validateBeforeResult<Name extends keyof PluginWireBeforeRe
     // Omitted means unchanged; an explicit {} still replaces.
     return { ...result, metadata: next.metadata ?? previous.metadata };
   }
+  if (name === "terminal.create.before") {
+    const previous = beforeSchemas["terminal.create.before"].parse(input);
+    const next = beforeSchemas["terminal.create.before"].parse(result);
+    if (terminalLocationChanged(previous, next)) {
+      throw new Error("terminal.create.before hooks cannot change cwd or workspaceId");
+    }
+  }
   if (name === "worktree.create.before") {
     const previous = beforeSchemas["worktree.create.before"].parse(input);
     const next = beforeSchemas["worktree.create.before"].parse(result);
-    if (previous.repoRoot !== next.repoRoot || previous.sourceCheckout !== next.sourceCheckout) {
+    if (worktreeSourceChanged(previous, next)) {
       throw new Error("worktree.create.before hooks cannot change repoRoot or sourceCheckout");
     }
   }
