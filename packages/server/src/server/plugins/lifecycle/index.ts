@@ -137,13 +137,13 @@ const beforeSchemas = {
     .object({
       workspaceId: z.string(),
       cwd: z.string(),
-      source: z.enum(["client", "agent", "script", "worktree"]),
-      name: z.string().nullable(),
-      command: z.string().nullable(),
-      args: z.array(z.string()),
-      input: z.string().nullable(),
+      source: z.enum(["client", "agent", "script", "worktree"]).optional(),
+      name: z.string().nullable().optional(),
+      command: z.string().nullable().optional(),
+      args: z.array(z.string()).optional(),
+      input: z.string().nullable().optional(),
       env: z.record(z.string(), z.string()),
-      wrap: launchWrapSchema,
+      wrap: launchWrapSchema.optional(),
     })
     .strict(),
   "command.run.before": z
@@ -161,8 +161,8 @@ const beforeSchemas = {
 // Request fields a hook reads but can't change, with the error a changed one gets.
 const readOnlyRequestFields = {
   "terminal.create.before": {
-    fields: ["workspaceId", "cwd", "source", "name", "command", "args", "input"],
-    message: "terminal.create.before hooks can only change env and wrap",
+    fields: ["workspaceId", "cwd", "source", "input"],
+    message: "terminal.create.before hooks cannot change workspaceId, cwd, source, or input",
   },
   "command.run.before": {
     fields: ["workspaceId", "cwd", "purpose", "command"],
