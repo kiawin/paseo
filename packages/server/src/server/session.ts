@@ -1,4 +1,5 @@
 import { DiffSession } from "./diff/index.js";
+import type { PluginTerminalCreateRequest } from "@getpaseo/plugin/server";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory, type BackgroundVisibility } from "./agent/directory.js";
@@ -294,7 +295,10 @@ import {
   handleWorkspaceSetupRunRequest as handleWorkspaceSetupRunRequestMessage,
 } from "./worktree-session.js";
 import { archiveByScope, type ActiveWorkspaceRef } from "./workspace-archive-service.js";
-import { WorkspaceArchiveOperations, type WorkspaceArchiveUndoInput } from "./workspace-archive-operations.js";
+import {
+  WorkspaceArchiveOperations,
+  type WorkspaceArchiveUndoInput,
+} from "./workspace-archive-operations.js";
 import {
   deletePaseoWorktree,
   describeCustomWorktreeRootRejection,
@@ -1245,6 +1249,7 @@ export class Session {
       subscribeTerminalMetadata: (listener) =>
         this.scriptRuntimeStore?.subscribe(listener) ?? (() => {}),
       getClientBufferedAmount: (source) => this.getTransportBufferedAmount(source),
+      beforeCreateTerminal: (request) => this.prepareTerminal(request),
     });
     this.agentDirectory = new AgentDirectory({
       manager: this.agentManager,
@@ -7955,6 +7960,14 @@ export class Session {
       : this.handleWorkspaceCreateWorktree(creationRequest, workspaceId);
   }
 
+  private async prepareTerminal(
+    request: PluginTerminalCreateRequest,
+  ): Promise<PluginTerminalCreateRequest> {
+    return this.pluginRuntime
+      ? await this.pluginRuntime.before("terminal.create.before", request)
+      : request;
+  }
+
   private async handleWorkspaceCreateLocal(
     request: Extract<SessionInboundMessage, { type: "workspace.create.request" }>,
     workspaceId?: string,
@@ -8689,7 +8702,9 @@ export class Session {
               scope: { kind: "workspace", workspaceId: existing.workspaceId },
               requestId: request.requestId,
               signal,
-              ...(request.removeWorktreeDirectory === true ? { removeWorktreeDirectory: true } : {}),
+              ...(request.removeWorktreeDirectory === true
+                ? { removeWorktreeDirectory: true }
+                : {}),
             },
           );
         },
