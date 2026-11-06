@@ -42,6 +42,21 @@ describe("provider-owned option schemas", () => {
     });
   });
 
+  test("accepts any Codex feature flag as a boolean", () => {
+    expect(
+      CodexProviderOptionsSchema.parse({
+        features: { plugins: false, hooks: false, memories: false, multi_agent_v2: true },
+      }),
+    ).toEqual({
+      features: { plugins: false, hooks: false, memories: false, multi_agent_v2: true },
+    });
+    expect(() =>
+      validateProviderOptions("codex", CodexProviderOptionsSchema, {
+        features: { plugins: "off" },
+      }),
+    ).toThrow("providerOptions.features.plugins");
+  });
+
   test("reports the exact invalid Codex option path", () => {
     expect(() =>
       validateProviderOptions("codex", CodexProviderOptionsSchema, {
