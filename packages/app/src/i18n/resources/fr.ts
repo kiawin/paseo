@@ -1220,6 +1220,7 @@ export const fr: TranslationResources = {
     },
     display: {
       showBackground: "Afficher les espaces en arrière-plan",
+      showHidden: "Afficher les projets masqués",
       trigger: "Préférences d’affichage",
       heading: "Affichage",
       sort: {
@@ -1330,6 +1331,7 @@ export const fr: TranslationResources = {
         remove: "Retirer le projet",
         removing: "Retrait…",
         hide: "Masquer de la barre latérale",
+        show: "Afficher dans la barre latérale",
       },
       confirmations: {
         removeTitle: "Retirer le projet ?",
@@ -1344,6 +1346,7 @@ export const fr: TranslationResources = {
         updateHostToRemove: "Mettez à jour l’hôte pour retirer des projets.",
         hidden: "{{projectName}} est masqué. Réaffichez-le dans Réglages → Projets.",
         hideFailed: "Impossible de masquer le projet",
+        showFailed: "Impossible d’afficher le projet",
       },
       empty: {
         title: "Aucun projet pour l’instant",

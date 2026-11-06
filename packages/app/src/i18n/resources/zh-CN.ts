@@ -1182,6 +1182,7 @@ export const zhCN: TranslationResources = {
     },
     display: {
       showBackground: "显示后台工作区",
+      showHidden: "显示已隐藏的项目",
       trigger: "显示偏好",
       heading: "显示",
       sort: {
@@ -1290,6 +1291,7 @@ export const zhCN: TranslationResources = {
         remove: "移除 project",
         removing: "正在移除...",
         hide: "从侧边栏隐藏",
+        show: "在侧边栏中显示",
       },
       confirmations: {
         removeTitle: "移除 project？",
@@ -1303,6 +1305,7 @@ export const zhCN: TranslationResources = {
         updateHostToRemove: "更新 host 以移除 projects。",
         hidden: "已隐藏 {{projectName}}。可在 设置 → 项目 中重新显示。",
         hideFailed: "无法隐藏项目",
+        showFailed: "无法显示项目",
       },
       empty: {
         title: "还没有 projects",

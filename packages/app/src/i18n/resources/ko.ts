@@ -1198,6 +1198,7 @@ export const ko: TranslationResources = {
     },
     display: {
       showBackground: "백그라운드 표시",
+      showHidden: "숨긴 프로젝트 표시",
       trigger: "표시 설정",
       heading: "표시",
       sort: {
@@ -1307,6 +1308,7 @@ export const ko: TranslationResources = {
         remove: "프로젝트 제거",
         removing: "제거하는 중...",
         hide: "사이드바에서 숨기기",
+        show: "사이드바에 표시",
       },
       confirmations: {
         removeTitle: "프로젝트를 제거할까요?",
@@ -1321,6 +1323,7 @@ export const ko: TranslationResources = {
         updateHostToRemove: "프로젝트를 제거하려면 호스트를 업데이트하세요.",
         hidden: "{{projectName}}을(를) 숨겼습니다. 설정 → 프로젝트에서 다시 표시할 수 있습니다.",
         hideFailed: "프로젝트를 숨기지 못했습니다",
+        showFailed: "프로젝트를 표시하지 못했습니다",
       },
       empty: {
         title: "아직 프로젝트가 없습니다",

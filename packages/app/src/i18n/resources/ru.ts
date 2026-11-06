@@ -1208,6 +1208,7 @@ export const ru: TranslationResources = {
     },
     display: {
       showBackground: "Показать фоновые пространства",
+      showHidden: "Показывать скрытые проекты",
       trigger: "Настройки отображения",
       heading: "Отображение",
       sort: {
@@ -1318,6 +1319,7 @@ export const ru: TranslationResources = {
         remove: "Удалить проект",
         removing: "Удаление...",
         hide: "Скрыть из боковой панели",
+        show: "Показать в боковой панели",
       },
       confirmations: {
         removeTitle: "Удалить проект?",
@@ -1332,6 +1334,7 @@ export const ru: TranslationResources = {
         updateHostToRemove: "Обновите хост, чтобы удалять проекты.",
         hidden: "{{projectName}} скрыт. Вернуть его можно в Настройки → Проекты.",
         hideFailed: "Не удалось скрыть проект",
+        showFailed: "Не удалось показать проект",
       },
       empty: {
         title: "Пока нет проектов",

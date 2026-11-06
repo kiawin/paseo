@@ -8,6 +8,8 @@ export interface WorkspaceStructureHostPlacement {
   worktreeSupport: "supported" | "unsupported" | "unknown";
   customIconRevision?: string | null;
   iconRevision?: string;
+  /** Hidden from the sidebar on this host. Absent means shown. */
+  hidden?: boolean;
 }
 
 export interface WorkspaceStructureProject {
@@ -184,6 +186,7 @@ function addProjectToView(input: {
     worktreeSupport: project.projectKind === "git" ? "supported" : "unsupported",
     customIconRevision: project.projectCustomIconRevision,
     iconRevision: project.projectIconRevision,
+    ...(project.projectHidden ? { hidden: true } : {}),
   };
   const draft = byProject.get(viewKey);
   if (!draft) {

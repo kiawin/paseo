@@ -1191,6 +1191,7 @@ export const ar: TranslationResources = {
     },
     display: {
       showBackground: "إظهار مساحات العمل في الخلفية",
+      showHidden: "إظهار المشاريع المخفية",
       trigger: "تفضيلات العرض",
       heading: "العرض",
       sort: {
@@ -1300,6 +1301,7 @@ export const ar: TranslationResources = {
         remove: "إزالة المشروع",
         removing: "جارٍ الإزالة...",
         hide: "إخفاء من الشريط الجانبي",
+        show: "إظهار في الشريط الجانبي",
       },
       confirmations: {
         removeTitle: "هل تريد إزالة المشروع؟",
@@ -1314,6 +1316,7 @@ export const ar: TranslationResources = {
         updateHostToRemove: "قم بتحديث Host لإزالة المشاريع.",
         hidden: "تم إخفاء {{projectName}}. أظهِره مجددًا من الإعدادات ← المشاريع.",
         hideFailed: "تعذّر إخفاء المشروع",
+        showFailed: "تعذّر إظهار المشروع",
       },
       empty: {
         title: "لا توجد مشاريع حتى الآن",

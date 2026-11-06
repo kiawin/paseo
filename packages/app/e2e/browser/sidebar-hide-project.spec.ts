@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, test, type Page } from "../support/fixtures";
 import { gotoAppShell } from "../support/helpers/app";
 import { openProjects } from "../support/helpers/project-settings";
+import { openSidebarDisplayPage } from "../support/helpers/sidebar";
 import { projectEquivalenceViewKey } from "../support/helpers/project-view-key";
 import { seedWorkspace } from "../support/helpers/seed-client";
 import { waitForSidebarHydration } from "../support/helpers/workspace-ui";
@@ -58,6 +59,49 @@ test("hides a project from the sidebar and shows it again from settings", async 
     await expect(page.getByTestId(`sidebar-project-row-${hiddenKey}`)).toBeVisible({
       timeout: 30_000,
     });
+  } finally {
+    await hidden.cleanup();
+    await shown.cleanup();
+  }
+});
+
+test("lists hidden projects with Show hidden on and shows one again from its menu", async ({
+  page,
+}) => {
+  const shown = await seedWorkspace({ repoPrefix: "hide-project-shown-" });
+  const hidden = await seedWorkspace({ repoPrefix: "hide-project-bot-" });
+  const hiddenKey = projectEquivalenceViewKey(hidden.projectKey);
+  await hidden.client.setProjectHidden(hidden.projectId, true);
+
+  try {
+    await gotoAppShell(page);
+    await waitForSidebarHydration(page);
+    const hiddenRow = page.getByTestId(`sidebar-project-row-${hiddenKey}`);
+    await expect(hiddenRow).toHaveCount(0, { timeout: 30_000 });
+
+    await openSidebarDisplayPage(page, "sidebar-display-show-hidden");
+    await expect(page.getByTestId("sidebar-display-show-hidden")).toBeVisible();
+    await shot(page, "hide-project-05-show-hidden-toggle");
+    await page.keyboard.press("Escape");
+
+    await expect(hiddenRow).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId(`sidebar-project-hidden-mark-${hiddenKey}`)).toBeVisible();
+    await hiddenRow.hover();
+    await page.getByTestId(`sidebar-project-kebab-${hiddenKey}`).click();
+    const showItem = page.getByTestId(`sidebar-project-menu-show-${hiddenKey}`);
+    await expect(showItem).toHaveText("Show in sidebar");
+    await shot(page, "hide-project-06-hidden-row-menu");
+
+    await showItem.click();
+    await expect(page.getByTestId(`sidebar-project-hidden-mark-${hiddenKey}`)).toHaveCount(0, {
+      timeout: 30_000,
+    });
+
+    // Turning the toggle back off keeps the project, since it is no longer hidden.
+    await openSidebarDisplayPage(page, "sidebar-display-show-hidden");
+    await page.keyboard.press("Escape");
+    await expect(hiddenRow).toBeVisible();
+    await shot(page, "hide-project-07-shown-again");
   } finally {
     await hidden.cleanup();
     await shown.cleanup();

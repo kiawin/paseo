@@ -1199,6 +1199,7 @@ export const en = {
     },
     display: {
       showBackground: "Show background",
+      showHidden: "Show hidden projects",
       trigger: "Display preferences",
       heading: "Display",
       sort: {
@@ -1308,6 +1309,7 @@ export const en = {
         remove: "Remove project",
         removing: "Removing...",
         hide: "Hide from sidebar",
+        show: "Show in sidebar",
       },
       confirmations: {
         removeTitle: "Remove project?",
@@ -1322,6 +1324,7 @@ export const en = {
         updateHostToRemove: "Update the host to remove projects.",
         hidden: "{{projectName}} is hidden. Show it again in Settings → Projects.",
         hideFailed: "Couldn't hide the project",
+        showFailed: "Couldn't show the project",
       },
       empty: {
         title: "No projects yet",

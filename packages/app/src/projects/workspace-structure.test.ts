@@ -63,6 +63,7 @@ describe("buildWorkspaceStructureProjects", () => {
 
     const all = buildWorkspaceStructureProjects({ sessions });
     expect(all.map((item) => item.hosts[0]?.projectId)).toEqual(["prj_bot", "prj_shown"]);
+    expect(all.map((item) => item.hosts[0]?.hidden ?? false)).toEqual([true, false]);
   });
 
   test("excludeHidden keeps a shared project on the hosts that did not hide it", () => {

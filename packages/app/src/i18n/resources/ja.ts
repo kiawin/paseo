@@ -1204,6 +1204,7 @@ export const ja: TranslationResources = {
     },
     display: {
       showBackground: "バックグラウンドを表示",
+      showHidden: "非表示のプロジェクトを表示",
       trigger: "表示設定",
       heading: "表示",
       sort: {
@@ -1314,6 +1315,7 @@ export const ja: TranslationResources = {
         remove: "プロジェクトを削除",
         removing: "削除中...",
         hide: "サイドバーから非表示",
+        show: "サイドバーに表示",
       },
       confirmations: {
         removeTitle: "プロジェクトを削除しますか？",
@@ -1328,6 +1330,7 @@ export const ja: TranslationResources = {
         updateHostToRemove: "プロジェクトを削除するにはホストを更新してください。",
         hidden: "{{projectName}}を非表示にしました。設定 → プロジェクトから再表示できます。",
         hideFailed: "プロジェクトを非表示にできませんでした",
+        showFailed: "プロジェクトを表示できませんでした",
       },
       empty: {
         title: "プロジェクトがまだありません",
