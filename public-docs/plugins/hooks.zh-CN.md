@@ -63,6 +63,7 @@ Paseo 只观察返回的 Promise，因此独立任务没有错误报告，也没
 | `agent.turn.after`        | 否   | `{ agent, turnId, outcome, timeline }` |                                           |
 | `agent.permission.before` | 否   | `{ agent, request }`                   |                                           |
 | `agent.permission.after`  | 否   | `{ agent, requestId, resolution }`     |                                           |
+| `terminal.create.before`  | 是   | `{ request }`                          | `name`、`command`、`args`、`env`          |
 
 ## 共享载荷 {#shared-payloads}
 

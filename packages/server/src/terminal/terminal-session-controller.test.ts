@@ -361,6 +361,84 @@ describe("terminal-session-controller legacy terminal creation", () => {
       expect.objectContaining({ cwd: "/work/repo", workspaceId: "ws-1", rows: 55, cols: 136 }),
     );
   });
+
+  test("plugins change a terminal's program and environment before it starts", async () => {
+    const createTerminal = vi.fn(
+      async (options: Parameters<TerminalManager["createTerminal"]>[0]) =>
+        listSession({
+          id: "term-1",
+          name: options.name ?? "Terminal 1",
+          cwd: options.cwd,
+          workspaceId: options.workspaceId,
+        }),
+    );
+    const terminalManager: TerminalManager = {
+      getTerminals: vi.fn(),
+      createTerminal,
+      registerCwdEnv: vi.fn(),
+      validateTerminalActivityToken: vi.fn(() => "unknown"),
+      isHumanInputOnly: vi.fn(() => false),
+      getRequestedByAgentId: vi.fn(() => undefined),
+      getTerminal: vi.fn(),
+      replayTerminal: async () => null,
+      setTerminalTitle: vi.fn(),
+      setTerminalActivity: vi.fn(),
+      clearTerminalAttention: vi.fn(),
+      killTerminal: vi.fn(),
+      killTerminalAndWait: vi.fn(),
+      captureTerminal: vi.fn(),
+      listDirectories: vi.fn(() => []),
+      killAll: vi.fn(),
+      subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+      subscribeTerminalActivity: vi.fn(() => vi.fn()),
+      subscribeTerminalWorkspaceContributionChanged: vi.fn(() => vi.fn()),
+    };
+    const beforeCreateTerminal = vi.fn(
+      async (
+        request: Parameters<
+          NonNullable<TerminalSessionControllerOptions["beforeCreateTerminal"]>
+        >[0],
+      ) => ({
+        ...request,
+        args: [...(request.args ?? []), "--strict-mcp-config"],
+        env: { ...request.env, BOT: "scout" },
+      }),
+    );
+    const controller = createController({
+      terminalManager,
+      emit: vi.fn(),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+      listTerminalWorkspaceRefs: async () => [{ workspaceId: "ws-1", cwd: "/work/repo" }],
+      beforeCreateTerminal,
+    });
+
+    await controller.dispatch({
+      type: "create_terminal_request",
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+      name: "Claude Code",
+      command: "claude",
+      requestId: "req-hook",
+    });
+
+    expect(beforeCreateTerminal).toHaveBeenCalledWith({
+      cwd: "/work/repo",
+      workspaceId: "ws-1",
+      name: "Claude Code",
+      command: "claude",
+      env: {},
+    });
+    expect(createTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "claude",
+        args: ["--strict-mcp-config"],
+        env: { BOT: "scout" },
+      }),
+    );
+  });
 });
 
 describe("terminal-session-controller with terminals held by a newer Paseo", () => {
