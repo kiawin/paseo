@@ -1370,6 +1370,7 @@ export const ar: TranslationResources = {
         menu: "إجراءات المشروع",
         openSettings: "افتح إعدادات المشروع",
         openNewWindow: "Open in new window",
+        defaultHost: "Set {{hostName}} as default host",
         openNewWindowFailed: "Couldn't open a new window",
         openFolder: "Open in file manager",
         openFolderFailed: "Couldn't open folder",
