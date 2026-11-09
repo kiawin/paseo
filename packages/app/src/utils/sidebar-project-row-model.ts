@@ -86,7 +86,9 @@ function resolveNewWorkspaceTarget(
   project: SidebarProjectEntry,
   supportsMultiplicityByServerId: ReadonlyMap<string, boolean>,
   preferredServerId: string | null | undefined,
+  defaultServerId: string | null | undefined,
 ): SidebarProjectHostTarget | null {
+  let preferredTarget: SidebarProjectHostTarget | null = null;
   let fallbackTarget: SidebarProjectHostTarget | null = null;
   for (const host of project.hosts) {
     if (
@@ -97,21 +99,25 @@ function resolveNewWorkspaceTarget(
     }
     const target = hostTarget(host);
     if (!target) continue;
-    if (host.serverId === preferredServerId) return target;
+    // The user's chosen default beats the host they happen to be looking at.
+    if (host.serverId === defaultServerId) return target;
+    if (host.serverId === preferredServerId) preferredTarget = target;
     fallbackTarget ??= target;
   }
-  return fallbackTarget;
+  return preferredTarget ?? fallbackTarget;
 }
 
 function projectTrailingAction(
   project: SidebarProjectEntry,
   supportsMultiplicityByServerId: ReadonlyMap<string, boolean>,
   preferredServerId: string | null | undefined,
+  defaultServerId: string | null | undefined,
 ): SidebarProjectTrailingAction {
   const target = resolveNewWorkspaceTarget(
     project,
     supportsMultiplicityByServerId,
     preferredServerId,
+    defaultServerId,
   );
   return target ? { kind: "new_workspace", target } : { kind: "none" };
 }
@@ -120,6 +126,8 @@ export function buildSidebarProjectRowModel(input: {
   project: SidebarProjectEntry;
   collapsed: boolean;
   preferredServerId?: string | null;
+  /** The host the user picked for this project; wins over `preferredServerId`. */
+  defaultServerId?: string | null;
   supportsMultiplicityByServerId?: ReadonlyMap<string, boolean>;
 }): SidebarProjectRowModel {
   return {
@@ -129,6 +137,7 @@ export function buildSidebarProjectRowModel(input: {
       input.project,
       input.supportsMultiplicityByServerId ?? EMPTY_MULTIPLICITY_MAP,
       input.preferredServerId,
+      input.defaultServerId,
     ),
   };
 }

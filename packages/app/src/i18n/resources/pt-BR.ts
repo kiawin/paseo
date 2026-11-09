@@ -1348,6 +1348,7 @@ export const ptBR: TranslationResources = {
         menu: "Ações do projeto",
         openSettings: "Abrir configurações do projeto",
         openNewWindow: "Abrir em nova janela",
+        defaultHost: "Padrão: {{hostName}}",
         openNewWindowFailed: "Não foi possível abrir uma nova janela",
         openFolder: "Open in file manager",
         openFolderFailed: "Couldn't open folder",

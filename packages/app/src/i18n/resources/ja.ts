@@ -1336,6 +1336,7 @@ export const ja: TranslationResources = {
         menu: "プロジェクトアクション",
         openSettings: "プロジェクト設定を開く",
         openNewWindow: "新しいウィンドウで開く",
+        defaultHost: "既定: {{hostName}}",
         openNewWindowFailed: "新しいウィンドウを開けませんでした",
         openFolder: "Open in file manager",
         openFolderFailed: "Couldn't open folder",

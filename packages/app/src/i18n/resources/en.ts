@@ -1330,6 +1330,7 @@ export const en = {
         menu: "Project actions",
         openSettings: "Open project settings",
         openNewWindow: "Open in new window",
+        defaultHost: "Default: {{hostName}}",
         openNewWindowFailed: "Couldn't open a new window",
         openFolder: "Open in file manager",
         openFolderFailed: "Couldn't open folder",
