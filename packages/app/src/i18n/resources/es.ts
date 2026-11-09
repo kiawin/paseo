@@ -1365,6 +1365,7 @@ export const es: TranslationResources = {
         menu: "Acciones del proyecto",
         openSettings: "Abrir la configuración del proyecto",
         openNewWindow: "Open in new window",
+        defaultHost: "Set {{hostName}} as default host",
         openNewWindowFailed: "Couldn't open a new window",
         openFolder: "Open in file manager",
         openFolderFailed: "Couldn't open folder",
