@@ -42,6 +42,7 @@ import { useWorkspaceClipboardActions } from "@/hooks/use-workspace-clipboard-ac
 import {
   Eye,
   EyeOff,
+  Server,
   ExternalLink,
   Settings,
   MoreVertical,
@@ -78,6 +79,7 @@ import {
   type SidebarWorkspaceEntry,
   type SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
+import { useProjectDefaultHostStore } from "@/stores/project-default-host-store";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useSidebarViewStore, type SidebarGroupMode } from "@/stores/sidebar-view-store";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
@@ -191,11 +193,19 @@ const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
 const ThemedEye = withUnistyles(Eye);
 const ThemedEyeOff = withUnistyles(EyeOff);
+const ThemedServer = withUnistyles(Server);
 
 /** Hide or show again; `hidden` is whether the row is hidden now, which picks the label. */
 interface ProjectVisibilityAction {
   hidden: boolean;
   onSelect: () => void;
+}
+
+/** Which host a multi-host project's new workspaces start on; `selectedServerId` null is automatic. */
+interface ProjectDefaultHostAction {
+  selectedServerId: string | null;
+  choices: readonly { serverId: string; label: string }[];
+  onSelect: (serverId: string | null) => void;
 }
 
 const foregroundColorMapping = (theme: Theme) => ({
@@ -294,6 +304,7 @@ interface ProjectHeaderRowProps {
   removeProjectStatus?: "idle" | "pending";
   /** Absent when a host behind the row predates hiding projects. */
   visibilityAction?: ProjectVisibilityAction;
+  defaultHostAction?: ProjectDefaultHostAction;
   dragHandleProps?: DraggableListDragHandleProps;
 }
 
@@ -451,6 +462,7 @@ function ProjectRowTrailingActions({
   onRemoveProject,
   removeProjectStatus,
   visibilityAction,
+  defaultHostAction,
 }: {
   projectViewKey: string;
   displayName: string;
@@ -464,6 +476,7 @@ function ProjectRowTrailingActions({
   onRemoveProject?: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
   visibilityAction?: ProjectVisibilityAction;
+  defaultHostAction?: ProjectDefaultHostAction;
 }) {
   const actionsVisible = isHovered || platformIsNative || isMobileBreakpoint;
   return (
@@ -489,6 +502,7 @@ function ProjectRowTrailingActions({
             onRemoveProject={onRemoveProject}
             removeProjectStatus={removeProjectStatus}
             visibilityAction={visibilityAction}
+            defaultHostAction={defaultHostAction}
           />
         </View>
       ) : null}
@@ -499,6 +513,7 @@ function ProjectRowTrailingActions({
 const trash2LeadingIcon = <ThemedTrash2 size={14} uniProps={foregroundMutedColorMapping} />;
 const settingsLeadingIcon = <ThemedSettings size={14} uniProps={foregroundMutedColorMapping} />;
 const eyeOffLeadingIcon = <ThemedEyeOff size={14} uniProps={foregroundMutedColorMapping} />;
+const serverLeadingIcon = <ThemedServer size={14} uniProps={foregroundMutedColorMapping} />;
 const eyeLeadingIcon = <ThemedEye size={14} uniProps={foregroundMutedColorMapping} />;
 const hiddenMarkIcon = <ThemedEyeOff size={12} uniProps={foregroundMutedColorMapping} />;
 const openInNewWindowLeadingIcon = (
@@ -521,6 +536,7 @@ function ProjectKebabMenu({
   onRemoveProject,
   removeProjectStatus,
   visibilityAction,
+  defaultHostAction,
 }: {
   projectViewKey: string;
   settingsTarget: { serverId: string; projectId: string } | null;
@@ -528,6 +544,7 @@ function ProjectKebabMenu({
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
   visibilityAction?: ProjectVisibilityAction;
+  defaultHostAction?: ProjectDefaultHostAction;
 }) {
   const { t } = useTranslation();
   return (
@@ -541,7 +558,7 @@ function ProjectKebabMenu({
       >
         {renderKebabTriggerIcon}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" width={220} sheetTitle={t("sidebar.project.actions.menu")}>
+      <DropdownMenuContent align="end" width={280} sheetTitle={t("sidebar.project.actions.menu")}>
         <ProjectMenuItems
           surface="dropdown"
           projectViewKey={projectViewKey}
@@ -550,6 +567,7 @@ function ProjectKebabMenu({
           onRemoveProject={onRemoveProject}
           removeProjectStatus={removeProjectStatus}
           visibilityAction={visibilityAction}
+          defaultHostAction={defaultHostAction}
         />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -571,6 +589,37 @@ function ProjectMenuItem({
   return <DropdownMenuItem {...props}>{children}</DropdownMenuItem>;
 }
 
+/** Choosing the host that is already the default clears it, back to the automatic host. */
+function ProjectDefaultHostMenuItem({
+  surface,
+  projectViewKey,
+  choice,
+  action,
+}: {
+  surface: ProjectMenuSurface;
+  projectViewKey: string;
+  choice: ProjectDefaultHostAction["choices"][number];
+  action: ProjectDefaultHostAction;
+}) {
+  const { t } = useTranslation();
+  const selected = action.selectedServerId === choice.serverId;
+  const handleSelect = useCallback(
+    () => action.onSelect(selected ? null : choice.serverId),
+    [action, choice.serverId, selected],
+  );
+  return (
+    <ProjectMenuItem
+      surface={surface}
+      testID={`sidebar-project-menu-default-host-${choice.serverId}-${projectViewKey}`}
+      leading={serverLeadingIcon}
+      selected={selected}
+      onSelect={handleSelect}
+    >
+      {t("sidebar.project.actions.defaultHost", { hostName: choice.label })}
+    </ProjectMenuItem>
+  );
+}
+
 function ProjectMenuItems({
   surface,
   projectViewKey,
@@ -579,6 +628,7 @@ function ProjectMenuItems({
   onRemoveProject,
   removeProjectStatus,
   visibilityAction,
+  defaultHostAction,
 }: {
   surface: ProjectMenuSurface;
   projectViewKey: string;
@@ -587,6 +637,7 @@ function ProjectMenuItems({
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
   visibilityAction?: ProjectVisibilityAction;
+  defaultHostAction?: ProjectDefaultHostAction;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -645,6 +696,15 @@ function ProjectMenuItems({
             : t("sidebar.project.actions.hide")}
         </ProjectMenuItem>
       ) : null}
+      {defaultHostAction?.choices.map((choice) => (
+        <ProjectDefaultHostMenuItem
+          key={choice.serverId}
+          surface={surface}
+          projectViewKey={projectViewKey}
+          choice={choice}
+          action={defaultHostAction}
+        />
+      ))}
       <ProjectMenuItem
         surface={surface}
         testID={`sidebar-project-menu-remove-${projectViewKey}`}
@@ -977,6 +1037,7 @@ function ProjectHeaderRow({
   onRemoveProject,
   removeProjectStatus = "idle",
   visibilityAction,
+  defaultHostAction,
   dragHandleProps,
 }: ProjectHeaderRowProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -1071,6 +1132,7 @@ function ProjectHeaderRow({
         onRemoveProject={onRemoveProject}
         removeProjectStatus={removeProjectStatus}
         visibilityAction={visibilityAction}
+        defaultHostAction={defaultHostAction}
       />
       {showShortcutBadge && shortcutNumber !== null ? (
         <View style={styles.projectShortcutBadgeOverlay} pointerEvents="none">
@@ -1132,7 +1194,7 @@ function ProjectHeaderRow({
       </View>
       <ContextMenuContent
         align="start"
-        width={220}
+        width={280}
         testID={`sidebar-project-context-menu-${project.viewKey}`}
       >
         <ProjectMenuItems
@@ -1143,6 +1205,7 @@ function ProjectHeaderRow({
           onRemoveProject={onRemoveProject}
           removeProjectStatus={removeProjectStatus}
           visibilityAction={visibilityAction}
+          defaultHostAction={defaultHostAction}
         />
       </ContextMenuContent>
     </ContextMenu>
@@ -1749,6 +1812,10 @@ function ProjectBlock({
   const activeServerId = activeWorkspaceSelection?.serverId ?? null;
   const activeHostStatus = useHostRuntimeConnectionStatus(activeServerId ?? "");
   const preferredServerId = activeHostStatus === "online" ? activeServerId : null;
+  const defaultServerId = useProjectDefaultHostStore(
+    (state) => state.defaultServerIdByProject[project.viewKey] ?? null,
+  );
+  const setDefaultServerId = useProjectDefaultHostStore((state) => state.setDefaultServerId);
   const rowModel = useMemo(
     () =>
       buildSidebarProjectRowModel({
@@ -1756,8 +1823,24 @@ function ProjectBlock({
         collapsed,
         supportsMultiplicityByServerId,
         preferredServerId,
+        defaultServerId,
       }),
-    [collapsed, preferredServerId, project, supportsMultiplicityByServerId],
+    [collapsed, defaultServerId, preferredServerId, project, supportsMultiplicityByServerId],
+  );
+  // A single-host project has nothing to choose between.
+  const defaultHostAction = useMemo<ProjectDefaultHostAction | undefined>(
+    () =>
+      project.hosts.length > 1
+        ? {
+            selectedServerId: defaultServerId,
+            choices: project.hosts.map((host) => ({
+              serverId: host.serverId,
+              label: hostBadgeByServerId.get(host.serverId)?.label ?? host.serverId,
+            })),
+            onSelect: (serverId) => setDefaultServerId(project.viewKey, serverId),
+          }
+        : undefined,
+    [defaultServerId, hostBadgeByServerId, project.hosts, project.viewKey, setDefaultServerId],
   );
 
   // Collapsed rows hide their workspace rows, so the project row carries the most urgent
@@ -2027,6 +2110,7 @@ function ProjectBlock({
         onRemoveProject={handleRemoveProject}
         removeProjectStatus={isRemovingProject ? "pending" : "idle"}
         visibilityAction={visibilityAction}
+        defaultHostAction={defaultHostAction}
         dragHandleProps={dragHandleProps}
       />
 
