@@ -1369,6 +1369,7 @@ export const ru: TranslationResources = {
         menu: "Действия проекта",
         openSettings: "Открыть настройки проекта",
         openNewWindow: "Открыть в новом окне",
+        defaultHost: "Сделать {{hostName}} хостом по умолчанию",
         openNewWindowFailed: "Не удалось открыть новое окно",
         openFolder: "Открыть в файловом менеджере",
         openFolderFailed: "Не удалось открыть папку",
