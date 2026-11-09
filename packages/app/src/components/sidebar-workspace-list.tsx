@@ -547,7 +547,7 @@ function ProjectKebabMenu({
       >
         {renderKebabTriggerIcon}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" width={220} sheetTitle={t("sidebar.project.actions.menu")}>
+      <DropdownMenuContent align="end" width={280} sheetTitle={t("sidebar.project.actions.menu")}>
         <ProjectMenuItems
           surface="dropdown"
           projectViewKey={projectViewKey}
@@ -1183,7 +1183,7 @@ function ProjectHeaderRow({
       </View>
       <ContextMenuContent
         align="start"
-        width={220}
+        width={280}
         testID={`sidebar-project-context-menu-${project.viewKey}`}
       >
         <ProjectMenuItems

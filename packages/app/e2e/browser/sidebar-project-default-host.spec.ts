@@ -108,8 +108,8 @@ test.describe("Project default host", () => {
 
       await expect(row).toBeVisible({ timeout: 30_000 });
       await openMenu();
-      await expect(primaryItem).toHaveText(`Default: ${PRIMARY_LABEL}`);
-      await expect(secondaryItem).toHaveText(`Default: ${SECONDARY_LABEL}`);
+      await expect(primaryItem).toHaveText(`Set ${PRIMARY_LABEL} as default host`);
+      await expect(secondaryItem).toHaveText(`Set ${SECONDARY_LABEL} as default host`);
       await expect(primaryItem).not.toHaveAttribute("aria-checked", "true");
       await expect(secondaryItem).not.toHaveAttribute("aria-checked", "true");
       await shot(page, "default-host-01-menu-none-chosen");

@@ -1312,7 +1312,7 @@ export const zhCN: TranslationResources = {
         menu: "Project 操作",
         openSettings: "打开 project 设置",
         openNewWindow: "在新窗口中打开",
-        defaultHost: "默认：{{hostName}}",
+        defaultHost: "将 {{hostName}} 设为默认 Host",
         openNewWindowFailed: "无法打开新窗口",
         openFolder: "Open in file manager",
         openFolderFailed: "Couldn't open folder",
