@@ -84,6 +84,42 @@ describe("buildSidebarProjectRowModel", () => {
     });
   });
 
+  it("uses the project's default host over the active host", () => {
+    const result = buildSidebarProjectRowModel({
+      project: project({
+        hosts: [
+          { serverId: "host-a", iconWorkingDir: "/repo/a", worktreeSupport: "supported" },
+          { serverId: "host-b", iconWorkingDir: "/repo/b", worktreeSupport: "supported" },
+        ],
+      }),
+      collapsed: false,
+      preferredServerId: "host-b",
+      defaultServerId: "host-a",
+    });
+
+    expect(result.trailingAction).toEqual({
+      kind: "new_workspace",
+      target: { serverId: "host-a", projectId: "project-host-a", iconWorkingDir: "/repo/a" },
+    });
+  });
+
+  it("falls back to the active host when the default host cannot create here", () => {
+    const result = buildSidebarProjectRowModel({
+      project: project({
+        hosts: [
+          { serverId: "host-a", iconWorkingDir: "/repo/a", worktreeSupport: "unsupported" },
+          { serverId: "host-b", iconWorkingDir: "/repo/b", worktreeSupport: "supported" },
+          { serverId: "host-c", iconWorkingDir: "/repo/c", worktreeSupport: "supported" },
+        ],
+      }),
+      collapsed: false,
+      preferredServerId: "host-c",
+      defaultServerId: "host-a",
+    });
+
+    expect(result.trailingAction).toMatchObject({ target: { serverId: "host-c" } });
+  });
+
   it.each(["host-b", "another-host"])(
     "keeps the first eligible placement when preferred host %s cannot create here",
     (preferredServerId) => {
