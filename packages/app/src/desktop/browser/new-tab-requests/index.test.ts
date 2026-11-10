@@ -15,6 +15,19 @@ function createLayoutWithBrowser(browserId: string): WorkspaceLayout {
 }
 
 describe("browser new-tab requests", () => {
+  it("preserves a reserved browser ID and rejects an invalid one", () => {
+    const workspaceLayout = createLayoutWithBrowser("browser-1");
+    const payload = { sourceBrowserId: "browser-1", url: "https://example.com/target" };
+    expect(
+      resolveBrowserNewTabRequest({
+        payload: { ...payload, browserId: "b9d278d4-d651-49c1-9e6e-11e70ce82f03" },
+        workspaceLayout,
+      }),
+    ).toEqual({ ...payload, browserId: "b9d278d4-d651-49c1-9e6e-11e70ce82f03" });
+    expect(
+      resolveBrowserNewTabRequest({ payload: { ...payload, browserId: "" }, workspaceLayout }),
+    ).toBeNull();
+  });
   it("accepts desktop requests from browser tabs in the current workspace", () => {
     const request = resolveBrowserNewTabRequest({
       payload: {

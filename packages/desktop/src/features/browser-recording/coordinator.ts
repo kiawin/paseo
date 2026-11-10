@@ -283,6 +283,14 @@ export class BrowserRecordingCoordinator {
     return member && this.isCurrent(member) ? { ...member } : null;
   }
 
+  public getBrowserMembership(
+    hostWebContentsId: number,
+    browserId: string,
+  ): RecordingMembership | null {
+    const member = this.browsers.get(this.browserKey(hostWebContentsId, browserId));
+    return member ? { ...member } : null;
+  }
+
   public listMemberships(recordingId: string): RecordingMembership[] {
     return Array.from(this.sessions.get(recordingId)?.members.values() ?? [], (member) => ({
       ...member,

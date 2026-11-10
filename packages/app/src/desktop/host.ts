@@ -141,6 +141,7 @@ export type DesktopBrowserShortcutEvent =
   | { browserId: string; action: "new-tab" };
 
 export interface DesktopBrowserNewTabRequestEvent {
+  browserId?: string;
   sourceBrowserId: string;
   url: string;
 }

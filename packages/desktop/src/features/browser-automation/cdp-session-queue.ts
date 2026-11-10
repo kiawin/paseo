@@ -207,6 +207,50 @@ export class SharedCdpSession {
     return consumer;
   }
 
+  // A newly created popup has not navigated yet. Start its first domain before
+  // returning the WebContents to Chromium, while retaining normal ownership.
+  public primeDomain(consumer: CdpConsumer, domain: string): Promise<void> {
+    if (this.disposed || consumer.closed || !this.consumers.has(consumer)) {
+      throw new Error("CDP consumer is closed");
+    }
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(domain) || this.domains.size !== 0) {
+      throw new Error("Only a fresh CDP session can be primed");
+    }
+    this.ensureAttached();
+    const key = JSON.stringify(["domain", domain, null]);
+    const state: DomainState = {
+      kind: "domain",
+      domain,
+      params: {},
+      owners: new Set([consumer]),
+      enabled: false,
+    };
+    this.domains.set(key, state);
+    consumer.domains.add(key);
+    const generation = this.generation;
+    let pending: Promise<unknown>;
+    try {
+      pending = this.debuggerClient.sendCommand(`${domain}.enable`, {});
+    } catch (error) {
+      this.domains.delete(key);
+      consumer.domains.delete(key);
+      throw error;
+    }
+    return this.queue.run(async () => {
+      try {
+        await pending;
+        if (this.disposed || generation !== this.generation || !this.debuggerClient.isAttached()) {
+          throw new Error("CDP debugger detached during setup");
+        }
+        state.enabled = true;
+      } catch (error) {
+        this.domains.delete(key);
+        consumer.domains.delete(key);
+        throw error;
+      }
+    });
+  }
+
   public async sendCommand(
     command: string,
     params?: Record<string, unknown>,

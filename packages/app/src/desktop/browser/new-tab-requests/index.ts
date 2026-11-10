@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { BrowserAutomationBrowserIdSchema } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import { getDesktopHost, type DesktopBrowserNewTabRequestEvent } from "@/desktop/host";
 import { collectAllTabs, type WorkspaceLayout } from "@/stores/workspace-layout-store";
 import { getIsElectron } from "@/constants/platform";
@@ -28,9 +29,16 @@ function readDesktopBrowserNewTabRequest(payload: unknown): BrowserNewTabRequest
   if (typeof candidate.url !== "string" || !isAllowedBrowserNewTabUrl(candidate.url)) {
     return null;
   }
+  if (
+    candidate.browserId !== undefined &&
+    !BrowserAutomationBrowserIdSchema.safeParse(candidate.browserId).success
+  ) {
+    return null;
+  }
   return {
     sourceBrowserId: candidate.sourceBrowserId,
     url: candidate.url,
+    ...(candidate.browserId ? { browserId: candidate.browserId } : {}),
   };
 }
 
@@ -68,7 +76,7 @@ export function resolveBrowserNewTabRequest(input: {
 export function useDesktopBrowserNewTabRequests(input: {
   enabled: boolean;
   workspaceLayout: WorkspaceLayout | null | undefined;
-  openUrl: (url: string) => void;
+  openUrl: (url: string, browserId?: string) => void;
 }): void {
   const handleNewTabRequest = useStableEvent((payload: unknown) => {
     const request = resolveBrowserNewTabRequest({
@@ -78,7 +86,7 @@ export function useDesktopBrowserNewTabRequests(input: {
     if (!request) {
       return;
     }
-    input.openUrl(request.url);
+    input.openUrl(request.url, request.browserId);
   });
 
   useEffect(() => {

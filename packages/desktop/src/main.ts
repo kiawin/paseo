@@ -54,6 +54,7 @@ import {
   ensureNotificationCenterRegistration,
 } from "./features/notifications.js";
 import { createExternalUrlOpener } from "./features/opener.js";
+import { createBrowserRecordingLifecycle } from "./features/browser-recording/lifecycle.js";
 import { createBrowserCaptureService } from "./features/browser-capture.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { registerFileDragHandlers } from "./features/file-drag/ipc.js";
@@ -61,7 +62,6 @@ import { resolveAppIconPath } from "./features/stamped-icon.js";
 import { setupApplicationMenu } from "./features/menu.js";
 import {
   BROWSER_NEW_TAB_REQUEST_EVENT,
-  decideBrowserWindowOpenRequest,
   getPaseoBrowserIdForWebContents,
   getPaseoBrowserWebContentsForHostWindow,
   getPaseoBrowserWebviewRegistry,
@@ -246,57 +246,30 @@ function getBrowserPopupWindowOptions(
   };
 }
 
-function installBrowserWindowOpenHandler(input: {
-  contents: Electron.WebContents;
-  sourceContents: Electron.WebContents;
-  mainWindow: BrowserWindow;
-}): void {
-  const { contents, sourceContents, mainWindow } = input;
-
-  contents.setWindowOpenHandler(({ url, disposition, frameName, features, postBody }) => {
-    const decision = decideBrowserWindowOpenRequest({
-      url,
-      disposition,
-      frameName,
-      features,
-      hasPostBody: postBody !== undefined && postBody !== null,
-    });
-
-    if (decision.kind === "deny") {
-      return { action: "deny" };
-    }
-    if (decision.kind === "popup") {
-      return {
-        action: "allow",
-        overrideBrowserWindowOptions: getBrowserPopupWindowOptions(mainWindow),
-      };
-    }
-
-    const sourceBrowserId = getPaseoBrowserIdForWebContents(sourceContents);
-    if (sourceBrowserId) {
-      mainWindow.webContents.send(BROWSER_NEW_TAB_REQUEST_EVENT, {
-        sourceBrowserId,
-        url: decision.url,
-      });
-    } else {
-      pendingBrowserWindowOpenRequests.add(sourceContents.id, decision.url);
-    }
-    return { action: "deny" };
-  });
-
-  contents.on("did-create-window", (popupWindow) => {
+const browserRecordingLifecycle = createBrowserRecordingLifecycle({
+  registry: getPaseoBrowserWebviewRegistry(),
+  popupOptions: getBrowserPopupWindowOptions,
+  onError: (error) => log.error("[browser-recording] lifecycle error", error),
+  onPopup: (popupWindow) => {
     const popupContents = popupWindow.webContents;
     registerBrowserWebviewNavigationGuards(popupContents);
     popupContents.on("context-menu", (_event, params) => {
       showBrowserWebviewContextMenu(popupWindow, popupContents, params);
     });
-    installBrowserWindowOpenHandler({
-      contents: popupContents,
-      sourceContents,
-      mainWindow,
-    });
-  });
-}
+  },
+  onTabOpen: ({ sourceContents, mainWindow, url, browserId }) => {
+    const sourceBrowserId = getPaseoBrowserIdForWebContents(sourceContents);
+    if (sourceBrowserId) {
+      mainWindow.webContents.send(BROWSER_NEW_TAB_REQUEST_EVENT, {
+        sourceBrowserId,
+        url,
+        ...(browserId ? { browserId } : {}),
+      });
+    } else {
+      pendingBrowserWindowOpenRequests.add(sourceContents.id, url);
+    }
+  },
+});
 
 // In dev mode, detect git worktrees and isolate each instance so multiple
 // Electron windows can run side-by-side (separate userData = separate lock).
@@ -405,6 +378,7 @@ ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => 
   if (!registered) {
     throw new Error("Attached browser registration was rejected");
   }
+  browserRecordingLifecycle.attached(event.sender.id, input.browserId);
   const guest = webContents.fromId(input.webContentsId);
   if (!guest) {
     throw new Error("Attached browser guest disappeared after registration");
@@ -430,6 +404,10 @@ ipcMain.handle("paseo:browser:unregister-workspace-browser", async (event, brows
       event.sender.id,
       normalizedBrowserId,
     );
+    await browserRecordingLifecycle.coordinator.handleBrowserUnregistered({
+      hostWebContentsId: event.sender.id,
+      browserId: normalizedBrowserId,
+    });
     unregisterPaseoBrowserFromHost(event.sender.id, normalizedBrowserId);
     // COMPAT(browserProfile): added in v0.1.108; remove after 2027-01-15.
     const legacyProfile = hasOtherHost
@@ -722,6 +700,9 @@ async function createWindow(
   mainWindow.on("closed", () => {
     options.onClosed?.(webContentsId);
     agentNavigationInbox.removeWindow(webContentsId);
+    void browserRecordingLifecycle.coordinator
+      .handleHostClosed(webContentsId)
+      .catch((error) => log.error("[browser-recording] host cleanup failed", error));
     unregisterPaseoBrowserHost(webContentsId);
     browserKeyboard.detachHost(webContentsId);
   });
@@ -767,7 +748,7 @@ async function createWindow(
     contents.once("destroyed", () => {
       pendingBrowserWindowOpenRequests.delete(contents.id);
     });
-    installBrowserWindowOpenHandler({
+    browserRecordingLifecycle.installWindowOpenHandler({
       contents,
       sourceContents: contents,
       mainWindow,
