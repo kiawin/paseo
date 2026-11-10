@@ -565,8 +565,8 @@ export class BrowserRecordingCoordinator {
         firstAtMs: gap.firstAtMs,
         lastAtMs: gap.lastAtMs,
         summary,
-        sampleFrameId: gap.sampleFrameId,
-        sampleDocumentId: gap.sampleDocumentId,
+        ...(gap.sampleFrameId !== undefined ? { sampleFrameId: gap.sampleFrameId } : {}),
+        ...(gap.sampleDocumentId !== undefined ? { sampleDocumentId: gap.sampleDocumentId } : {}),
         additionalContextsMayDiffer: summary,
       },
     };
@@ -681,3 +681,6 @@ export class BrowserRecordingCoordinator {
     }
   }
 }
+
+// Keep the original T10 regression import available; production uses store.ts directly.
+export { BrowserRecordingStore } from "./store.js";
