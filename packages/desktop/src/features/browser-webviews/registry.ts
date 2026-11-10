@@ -3,6 +3,8 @@ export interface BrowserWorkspaceRegistration {
   workspaceId: string;
 }
 
+export { BrowserRecordingCoordinator } from "../browser-recording/coordinator.js";
+
 export interface BrowserWebContentsRegistration {
   browserId: string;
   hostWebContentsId: number;
