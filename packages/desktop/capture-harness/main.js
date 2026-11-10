@@ -5,6 +5,11 @@ const path = require("node:path");
 const { isDeepStrictEqual } = require("node:util");
 const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, session } = require("electron");
 const { adaptWebContents } = require("../dist/features/browser-automation/ipc.js");
+const {
+  loadRecordingCases,
+  validateRecordingPhase,
+  validateRecordingResults,
+} = require("./recording-cases.js");
 
 const ROOT = __dirname;
 const OUT_DIR = process.env.PASEO_CAPTURE_HARNESS_OUT_DIR || path.join(ROOT, "out");
@@ -2637,6 +2642,37 @@ async function runBrowserProfileGroup() {
   }
 }
 
+async function runRecordingGroup() {
+  ensureDirSync(OUT_DIR);
+  const selection = process.env.PASEO_CAPTURE_HARNESS_CASE;
+  const entries = loadRecordingCases(ROOT, selection);
+  if (entries.length !== 1 || !BROWSER_PROFILE_PHASE) {
+    fail("recording cases must run individually with a process phase");
+  }
+  const entry = entries[0];
+  validateRecordingPhase(entry, BROWSER_PROFILE_PHASE);
+  let recordingResults;
+  try {
+    recordingResults = await entry.run({
+      phase: BROWSER_PROFILE_PHASE,
+      outDir: OUT_DIR,
+      runId: process.env.PASEO_CAPTURE_HARNESS_RUN_ID,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recordingResults = [{ group: "recording", check: entry.name, pass: false, error: message }];
+  }
+  await fsp.writeFile(
+    path.join(OUT_DIR, `recording-${entry.name}-${BROWSER_PROFILE_PHASE}.json`),
+    `${JSON.stringify({ generatedAt: new Date().toISOString(), recordingResults }, null, 2)}\n`,
+  );
+  validateRecordingResults(entry.name, recordingResults);
+  for (const result of recordingResults) {
+    if (result.limitation) console.log(`LIMITATION ${entry.name}: ${result.limitation}`);
+  }
+  pass(`capture harness recording case ${entry.name} phase ${BROWSER_PROFILE_PHASE} complete`);
+}
+
 async function main() {
   ensureDirSync(OUT_DIR);
   if (
@@ -2866,7 +2902,7 @@ app
   .whenReady()
   .then(() => {
     applyMacHarnessActivationPolicyBeforeWindows();
-    return main();
+    return HARNESS_GROUP === "recording" ? runRecordingGroup() : main();
   })
   .then(() => app.quit())
   .catch(async (error) => {
