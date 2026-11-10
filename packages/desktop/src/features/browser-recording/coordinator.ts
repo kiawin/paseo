@@ -88,6 +88,7 @@ export class BrowserRecordingCoordinator {
   private readonly pendingTabs = new Map<string, PendingTabOpen>();
   private readonly frames = new Map<number, Map<string, string>>();
   private readonly listeners = new Set<(change: RecordingMembershipChange) => void>();
+  private readonly beforeRemovalListeners = new Set<(member: RecordingMembership) => void>();
   private readonly now: () => number;
   private readonly pendingTabTtlMs: number;
   private readonly maxPendingTabs: number;
@@ -270,6 +271,7 @@ export class BrowserRecordingCoordinator {
       throw error;
     }
     const previousWebContentsId = member.webContentsId;
+    this.notifyBeforeRemoval(member);
     this.contents.delete(previousWebContentsId);
     this.frames.delete(previousWebContentsId);
     member.webContentsId = nextId;
@@ -300,6 +302,12 @@ export class BrowserRecordingCoordinator {
   public subscribe(listener: (change: RecordingMembershipChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+  // Listeners may synchronously enqueue final gaps before a member is removed
+  // or its guest is replaced. stop() drains those writes before closing the sink.
+  public subscribeBeforeRemoval(listener: (member: RecordingMembership) => void): () => void {
+    this.beforeRemovalListeners.add(listener);
+    return () => this.beforeRemovalListeners.delete(listener);
   }
 
   public registerFrame(input: {
@@ -410,6 +418,7 @@ export class BrowserRecordingCoordinator {
       await this.stop(session.recordingId);
       return;
     }
+    this.notifyBeforeRemoval(member);
     this.removeMemberIndexes(session, member);
     await this.writeGap(session, member, reason, "lifecycle");
   }
@@ -446,6 +455,16 @@ export class BrowserRecordingCoordinator {
     if (previous) return previous;
     const session = this.sessions.get(recordingId);
     if (!session) return Promise.resolve();
+    let finish!: () => void;
+    let fail!: (error: unknown) => void;
+    const completion = new Promise<void>((resolve, reject) => {
+      finish = resolve;
+      fail = reject;
+    });
+    // Publish the promise before callbacks: a pre-removal listener may itself
+    // call stop, and must observe the same in-progress operation.
+    this.stopped.set(recordingId, completion);
+    for (const member of Array.from(session.members.values())) this.notifyBeforeRemoval(member);
     this.sessions.delete(recordingId);
     for (const member of Array.from(session.members.values()))
       this.removeMemberIndexes(session, member);
@@ -454,7 +473,7 @@ export class BrowserRecordingCoordinator {
     for (const gap of session.gaps.values()) {
       if (gap.count > 1) void this.write(session, this.gapEvent(gap, true)).catch(() => {});
     }
-    const completion = (async () => {
+    void (async () => {
       await Promise.allSettled(session.pendingWrites);
       try {
         await session.sink.close?.();
@@ -466,8 +485,7 @@ export class BrowserRecordingCoordinator {
           session.failures,
           `Recording writes failed during stop (${session.failureCount}): ${session.failures.map(String).join("; ")}`,
         );
-    })();
-    this.stopped.set(recordingId, completion);
+    })().then(finish, fail);
     return completion;
   }
 
@@ -646,6 +664,17 @@ export class BrowserRecordingCoordinator {
         listener(change);
       } catch (error) {
         console.warn("[browser-recording] membership listener failed", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+      }
+    }
+  }
+  private notifyBeforeRemoval(member: RecordingMembership): void {
+    for (const listener of this.beforeRemovalListeners) {
+      try {
+        listener({ ...member });
+      } catch (error) {
+        console.warn("[browser-recording] pre-removal listener failed", {
           errorType: error instanceof Error ? error.name : typeof error,
         });
       }

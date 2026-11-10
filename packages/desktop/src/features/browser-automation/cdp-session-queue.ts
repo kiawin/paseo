@@ -139,6 +139,8 @@ export class SharedCdpSession {
   private readonly queue = new CdpSessionQueue();
   private readonly consumers = new Set<CdpConsumer>();
   private readonly domains = new Map<string, DomainState>();
+  private readonly runtimeContexts = new Map<string, CdpMessage>();
+  private runtimeContextsDropped = 0;
   private disposed = false;
   private attached = false;
   private generation = 0;
@@ -159,6 +161,7 @@ export class SharedCdpSession {
       params: params ?? {},
       ...(sessionId ? { sessionId } : {}),
     };
+    this.trackRuntimeContext(message);
     for (const consumer of this.consumers) {
       if (!consumer.closed) {
         try {
@@ -173,9 +176,15 @@ export class SharedCdpSession {
   };
 
   private readonly onDetach = (_event?: unknown, reason?: string) => {
-    if (!this.attached) return;
+    if (!this.attached) {
+      this.runtimeContexts.clear();
+      this.runtimeContextsDropped = 0;
+      return;
+    }
     this.attached = false;
     this.generation += 1;
+    this.runtimeContexts.clear();
+    this.runtimeContextsDropped = 0;
     for (const [key, state] of this.domains) {
       state.enabled = false;
       // Child CDP session IDs die with the debugger attachment. Consumers
@@ -205,6 +214,55 @@ export class SharedCdpSession {
     const consumer = new CdpConsumer(this, callbacks);
     this.consumers.add(consumer);
     return consumer;
+  }
+
+  // Runtime.enable is shared. A later consumer must be able to discover the
+  // contexts emitted when another consumer enabled it first.
+  public runtimeContextSnapshot(): { contexts: CdpMessage[]; dropped: number } {
+    return {
+      contexts: Array.from(this.runtimeContexts.values()),
+      dropped: this.runtimeContextsDropped,
+    };
+  }
+
+  private trackRuntimeContext(message: CdpMessage): void {
+    const context = message.params.context;
+    if (
+      message.method === "Runtime.executionContextCreated" &&
+      context &&
+      typeof context === "object"
+    ) {
+      const id = (context as Record<string, unknown>).id;
+      if (
+        typeof id !== "number" ||
+        (context as Record<string, unknown>).name !== "Electron Isolated Context"
+      )
+        return;
+      const key = JSON.stringify([message.sessionId ?? null, id]);
+      if (!this.runtimeContexts.has(key) && this.runtimeContexts.size >= 2048) {
+        this.runtimeContexts.delete(this.runtimeContexts.keys().next().value!);
+        this.runtimeContextsDropped += 1;
+      }
+      this.runtimeContexts.set(key, message);
+    } else if (
+      message.method === "Runtime.executionContextDestroyed" &&
+      typeof message.params.executionContextId === "number"
+    ) {
+      this.runtimeContexts.delete(
+        JSON.stringify([message.sessionId ?? null, message.params.executionContextId]),
+      );
+    } else if (
+      message.method === "Runtime.executionContextsCleared" ||
+      message.method === "Target.detachedFromTarget"
+    ) {
+      const target =
+        message.method === "Target.detachedFromTarget"
+          ? message.params.sessionId
+          : message.sessionId;
+      if (message.method === "Target.detachedFromTarget" && typeof target !== "string") return;
+      for (const [key, entry] of this.runtimeContexts)
+        if (entry.sessionId === target) this.runtimeContexts.delete(key);
+    }
   }
 
   // A newly created popup has not navigated yet. Start its first domain before
@@ -370,6 +428,7 @@ export class SharedCdpSession {
     this.debuggerClient.removeListener?.("detach", this.onDetach);
     this.consumers.clear();
     this.domains.clear();
+    this.runtimeContexts.clear();
   }
 
   private ensureAttached(): void {
@@ -417,6 +476,10 @@ export class SharedCdpSession {
       return;
     }
     await this.debuggerClient.sendCommand(`${state.domain}.disable`, {}, state.sessionId);
+    if (state.domain === "Runtime") {
+      for (const [key, entry] of this.runtimeContexts)
+        if (entry.sessionId === state.sessionId) this.runtimeContexts.delete(key);
+    }
   }
 
   private forgetChildSession(sessionId: string): void {

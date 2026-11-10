@@ -55,6 +55,8 @@ import {
 } from "./features/notifications.js";
 import { createExternalUrlOpener } from "./features/opener.js";
 import { createBrowserRecordingLifecycle } from "./features/browser-recording/lifecycle.js";
+import { createInteractionRecorder } from "./features/browser-recording/interaction-recorder.js";
+import { browserRecordingPopupOptions } from "./features/browser-recording/popup-options.js";
 import { createBrowserCaptureService } from "./features/browser-capture.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { registerFileDragHandlers } from "./features/file-drag/ipc.js";
@@ -78,7 +80,6 @@ import {
 import {
   clearPaseoBrowserProfile,
   getLegacyPaseoBrowserProfileSession,
-  PASEO_BROWSER_PROFILE_PARTITION,
   getPaseoBrowserProfileSession,
   getPaseoBrowserProfileSessions,
   listPaseoBrowserProfileGuests,
@@ -225,30 +226,12 @@ function showBrowserWebviewContextMenu(
   menu.popup({ window: win });
 }
 
-function getBrowserPopupWindowOptions(
-  mainWindow: BrowserWindow,
-): Electron.BrowserWindowConstructorOptions {
-  return {
-    parent: mainWindow,
-    show: true,
-    autoHideMenuBar: true,
-    webPreferences: {
-      partition: PASEO_BROWSER_PROFILE_PARTITION,
-      nodeIntegration: false,
-      nodeIntegrationInSubFrames: false,
-      nodeIntegrationInWorker: false,
-      contextIsolation: true,
-      sandbox: true,
-      webSecurity: true,
-      webviewTag: false,
-      allowRunningInsecureContent: false,
-    },
-  };
-}
-
+let browserInteractionRecorder: ReturnType<typeof createInteractionRecorder> | undefined;
 const browserRecordingLifecycle = createBrowserRecordingLifecycle({
   registry: getPaseoBrowserWebviewRegistry(),
-  popupOptions: getBrowserPopupWindowOptions,
+  onCdpEvent: (...args) => browserInteractionRecorder?.onCdpEvent(...args),
+  popupOptions: (mainWindow) =>
+    browserRecordingPopupOptions(mainWindow, getBrowserKeyboardPreloadPath()),
   onError: (error) => log.error("[browser-recording] lifecycle error", error),
   onPopup: (popupWindow) => {
     const popupContents = popupWindow.webContents;
@@ -270,6 +253,11 @@ const browserRecordingLifecycle = createBrowserRecordingLifecycle({
     }
   },
 });
+browserInteractionRecorder = createInteractionRecorder({
+  coordinator: browserRecordingLifecycle.coordinator,
+  onError: (error) => log.error("[browser-recording] interaction error", error),
+});
+browserInteractionRecorder.registerIpc();
 
 // In dev mode, detect git worktrees and isolate each instance so multiple
 // Electron windows can run side-by-side (separate userData = separate lock).

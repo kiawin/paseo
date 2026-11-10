@@ -96,6 +96,13 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
       };
       visit(result.frameTree);
     };
+    const enableRuntime = (sessionId?: string): Promise<void> =>
+      consumer.enableDomain("Runtime", sessionId).catch((error) => {
+        if (!contents.isDestroyed() && coordinator.getMembership(contents.id)) {
+          gap(member, "interaction-runtime-unavailable");
+          options.onError(error);
+        }
+      });
     const consumer = shared.createConsumer({
       onMessage: ({ method, params, sessionId }) => {
         if (method === "Target.attachedToTarget" && typeof params.sessionId === "string") {
@@ -109,6 +116,7 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
           void Promise.all([
             consumer.enableDomain("Network", childSession),
             consumer.enableDomain("Page", childSession),
+            enableRuntime(childSession),
             consumer.enableAutoAttach(childSession),
           ])
             .then(async () => {
@@ -159,7 +167,9 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
       throw error;
     }
     const ready = network
-      .then(() => Promise.all([consumer.enableDomain("Page"), consumer.enableAutoAttach()]))
+      .then(() =>
+        Promise.all([consumer.enableDomain("Page"), enableRuntime(), consumer.enableAutoAttach()]),
+      )
       .then(async () => {
         await snapshot(consumer);
         return undefined;
