@@ -430,3 +430,7 @@ export class SharedCdpSession {
     this.domains.delete(key);
   }
 }
+
+// Keep the original T08 regression import available; production consumers
+// should import the recorder directly from browser-recording.
+export { NetworkRecorder } from "../browser-recording/network-recorder.js";

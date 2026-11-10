@@ -98,12 +98,12 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
     };
     const consumer = shared.createConsumer({
       onMessage: ({ method, params, sessionId }) => {
-        options.onCdpEvent?.(contents, method, params, sessionId);
         if (method === "Target.attachedToTarget" && typeof params.sessionId === "string") {
           const childSession = params.sessionId;
           const info = params.targetInfo as { type?: unknown } | undefined;
           if (info?.type !== "iframe" && info?.type !== "page") {
             gap(member, "unsupported-child-target");
+            options.onCdpEvent?.(contents, method, params, sessionId);
             return;
           }
           void Promise.all([
@@ -139,9 +139,13 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
           }
         }
         if (method === "Page.frameDetached" && typeof params.frameId === "string") {
+          // Deliver detach while its last document identity is still available.
+          options.onCdpEvent?.(contents, method, params, sessionId);
           frameVersions.set(params.frameId, (frameVersions.get(params.frameId) ?? 0) + 1);
           coordinator.removeFrame({ webContentsId: contents.id, frameId: params.frameId });
+          return;
         }
+        options.onCdpEvent?.(contents, method, params, sessionId);
       },
       onDetach: () => gap(member, "debugger-detached"),
     });
