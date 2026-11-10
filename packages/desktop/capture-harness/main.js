@@ -2657,6 +2657,19 @@ async function runRecordingGroup() {
       phase: BROWSER_PROFILE_PHASE,
       outDir: OUT_DIR,
       runId: process.env.PASEO_CAPTURE_HARNESS_RUN_ID,
+      helpers: {
+        appendPermanentWebview,
+        closeHarnessWindow,
+        createInactiveHarnessWindow,
+        installHarnessWebviewGuards,
+        trackAttachedGuests,
+        waitForGuestLoad,
+        waitForInactiveReveal,
+        withTimeout,
+        renderer,
+        guestPreloadPath: PRODUCTION_BROWSER_GUEST_PRELOAD_PATH,
+        harnessRoot: ROOT,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
