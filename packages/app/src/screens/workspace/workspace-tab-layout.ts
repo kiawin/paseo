@@ -139,3 +139,35 @@ export function selectWorkspaceChrome<Compact, Full>(input: {
 // A count badge is only 16pt wide. Native popovers need a content width floor
 // because their scrolling tab list does not contribute an intrinsic width.
 export const workspaceTabSwitcherPopoverLayout = { desktopMinWidth: 320 } as const;
+
+/** Place the selected tab at the start of an overflowing rail; the scroll view clamps at the end. */
+export function selectedWorkspaceTabOffset(
+  items: readonly WorkspaceTabLayoutItem[],
+  selectedIndex: number,
+  gap: number,
+  padding: number,
+): number {
+  if (selectedIndex <= 0 || selectedIndex >= items.length) return 0;
+  return (
+    padding + items.slice(0, selectedIndex).reduce((total, item) => total + item.width + gap, 0)
+  );
+}
+
+/** Return the smallest scroll change that brings a tab into the visible rail. */
+export function workspaceTabRevealOffset(input: {
+  scrollOffset: number;
+  viewportStart: number;
+  viewportEnd: number;
+  tabStart: number;
+  tabEnd: number;
+}): number | null {
+  if (input.tabEnd - input.tabStart > input.viewportEnd - input.viewportStart) {
+    if (input.tabStart === input.viewportStart) return null;
+    return Math.max(0, input.scrollOffset + input.tabStart - input.viewportStart);
+  }
+  if (input.tabStart < input.viewportStart)
+    return Math.max(0, input.scrollOffset + input.tabStart - input.viewportStart);
+  if (input.tabEnd > input.viewportEnd)
+    return Math.max(0, input.scrollOffset + input.tabEnd - input.viewportEnd);
+  return null;
+}

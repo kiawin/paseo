@@ -2279,6 +2279,8 @@ export const es: TranslationResources = {
       deleteFailed: "No se pudo eliminar el artefacto",
     },
     recordings: {
+      viewGap: "Vista {{n}}: {{reason}}",
+      unknownViewGap: "Vista desconocida: {{reason}}",
       moreCaptureProblems:
         "Y {{extra}} problemas de captura más; consulta la grabación para más detalles.",
       forgetCorruptAudit: "Olvidar historial de copias dañado",

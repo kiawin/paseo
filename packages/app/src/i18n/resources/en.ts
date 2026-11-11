@@ -2254,6 +2254,8 @@ export const en = {
       deleteFailed: "Failed to delete artifact",
     },
     recordings: {
+      viewGap: "View {{n}}: {{reason}}",
+      unknownViewGap: "Unknown view: {{reason}}",
       moreCaptureProblems: "And {{extra}} more capture issues; see the recording for details.",
       forgetCorruptAudit: "Forget damaged share history",
       forgetCorruptAuditMessage:

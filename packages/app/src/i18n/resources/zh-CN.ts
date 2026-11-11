@@ -2203,6 +2203,8 @@ export const zhCN: TranslationResources = {
       deleteFailed: "无法删除成果物",
     },
     recordings: {
+      viewGap: "视图 {{n}}：{{reason}}",
+      unknownViewGap: "未知视图：{{reason}}",
       moreCaptureProblems: "还有 {{extra}} 个采集问题；详情请查看录制。",
       forgetCorruptAudit: "忘记已损坏的共享记录",
       forgetCorruptAuditMessage: "忘记已损坏的共享记录？远程副本可能仍可访问，且不会再显示在此处。",

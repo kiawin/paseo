@@ -82,6 +82,8 @@ $PASEO_HOME/
 └── push-tokens.json                     # Expo push notification tokens
 ```
 
+Browser recordings live in desktop `userData`, while shared copies live on the destination daemon. See [Browser recording](browser-recording.md#storage-and-sharing).
+
 Notes hash the exact `projectId` for the project directory because legacy IDs may be path-shaped
 or remote-shaped; artifacts keep their direct `{projectId}` layout for compatibility.
 

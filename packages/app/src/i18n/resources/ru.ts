@@ -2264,6 +2264,8 @@ export const ru: TranslationResources = {
       deleteFailed: "Не удалось удалить артефакт",
     },
     recordings: {
+      viewGap: "Вид {{n}}: {{reason}}",
+      unknownViewGap: "Неизвестный вид: {{reason}}",
       moreCaptureProblems: "И ещё {{extra}} проблем записи; подробности приведены в записи.",
       forgetCorruptAudit: "Забыть повреждённую историю доступа",
       forgetCorruptAuditMessage:

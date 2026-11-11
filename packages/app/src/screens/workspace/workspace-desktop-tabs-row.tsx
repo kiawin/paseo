@@ -54,7 +54,11 @@ import { CONTROL_HEIGHTS } from "@/components/ui/control-geometry";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { Shortcut } from "@/components/ui/shortcut";
 import { useWorkspaceTabLayout } from "@/screens/workspace/use-workspace-tab-layout";
-import { retainWorkspaceTabMeasuredWidth } from "@/screens/workspace/workspace-tab-layout";
+import {
+  retainWorkspaceTabMeasuredWidth,
+  selectedWorkspaceTabOffset,
+  workspaceTabRevealOffset,
+} from "@/screens/workspace/workspace-tab-layout";
 import {
   WorkspaceTabPresentationResolver,
   WorkspaceTabIcon,
@@ -463,6 +467,32 @@ function TabContextMenuItem({
       {entry.label}
     </ContextMenuItem>
   );
+}
+
+function revealSelectedWebTab(scroll: ScrollView | null): boolean {
+  if (!isWeb || !scroll) return false;
+  const node = scroll.getScrollableNode();
+  if (!(node instanceof HTMLElement)) return false;
+  const selected = node.querySelector('[aria-selected="true"]');
+  if (!(selected instanceof HTMLElement)) return false;
+  const viewport = node.getBoundingClientRect();
+  const tab = selected.getBoundingClientRect();
+  const offset = workspaceTabRevealOffset({
+    scrollOffset: node.scrollLeft,
+    viewportStart: viewport.left,
+    viewportEnd: viewport.right,
+    tabStart: tab.left,
+    tabEnd: tab.right,
+  });
+  if (offset !== null) scroll.scrollTo({ x: offset, animated: false });
+  return true;
+}
+
+function selectedTabKeyAt(
+  tabs: readonly WorkspaceDesktopTabRowItem[],
+  index: number,
+): string | null {
+  return tabs[index]?.tab.key ?? null;
 }
 
 function tabKeyExtractor(tab: WorkspaceDesktopTabRowItem) {
@@ -1316,6 +1346,32 @@ function ResolvedWorkspaceDesktopTabsRow({
       tabsScrollRef.current?.scrollTo({ x: 0, animated: false });
     }
   }, [layout.requiresHorizontalScrollFallback]);
+
+  const selectedTabIndex = displayedTabs.findIndex((item) => item.isActive);
+  const selectedTabKey = selectedTabKeyAt(displayedTabs, selectedTabIndex);
+  const lastRevealedTab = useRef<string | null>(null);
+  useEffect(() => {
+    if (host !== "explorer" || !layout.requiresHorizontalScrollFallback) {
+      lastRevealedTab.current = null;
+      return;
+    }
+    if (
+      selectedTabIndex < 0 ||
+      !selectedTabKey ||
+      layout.items.length !== displayedTabs.length ||
+      lastRevealedTab.current === selectedTabKey
+    )
+      return;
+    lastRevealedTab.current = selectedTabKey;
+    if (revealSelectedWebTab(tabsScrollRef.current)) return;
+    const x = selectedWorkspaceTabOffset(
+      layout.items,
+      selectedTabIndex,
+      layoutMetrics.tabGap,
+      layoutMetrics.rowPaddingHorizontal,
+    );
+    tabsScrollRef.current?.scrollTo({ x, animated: false });
+  }, [host, layout, layoutMetrics, selectedTabIndex, selectedTabKey, displayedTabs.length]);
 
   const handleDragEnd = useCallback(
     (nextTabs: ResolvedWorkspaceDesktopTabRowItem[]) => {

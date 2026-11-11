@@ -2278,6 +2278,8 @@ export const fr: TranslationResources = {
       deleteFailed: "Échec de la suppression de l’artefact",
     },
     recordings: {
+      viewGap: "Vue {{n}} : {{reason}}",
+      unknownViewGap: "Vue inconnue : {{reason}}",
       moreCaptureProblems:
         "Et {{extra}} autres problèmes de capture ; consultez l’enregistrement pour les détails.",
       forgetCorruptAudit: "Oublier l’historique de partage endommagé",

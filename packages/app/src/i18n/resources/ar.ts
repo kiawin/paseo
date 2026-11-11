@@ -2228,6 +2228,8 @@ export const ar: TranslationResources = {
       deleteFailed: "تعذّر حذف العنصر",
     },
     recordings: {
+      viewGap: "العرض {{n}}: {{reason}}",
+      unknownViewGap: "عرض غير معروف: {{reason}}",
       moreCaptureProblems: "و{{extra}} من مشكلات التسجيل الأخرى؛ راجع التسجيل للتفاصيل.",
       forgetCorruptAudit: "نسيان سجل المشاركة التالف",
       forgetCorruptAuditMessage:

@@ -2251,6 +2251,8 @@ export const ja: TranslationResources = {
       deleteFailed: "成果物を削除できませんでした",
     },
     recordings: {
+      viewGap: "ビュー {{n}}: {{reason}}",
+      unknownViewGap: "不明なビュー: {{reason}}",
       moreCaptureProblems:
         "他に {{extra}} 件のキャプチャ問題があります。詳細は録画を確認してください。",
       forgetCorruptAudit: "破損した共有履歴を忘れる",

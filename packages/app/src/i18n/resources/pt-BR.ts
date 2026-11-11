@@ -2263,6 +2263,8 @@ export const ptBR: TranslationResources = {
       deleteFailed: "Não foi possível excluir o artefato",
     },
     recordings: {
+      viewGap: "Visualização {{n}}: {{reason}}",
+      unknownViewGap: "Visualização desconhecida: {{reason}}",
       moreCaptureProblems:
         "E mais {{extra}} problemas de captura; consulte a gravação para detalhes.",
       forgetCorruptAudit: "Esquecer histórico de compartilhamento danificado",

@@ -2240,6 +2240,8 @@ export const ko: TranslationResources = {
       deleteFailed: "산출물을 삭제하지 못했습니다",
     },
     recordings: {
+      viewGap: "보기 {{n}}: {{reason}}",
+      unknownViewGap: "알 수 없는 보기: {{reason}}",
       moreCaptureProblems:
         "그 외 {{extra}}개의 캡처 문제가 있습니다. 자세한 내용은 녹화를 확인하세요.",
       forgetCorruptAudit: "손상된 공유 기록 삭제",

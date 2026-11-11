@@ -188,6 +188,15 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
   const [showFull, setShowFull] = useState(false);
   const [playbackSeek, setPlaybackSeek] = useState<RecordingSeek | null>(null);
   const [model, setModel] = useState<ReturnType<typeof createRecordingsModel> | null>(null);
+  const viewNumbers = useMemo(
+    () =>
+      new Map(
+        createPlayback(snapshot?.media ?? [])
+          .views()
+          .map((id, index) => [id, index + 1]),
+      ),
+    [snapshot?.media],
+  );
   useEffect(() => {
     const bridge = getDesktopHost()?.recording;
     if (!bridge) return;
@@ -327,13 +336,12 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
           ) : null}
           {snapshot.mediaIncomplete.map((item) => (
             <Text key={item.key} style={styles.error}>
-              {item.streamId} {item.segmentId}: {item.reason}
-            </Text>
-          ))}
-          {snapshot.media.map((segment) => (
-            <Text key={`${segment.streamId}:${segment.segmentId}`} selectable style={styles.muted}>
-              {segment.streamId} · {segment.segmentId} · {segment.mimeType} · {segment.startMs}ms +{" "}
-              {segment.durationMs}ms
+              {item.streamId && viewNumbers.has(item.streamId)
+                ? t("panels.recordings.viewGap", {
+                    n: viewNumbers.get(item.streamId),
+                    reason: item.reason,
+                  })
+                : t("panels.recordings.unknownViewGap", { reason: item.reason })}
             </Text>
           ))}
           {snapshot.events.map((event, index) => (
