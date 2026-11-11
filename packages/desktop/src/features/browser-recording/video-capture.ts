@@ -122,19 +122,21 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
       resolveReady = resolve;
     });
     let stopping = false;
+    let forcedRecovery = false;
     let expectedSequence = 0;
     let initialized = false;
     let failureReported = false;
     let generationStart = 0;
     let watchdog: ReturnType<typeof setTimeout> | undefined;
     const armWatchdog = () => {
+      if (stopping) return;
       if (watchdog) clearTimeout(watchdog);
       watchdog = setTimeout(() => {
         report(member, "video-stalled");
         if (state.views.get(member.memberId) === view) state.views.delete(member.memberId);
         track(
           state,
-          stop()
+          stop(true)
             .then(() => run)
             .then(() => {
               if (
@@ -147,12 +149,24 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
         );
       }, 10_000);
     };
-    const stop = async () => {
+    const stop = async (recover = false) => {
       if (stopping) return completed;
       stopping = true;
       if (initialized && win && !win.isDestroyed()) win.webContents.send("paseo-video-stop");
       else finish();
-      const timer = setTimeout(() => reject(new Error("Video recorder stop timed out")), 10_000);
+      const timer = setTimeout(() => {
+        if (!recover) {
+          reject(new Error("Video recorder stop timed out"));
+          return;
+        }
+        try {
+          forcedRecovery = true;
+          if (win && !win.isDestroyed()) win.destroy();
+          finish();
+        } catch (error) {
+          reject(error);
+        }
+      }, 10_000);
       try {
         await completed;
       } finally {
@@ -268,12 +282,14 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
         ]);
         if (stopping) return;
         initialized = true;
+        armWatchdog();
         await win.webContents.executeJavaScript(
           "window.dispatchEvent(new Event('paseo-video-start'))",
           true,
         );
         await completed;
       } catch (error) {
+        if (forcedRecovery) return;
         if (!stopping && !failureReported) report(member, "video-capture-unavailable");
         throw error;
       } finally {
