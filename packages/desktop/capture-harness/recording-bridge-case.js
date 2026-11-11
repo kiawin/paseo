@@ -124,7 +124,9 @@ module.exports = {
       ensureInteractionReady: (id) => lifecycle.ready(id),
       isTrustedHost: (id, url) =>
         id === host.webContents.id && isTrustedRecordingUrl(url ?? "", false, origin),
-      notify: () => {},
+      notify: (id, state) => {
+        if (id === host.webContents.id) host.webContents.send("paseo:recording:state", state);
+      },
       createBodyReader: (id) => lifecycle.retainNetwork(id),
       getResponseBody: (id, requestId, sessionId) =>
         lifecycle.backgroundCommand(
@@ -173,6 +175,53 @@ module.exports = {
       });
       const recording = await host.webContents.executeJavaScript(
         "window.paseoDesktop.recording.start({browserId: 'root'})",
+      );
+      const activeRecording = await host.webContents.executeJavaScript(
+        "window.paseoDesktop.recording.active({browserId: 'root'})",
+      );
+      assert.equal(activeRecording.recordingId, recording.recordingId);
+      assert.equal(activeRecording.status, "recording");
+      assert.equal(
+        await host.webContents.executeJavaScript(
+          "window.paseoDesktop.recording.active({browserId: 'unknown'})",
+        ),
+        null,
+      );
+      await host.webContents.executeJavaScript(`window.recordingStates = [];
+        window.paseoDesktop.recording.onState(state => window.recordingStates.push(state)); true;`);
+      const reservation = lifecycle.coordinator.reserveTabOpen(guest.id);
+      const child = await helpers.appendPermanentWebview({
+        win: host,
+        tracker,
+        state: { id: "p1-overflow-1x1" },
+        sourceUrl: origin,
+      });
+      await helpers.waitForGuestLoad(child.guest);
+      registry.registerWebContents({
+        browserId: reservation.browserId,
+        webContentsId: child.guest.id,
+        hostWebContentsId: host.webContents.id,
+      });
+      registry.registerWorkspace({ browserId: reservation.browserId, workspaceId: "fixture" });
+      lifecycle.coordinator.claimTabOpen({
+        ...reservation,
+        hostWebContentsId: host.webContents.id,
+      });
+      const childState = await host.webContents.executeJavaScript(
+        `window.paseoDesktop.recording.active({browserId: ${JSON.stringify(reservation.browserId)}})`,
+      );
+      assert.equal(
+        childState.recordingId,
+        recording.recordingId,
+        "descendant belongs to root recording",
+      );
+      assert.equal(childState.status, "recording");
+      const notifications = await host.webContents.executeJavaScript("window.recordingStates");
+      assert(
+        notifications.some(
+          (state) => state.browserId === reservation.browserId && state.status === "recording",
+        ),
+        "descendant receives recording state",
       );
       assert.equal(
         await guest.executeJavaScript("typeof window.paseoDesktop"),

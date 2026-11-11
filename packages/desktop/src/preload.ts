@@ -40,7 +40,7 @@ interface RecordingMetadata {
 interface RecordingState {
   recordingId: string;
   browserId: string;
-  status: "starting" | "recording" | "complete" | "interrupted";
+  status: "starting" | "recording" | "stopping" | "complete" | "interrupted";
 }
 
 contextBridge.exposeInMainWorld("paseoDesktop", {
@@ -158,6 +158,8 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
       ipcRenderer.invoke("paseo:browser:copy-element", payload),
   },
   recording: {
+    active: (input: { browserId: string }): Promise<RecordingState | null> =>
+      ipcRenderer.invoke("paseo:recording:active", input),
     start: (input: { browserId: string }): Promise<{ recordingId: string; status: string }> =>
       ipcRenderer.invoke("paseo:recording:start", input),
     stop: (input: { recordingId: string }): Promise<void> =>

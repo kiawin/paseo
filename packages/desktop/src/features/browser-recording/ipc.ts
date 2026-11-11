@@ -46,6 +46,7 @@ interface Options {
 interface ActiveRecording {
   owner: number;
   browserId: string;
+  browserIds: Set<string>;
   workspaceId: string;
   budget: CaptureBudget;
   bodyReads: BodyReadGate;
@@ -112,7 +113,25 @@ export function createRecordingBridge(options: Options) {
   // all shared slots hang, later bodies are reported unavailable until restart.
   const bodyReads = new BodyReadGate(16, 64, 4000);
   const captureBudget = new CaptureBudget(64 * 1024 * 1024);
-  const starting = new Set<string>();
+  const starting = new Map<string, string>();
+  const notifyState = (recordingId: string, state: ActiveRecording, status: string) => {
+    for (const browserId of state.browserIds)
+      options.notify(state.owner, { recordingId, browserId, status });
+  };
+  const notifyInterrupted = (
+    recordingId: string,
+    state: ActiveRecording | undefined,
+    owner: number,
+    browserId: string,
+  ) => {
+    if (state) notifyState(recordingId, state, "interrupted");
+    else options.notify(owner, { recordingId, browserId, status: "interrupted" });
+  };
+  const activeStatus = (state: ActiveRecording) => {
+    if (state.stopping) return "stopping" as const;
+    if (state.started) return "recording" as const;
+    return "starting" as const;
+  };
   const startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
   if (!Number.isSafeInteger(startupTimeoutMs) || startupTimeoutMs <= 0)
     throw new Error("Invalid startup timeout");
@@ -280,6 +299,23 @@ export function createRecordingBridge(options: Options) {
   const unsubscribe = coordinator.subscribe((change) => {
     const state = active.get(change.member.recordingId);
     if (!state) return;
+    const browserId = change.member.browserId;
+    if (browserId && change.type === "added") {
+      state.browserIds.add(browserId);
+      options.notify(state.owner, {
+        recordingId: change.member.recordingId,
+        browserId,
+        status: state.started ? "recording" : "starting",
+      });
+    }
+    if (browserId && change.type === "removed" && !state.stopping) {
+      state.browserIds.delete(browserId);
+      options.notify(state.owner, {
+        recordingId: change.member.recordingId,
+        browserId,
+        status: "complete",
+      });
+    }
     if (change.type !== "added")
       detach(
         state,
@@ -292,6 +328,7 @@ export function createRecordingBridge(options: Options) {
     if (!state) return;
     const externalStop = !state.stopping;
     state.stopping = true;
+    if (state.started) notifyState(recordingId, state, "stopping");
     state.signalStop();
     queueMicrotask(() => {
       if (!externalStop || active.get(recordingId) !== state) return;
@@ -330,7 +367,7 @@ export function createRecordingBridge(options: Options) {
         await completion;
         const status = state.started && !state.interrupted ? "complete" : "interrupted";
         await store.updateMetadata(recordingId, { status, endedAt: Date.now() });
-        options.notify(state.owner, { recordingId, browserId: state.browserId, status });
+        notifyState(recordingId, state, status);
       } catch (error) {
         try {
           await store.updateMetadata(recordingId, {
@@ -339,11 +376,7 @@ export function createRecordingBridge(options: Options) {
             captureErrors: [String(error).slice(0, 1024)],
           });
         } finally {
-          options.notify(state.owner, {
-            recordingId,
-            browserId: state.browserId,
-            status: "interrupted",
-          });
+          notifyState(recordingId, state, "interrupted");
         }
         throw error;
       } finally {
@@ -405,6 +438,22 @@ export function createRecordingBridge(options: Options) {
     return disposePromise;
   };
   return {
+    async active(caller: Caller, input: unknown) {
+      assertCaller(caller);
+      const { browserId } = startInput.parse(input);
+      const member = coordinator.getBrowserMembership(caller.senderId, browserId);
+      const entry = [...active.entries()].find(
+        ([id, state]) =>
+          state.owner === caller.senderId &&
+          (id === member?.recordingId || state.browserIds.has(browserId)),
+      );
+      if (!entry) {
+        const recordingId = starting.get(`${caller.senderId}:${browserId}`);
+        return recordingId ? { recordingId, browserId, status: "starting" as const } : null;
+      }
+      const [recordingId, state] = entry;
+      return { recordingId, browserId, status: activeStatus(state) };
+    },
     async start(caller: Caller, input: unknown) {
       assertCaller(caller);
       if (disposePromise) throw new Error("Recording bridge is closed");
@@ -417,15 +466,15 @@ export function createRecordingBridge(options: Options) {
       if (contentsId === null || !workspaceId)
         throw new Error("Browser is not owned by this window");
       const key = `${caller.senderId}:${browserId}`;
-      const pendingOnly = [...starting].filter(
+      const pendingOnly = [...starting.keys()].filter(
         (item) =>
           ![...active.values()].some((state) => `${state.owner}:${state.browserId}` === item),
       ).length;
       if (active.size + pendingOnly >= 16) throw new Error("Recording limit reached");
       if (starting.has(key) || coordinator.getBrowserMembership(caller.senderId, browserId))
         throw new Error("Browser is already recording");
-      starting.add(key);
       const recordingId = randomUUID();
+      starting.set(key, recordingId);
       let created = false;
       try {
         await store.create({
@@ -442,6 +491,7 @@ export function createRecordingBridge(options: Options) {
         const state: ActiveRecording = {
           owner: caller.senderId,
           browserId,
+          browserIds: new Set([browserId]),
           workspaceId,
           budget: new CaptureBudget(32 * 1024 * 1024, captureBudget),
           bodyReads: new BodyReadGate(2, 16, 4000),
@@ -470,7 +520,6 @@ export function createRecordingBridge(options: Options) {
             },
           },
         });
-        options.notify(caller.senderId, { recordingId, browserId, status: "starting" });
         const interactionReady = await waitForStartup(
           state,
           options.ensureInteractionReady(contentsId),
@@ -485,7 +534,7 @@ export function createRecordingBridge(options: Options) {
         await waitForStartup(state, options.video.start(recordingId));
         if (state.stopping) throw new Error("Recording stopped during startup");
         state.started = true;
-        options.notify(caller.senderId, { recordingId, browserId, status: "recording" });
+        notifyState(recordingId, state, "recording");
         return { recordingId, status: "recording" };
       } catch (error) {
         const state = active.get(recordingId);
@@ -507,7 +556,7 @@ export function createRecordingBridge(options: Options) {
                 captureErrors: [String(error).slice(0, 1024)],
               });
             } finally {
-              options.notify(caller.senderId, { recordingId, browserId, status: "interrupted" });
+              notifyInterrupted(recordingId, state, caller.senderId, browserId);
             }
           }
         } finally {

@@ -192,9 +192,10 @@ export interface DesktopRecordingMetadata {
 export interface DesktopRecordingState {
   recordingId: string;
   browserId: string;
-  status: "starting" | "recording" | "complete" | "interrupted";
+  status: "starting" | "recording" | "stopping" | "complete" | "interrupted";
 }
 export interface DesktopRecordingBridge {
+  active(input: { browserId: string }): Promise<DesktopRecordingState | null>;
   start(input: { browserId: string }): Promise<{ recordingId: string; status: string }>;
   stop(input: { recordingId: string }): Promise<void>;
   list(input: {

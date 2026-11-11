@@ -20,11 +20,13 @@ import {
   ArrowRight,
   Camera,
   ChevronDown,
+  Circle,
   Maximize,
   Monitor,
   MousePointer2,
   RotateCw,
   Smartphone,
+  Square,
   Tablet,
   Wrench,
   X,
@@ -78,6 +80,11 @@ import {
   type BrowserElementSelection,
   type ElementSelectorOutcome,
 } from "./element-selector.electron";
+import {
+  createRecordingControl,
+  RECORDING_INTERRUPTED,
+  type RecordingControlState,
+} from "../recording-control";
 
 type ElectronWebview = HTMLElement & {
   canGoBack?: () => boolean;
@@ -466,6 +473,69 @@ function ToolbarButton({
         <Text style={styles.toolbarTooltipText}>{label}</Text>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function RecordingButton({ browserId }: { browserId: string }) {
+  const { theme } = useUnistyles();
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [state, setState] = useState<RecordingControlState>({
+    status: "loading",
+    recordingId: null,
+    error: null,
+  });
+  const control = useRef<ReturnType<typeof createRecordingControl> | null>(null);
+  useEffect(() => {
+    const bridge = getDesktopHost()?.recording;
+    if (!bridge) return;
+    const instance = createRecordingControl(bridge, browserId, setState);
+    control.current = instance;
+    setState(instance.getState());
+    void instance.connect();
+    return () => {
+      instance.dispose();
+      if (control.current === instance) control.current = null;
+    };
+  }, [browserId]);
+  useEffect(() => {
+    if (state.error)
+      toast?.error(
+        state.error === RECORDING_INTERRUPTED
+          ? t("workspace.browser.controls.recordingInterrupted")
+          : state.error,
+      );
+  }, [state.error, t, toast]);
+  const buttonStyle = useCallback(
+    ({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => [
+      styles.iconButton,
+      (hovered || pressed) && styles.iconButtonHovered,
+    ],
+    [],
+  );
+  const active =
+    state.status === "starting" || state.status === "recording" || state.status === "stopping";
+  let label = t("workspace.browser.controls.startRecording");
+  if (active) label = t("workspace.browser.controls.stopRecording");
+  if (state.status === "starting") label = t("workspace.browser.controls.startingRecording");
+  if (state.status === "stopping") label = t("workspace.browser.controls.stoppingRecording");
+  const handleToggle = useCallback(() => {
+    void control.current?.toggle();
+  }, []);
+  return (
+    <ToolbarButton
+      label={label}
+      active={active}
+      disabled={state.status !== "idle" && state.status !== "recording"}
+      onPress={handleToggle}
+      style={buttonStyle}
+    >
+      {active ? (
+        <Square size={14} color={theme.colors.destructive} fill={theme.colors.destructive} />
+      ) : (
+        <Circle size={14} color={theme.colors.destructive} />
+      )}
+    </ToolbarButton>
   );
 }
 
@@ -1480,6 +1550,7 @@ export function BrowserPane({
           />
         </View>
         <View style={styles.chromeRight}>
+          {getDesktopHost()?.recording ? <RecordingButton browserId={browserId} /> : null}
           <DeviceSizeMenu
             selectedId={selectedDeviceSizeId}
             onSelect={handleSelectDeviceSize}
