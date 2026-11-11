@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { getDesktopHost } from "@/desktop/host";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { createRecordingsModel, type RecordingsState } from "./model";
+import { RecordingPlayer, type RecordingSeek } from "./player";
+import { createPlayback } from "./playback";
 
 function EventRow({
   event,
@@ -85,11 +87,57 @@ function recordingHeading(snapshot: RecordingsState): string {
   );
   return item ? recordingLabel(item) : snapshot.selectedId || "";
 }
+function EventTimingNotice({ event }: { event: RecordingsState["events"][number] }) {
+  const { t } = useTranslation();
+  if (typeof event.timelineMs === "number" && Number.isFinite(event.timelineMs)) return null;
+  return <Text style={styles.muted}>{t("panels.recordings.eventUntimed")}</Text>;
+}
+function EventDetails({
+  event,
+  detail,
+  showFull,
+  showEntireDetail,
+}: {
+  event?: RecordingsState["events"][number];
+  detail: string;
+  showFull: boolean;
+  showEntireDetail: () => void;
+}) {
+  const { t } = useTranslation();
+  if (!event) return null;
+  return (
+    <>
+      <EventTimingNotice event={event} />
+      <Text selectable style={styles.detail}>
+        {showFull ? detail : detail.slice(0, 131072)}
+      </Text>
+      {!showFull && detail.length > 131072 ? (
+        <Button size="sm" onPress={showEntireDetail}>
+          {t("panels.recordings.showFull")}
+        </Button>
+      ) : null}
+    </>
+  );
+}
+function recordingDuration(snapshot: RecordingsState): number {
+  const item = snapshot.recordings.find(
+    (candidate) => candidate.recordingId === snapshot.selectedId,
+  );
+  const end = item?.endedAt && item.startedAt ? Math.max(0, item.endedAt - item.startedAt) : 0;
+  return snapshot.events.reduce(
+    (duration, event) =>
+      typeof event.timelineMs === "number" && Number.isFinite(event.timelineMs)
+        ? Math.max(duration, event.timelineMs)
+        : duration,
+    end,
+  );
+}
 export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<RecordingsState | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<number | null>(null);
   const [showFull, setShowFull] = useState(false);
+  const [playbackSeek, setPlaybackSeek] = useState<RecordingSeek | null>(null);
   const [model, setModel] = useState<ReturnType<typeof createRecordingsModel> | null>(null);
   useEffect(() => {
     const bridge = getDesktopHost()?.recording;
@@ -115,6 +163,7 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
   );
   const back = useCallback(() => {
     setSelectedEvent(null);
+    setPlaybackSeek(null);
     model?.close();
     void model?.refresh();
   }, [model]);
@@ -124,13 +173,25 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
     return JSON.stringify(event, null, 2);
   }, [snapshot?.events, selectedEvent]);
   const showEntireDetail = useCallback(() => setShowFull(true), []);
-  const selectEvent = useCallback((index: number) => {
-    setShowFull(false);
-    setSelectedEvent(index);
-  }, []);
+  const selectEvent = useCallback(
+    (index: number) => {
+      setShowFull(false);
+      setSelectedEvent(index);
+      const event = snapshot?.events[index];
+      const clock = createPlayback(snapshot?.media ?? []);
+      if (event && typeof event.memberId === "string" && clock.seekEvent(event))
+        setPlaybackSeek((previous) => ({
+          timeMs: clock.getState().timeMs,
+          streamId: event.memberId!,
+          nonce: (previous?.nonce ?? 0) + 1,
+        }));
+    },
+    [snapshot?.events, snapshot?.media],
+  );
   const refreshSelected = useCallback(() => {
     setSelectedEvent(null);
     setShowFull(false);
+    setPlaybackSeek(null);
     if (snapshot?.selectedId) void model?.open(snapshot.selectedId);
   }, [model, snapshot?.selectedId]);
   const deleteSelected = useCallback(() => {
@@ -139,6 +200,7 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
   const open = useCallback(
     (id: string) => {
       setSelectedEvent(null);
+      setPlaybackSeek(null);
       void model?.open(id);
     },
     [model],
@@ -172,6 +234,15 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
           <Text selectable style={styles.heading}>
             {recordingHeading(snapshot)}
           </Text>
+          <RecordingPlayer
+            key={snapshot.selectedId}
+            recordingId={snapshot.selectedId}
+            segments={snapshot.media}
+            hasMore={snapshot.mediaCursor !== null}
+            seek={playbackSeek}
+            pending={snapshot.mediaPending}
+            durationMs={recordingDuration(snapshot)}
+          />
           {snapshot.recordings
             .filter((item) => item.recordingId === snapshot.selectedId)
             .map((item) => (
@@ -190,9 +261,6 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
               {t("panels.recordings.incompleteTail")}
             </Text>
           ) : null}
-          {snapshot.mediaPending ? (
-            <Text style={styles.muted}>{t("panels.recordings.mediaPending")}</Text>
-          ) : null}
           {snapshot.mediaIncomplete.map((item) => (
             <Text key={item.key} style={styles.error}>
               {item.streamId} {item.segmentId}: {item.reason}
@@ -207,18 +275,12 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
           {snapshot.events.map((event, index) => (
             <EventRow key={event.key} event={event} index={index} select={selectEvent} />
           ))}
-          {selectedEvent !== null && snapshot.events[selectedEvent] ? (
-            <>
-              <Text selectable style={styles.detail}>
-                {showFull ? detail : detail.slice(0, 131072)}
-              </Text>
-              {!showFull && detail.length > 131072 ? (
-                <Button size="sm" onPress={showEntireDetail}>
-                  {t("panels.recordings.showFull")}
-                </Button>
-              ) : null}
-            </>
-          ) : null}
+          <EventDetails
+            event={selectedEvent === null ? undefined : snapshot.events[selectedEvent]}
+            detail={detail}
+            showFull={showFull}
+            showEntireDetail={showEntireDetail}
+          />
           {snapshot.cursor !== null ? (
             <Button size="sm" disabled={snapshot.loading} onPress={loadEvents}>
               {t("panels.recordings.moreEvents")}

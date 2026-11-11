@@ -2273,6 +2273,21 @@ export const fr: TranslationResources = {
       deleteFailed: "Échec de la suppression de l’artefact",
     },
     recordings: {
+      eventUntimed: "Cet événement n’a pas de temps d’enregistrement.",
+      missingView: "Aucune vidéo capturée pour cette vue.",
+
+      timeline: "Chronologie",
+      play: "Lire",
+      pause: "Pause",
+      videoAvailable: "Vidéo disponible",
+      videoGapLabel: "Vidéo manquante",
+
+      videoUnsupported: "Format vidéo non pris en charge",
+      noVideo: "Aucune vidéo disponible",
+      view: "Vue",
+      loadMediaFirst: "Chargez toutes les pages média pour lire",
+      videoGap: "Vidéo indisponible à cet instant",
+
       status: {
         recording: "En cours",
         complete: "Terminé",

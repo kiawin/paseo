@@ -42,6 +42,7 @@ const eventSchema = z
     frameId: z.string().max(256).optional(),
     documentId: z.string().max(256).optional(),
     frameAttribution: z.enum(["identified", "unattributed"]),
+    timelineMs: z.number().finite().nonnegative().optional(),
     kind: z.enum(["interaction", "network", "media", "gap"]),
     payload: z
       .unknown()

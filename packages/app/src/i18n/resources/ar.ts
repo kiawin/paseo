@@ -2223,6 +2223,21 @@ export const ar: TranslationResources = {
       deleteFailed: "تعذّر حذف العنصر",
     },
     recordings: {
+      eventUntimed: "لا يتوفر وقت تسجيل لهذا الحدث.",
+      missingView: "لم يتم تسجيل فيديو لهذا العرض.",
+
+      timeline: "الخط الزمني",
+      play: "تشغيل",
+      pause: "إيقاف مؤقت",
+      videoAvailable: "الفيديو متاح",
+      videoGapLabel: "فجوة في الفيديو",
+
+      videoUnsupported: "تنسيق الفيديو غير مدعوم",
+      noVideo: "لا يوجد فيديو",
+      view: "عرض",
+      loadMediaFirst: "حمّل كل صفحات الوسائط للتشغيل",
+      videoGap: "الفيديو غير متاح في هذا الوقت",
+
       status: {
         recording: "جارٍ التسجيل",
         complete: "مكتمل",

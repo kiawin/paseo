@@ -17,6 +17,7 @@ export interface RecordingEvent {
   frameId?: string;
   documentId?: string;
   frameAttribution: "identified" | "unattributed";
+  timelineMs?: number;
   kind: RecordingEventKind;
   payload: unknown;
 }

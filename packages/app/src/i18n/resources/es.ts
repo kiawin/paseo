@@ -2274,6 +2274,21 @@ export const es: TranslationResources = {
       deleteFailed: "No se pudo eliminar el artefacto",
     },
     recordings: {
+      eventUntimed: "Este evento no tiene hora de grabación.",
+      missingView: "No se capturó vídeo para esta vista.",
+
+      timeline: "Cronología",
+      play: "Reproducir",
+      pause: "Pausar",
+      videoAvailable: "Vídeo disponible",
+      videoGapLabel: "Intervalo sin vídeo",
+
+      videoUnsupported: "Formato de vídeo no compatible",
+      noVideo: "No hay vídeo disponible",
+      view: "Vista",
+      loadMediaFirst: "Carga todas las páginas multimedia para reproducir",
+      videoGap: "Vídeo no disponible en este momento",
+
       status: {
         recording: "Grabando",
         complete: "Completa",

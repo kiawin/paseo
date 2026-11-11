@@ -2235,6 +2235,21 @@ export const ko: TranslationResources = {
       deleteFailed: "산출물을 삭제하지 못했습니다",
     },
     recordings: {
+      eventUntimed: "이 이벤트에는 기록 시간이 없습니다.",
+      missingView: "이 보기에는 캡처된 동영상이 없습니다.",
+
+      timeline: "타임라인",
+      play: "재생",
+      pause: "일시정지",
+      videoAvailable: "동영상 있음",
+      videoGapLabel: "동영상 누락",
+
+      videoUnsupported: "지원하지 않는 동영상 형식",
+      noVideo: "동영상 없음",
+      view: "보기",
+      loadMediaFirst: "재생하려면 모든 미디어 페이지를 불러오세요",
+      videoGap: "이 시점의 동영상을 사용할 수 없습니다",
+
       status: {
         recording: "기록 중",
         complete: "완료",

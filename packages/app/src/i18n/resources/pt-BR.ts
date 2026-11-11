@@ -2258,6 +2258,21 @@ export const ptBR: TranslationResources = {
       deleteFailed: "Não foi possível excluir o artefato",
     },
     recordings: {
+      eventUntimed: "Este evento não tem tempo de gravação.",
+      missingView: "Nenhum vídeo foi capturado para esta visualização.",
+
+      timeline: "Linha do tempo",
+      play: "Reproduzir",
+      pause: "Pausar",
+      videoAvailable: "Vídeo disponível",
+      videoGapLabel: "Trecho sem vídeo",
+
+      videoUnsupported: "Formato de vídeo não compatível",
+      noVideo: "Nenhum vídeo disponível",
+      view: "Visualização",
+      loadMediaFirst: "Carregue todas as páginas de mídia para reproduzir",
+      videoGap: "Vídeo indisponível neste momento",
+
       status: {
         recording: "Gravando",
         complete: "Concluída",

@@ -48,6 +48,7 @@ interface ActiveRecording {
   browserId: string;
   browserIds: Set<string>;
   workspaceId: string;
+  startedAt: number;
   budget: CaptureBudget;
   bodyReads: BodyReadGate;
   recorders: Map<number, { recorder: NetworkRecorder; reader: BodyReader }>;
@@ -200,6 +201,7 @@ export function createRecordingBridge(options: Options) {
         memberId: member.memberId,
         webContentsId: member.webContentsId,
         frameAttribution: "unattributed",
+        timelineMs: Math.max(0, Date.now() - state.startedAt),
         kind: "gap",
         payload: { reason: gap.reason, count: 1, summary: false },
       }),
@@ -270,6 +272,11 @@ export function createRecordingBridge(options: Options) {
             ? { frameId: transaction.frameId!, documentId: transaction.documentId! }
             : {}),
           frameAttribution: identified ? "identified" : "unattributed",
+          timelineMs: Math.max(
+            0,
+            (transaction.wallTime === null ? Date.now() : transaction.wallTime * 1000) -
+              state.startedAt,
+          ),
           kind: "network",
           payload: { ...transaction, frameAttribution: identified ? "identified" : "unattributed" },
         });
@@ -356,6 +363,7 @@ export function createRecordingBridge(options: Options) {
             memberId: gap.member.memberId,
             webContentsId: gap.member.webContentsId,
             frameAttribution: "unattributed",
+            timelineMs: Math.max(0, Date.now() - state.startedAt),
             kind: "gap",
             payload: { reason: gap.reason, count: gap.count, summary: true },
           }),
@@ -481,13 +489,14 @@ export function createRecordingBridge(options: Options) {
       if (starting.has(key) || coordinator.getBrowserMembership(caller.senderId, browserId))
         throw new Error("Browser is already recording");
       const recordingId = randomUUID();
+      const startedAt = Date.now();
       starting.set(key, recordingId);
       let created = false;
       try {
         await store.create({
           recordingId,
           workspaceId,
-          startedAt: Date.now(),
+          startedAt,
           status: "recording",
         });
         created = true;
@@ -500,6 +509,7 @@ export function createRecordingBridge(options: Options) {
           browserId,
           browserIds: new Set([browserId]),
           workspaceId,
+          startedAt,
           budget: new CaptureBudget(32 * 1024 * 1024, captureBudget),
           bodyReads: new BodyReadGate(2, 16, 4000),
           recorders: new Map(),
@@ -523,7 +533,16 @@ export function createRecordingBridge(options: Options) {
             write: (event) => {
               if (event.payload === undefined)
                 return Promise.reject(new Error("Recording payload is missing"));
-              return store.appendEvent(recordingId, { ...event, payload: event.payload });
+              const payload = event.payload as { receivedAt?: unknown } | null;
+              const time =
+                typeof payload?.receivedAt === "number" && Number.isFinite(payload.receivedAt)
+                  ? payload.receivedAt
+                  : Date.now();
+              return store.appendEvent(recordingId, {
+                ...event,
+                timelineMs: event.timelineMs ?? Math.max(0, time - startedAt),
+                payload: event.payload,
+              });
             },
           },
         });

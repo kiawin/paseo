@@ -322,6 +322,27 @@ module.exports = {
         async () => (await store.listMediaSegments(recording.recordingId)).length > 0,
         "video is persisted",
       );
+      const recordedEvents = (await store.readEvents(recording.recordingId)).events;
+      const recordingStartedAt = (await store.readMetadata(recording.recordingId)).startedAt;
+      const elapsed = Date.now() - recordingStartedAt;
+      for (const kind of ["interaction", "network"]) {
+        const event = recordedEvents.find((entry) => entry.kind === kind);
+        assert.ok(
+          Number.isFinite(event.timelineMs) &&
+            event.timelineMs >= 0 &&
+            event.timelineMs <= elapsed + 2000,
+          `${kind} has a recording-relative time`,
+        );
+      }
+      const timedNetwork = recordedEvents.find(
+        (entry) => entry.kind === "network" && typeof entry.payload.wallTime === "number",
+      );
+      assert.ok(timedNetwork, "a network request has Chromium wall time");
+      assert.equal(
+        timedNetwork.timelineMs,
+        Math.max(0, timedNetwork.payload.wallTime * 1000 - recordingStartedAt),
+        "network time uses request start, not response write time",
+      );
       await assert.rejects(
         bridge.readEvents(
           { senderId: guest.id, mainFrame: true },

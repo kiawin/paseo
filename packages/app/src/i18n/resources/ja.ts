@@ -2246,6 +2246,21 @@ export const ja: TranslationResources = {
       deleteFailed: "成果物を削除できませんでした",
     },
     recordings: {
+      eventUntimed: "このイベントの記録時刻はありません。",
+      missingView: "このビューの動画は記録されていません。",
+
+      timeline: "タイムライン",
+      play: "再生",
+      pause: "一時停止",
+      videoAvailable: "動画あり",
+      videoGapLabel: "動画なし",
+
+      videoUnsupported: "動画形式に対応していません",
+      noVideo: "動画はありません",
+      view: "ビュー",
+      loadMediaFirst: "再生するには全メディアページを読み込んでください",
+      videoGap: "この時点の動画はありません",
+
       status: {
         recording: "記録中",
         complete: "完了",

@@ -2249,6 +2249,21 @@ export const en = {
       deleteFailed: "Failed to delete artifact",
     },
     recordings: {
+      eventUntimed: "This event has no recording time.",
+      missingView: "No video was captured for this view.",
+
+      timeline: "Timeline",
+      play: "Play",
+      pause: "Pause",
+      videoAvailable: "Video available",
+      videoGapLabel: "Video gap",
+
+      videoUnsupported: "Video format is not supported",
+      noVideo: "No video available",
+      view: "View",
+      loadMediaFirst: "Load all media pages to play",
+      videoGap: "Video is unavailable at this time",
+
       status: {
         recording: "Recording",
         complete: "Complete",

@@ -2198,6 +2198,21 @@ export const zhCN: TranslationResources = {
       deleteFailed: "无法删除成果物",
     },
     recordings: {
+      eventUntimed: "此事件没有录制时间。",
+      missingView: "此视图没有录制视频。",
+
+      timeline: "时间线",
+      play: "播放",
+      pause: "暂停",
+      videoAvailable: "视频可用",
+      videoGapLabel: "视频缺失",
+
+      videoUnsupported: "不支持此视频格式",
+      noVideo: "没有可用视频",
+      view: "视图",
+      loadMediaFirst: "加载所有媒体页面后播放",
+      videoGap: "此时间点没有可用视频",
+
       status: {
         recording: "录制中",
         complete: "已完成",

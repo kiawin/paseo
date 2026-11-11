@@ -14,7 +14,13 @@ export interface RecordingsState {
   recordings: DesktopRecordingMetadata[];
   incomplete: string[];
   selectedId: string | null;
-  events: Array<{ key: string; kind: string; payload: Record<string, unknown> }>;
+  events: Array<{
+    key: string;
+    kind: string;
+    payload: Record<string, unknown>;
+    timelineMs?: number;
+    memberId?: string;
+  }>;
   cursor: number | null;
   eventTailIncomplete: boolean;
   media: DesktopRecordingMediaSegment[];

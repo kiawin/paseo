@@ -2259,6 +2259,21 @@ export const ru: TranslationResources = {
       deleteFailed: "Не удалось удалить артефакт",
     },
     recordings: {
+      eventUntimed: "У события нет времени записи.",
+      missingView: "Для этого вида видео не записано.",
+
+      timeline: "Шкала времени",
+      play: "Воспроизвести",
+      pause: "Пауза",
+      videoAvailable: "Видео доступно",
+      videoGapLabel: "Пробел видео",
+
+      videoUnsupported: "Формат видео не поддерживается",
+      noVideo: "Видео недоступно",
+      view: "Вид",
+      loadMediaFirst: "Загрузите все страницы медиа для воспроизведения",
+      videoGap: "Видео в этот момент недоступно",
+
       status: {
         recording: "Запись",
         complete: "Завершена",
