@@ -46,6 +46,8 @@ const segmentSchema = z
     mimeType: z.string().min(1).max(256),
     track: z.enum(["video", "audio", "combined"]).optional(),
     codec: z.string().min(1).max(256).optional(),
+    generationId: identifier.optional(),
+    sequence: z.number().int().nonnegative().optional(),
   })
   .strict();
 const storedSegmentSchema = segmentSchema.extend({
@@ -548,6 +550,8 @@ export class BrowserRecordingStore {
       mimeType: segment.mimeType,
       ...(segment.track !== undefined ? { track: segment.track } : {}),
       ...(segment.codec !== undefined ? { codec: segment.codec } : {}),
+      ...(segment.generationId !== undefined ? { generationId: segment.generationId } : {}),
+      ...(segment.sequence !== undefined ? { sequence: segment.sequence } : {}),
     });
     if (
       !(segment.bytes instanceof Uint8Array) ||

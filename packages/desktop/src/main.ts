@@ -57,6 +57,8 @@ import { createExternalUrlOpener } from "./features/opener.js";
 import { createBrowserRecordingLifecycle } from "./features/browser-recording/lifecycle.js";
 import { createInteractionRecorder } from "./features/browser-recording/interaction-recorder.js";
 import { browserRecordingPopupOptions } from "./features/browser-recording/popup-options.js";
+import { BrowserRecordingStore } from "./features/browser-recording/store.js";
+import { createVideoCaptureManager } from "./features/browser-recording/video-capture.js";
 import { createBrowserCaptureService } from "./features/browser-capture.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { registerFileDragHandlers } from "./features/file-drag/ipc.js";
@@ -295,6 +297,15 @@ if (forcedUserDataDir) {
     devWorktreeName = null;
   }
 }
+
+export const browserRecordingStore = new BrowserRecordingStore(
+  path.join(app.getPath("userData"), "browser-recordings"),
+);
+export const browserVideoCaptureManager = createVideoCaptureManager({
+  coordinator: browserRecordingLifecycle.coordinator,
+  store: browserRecordingStore,
+  onError: (error) => log.error("[browser-recording] video error", error),
+});
 
 // Allow users to pass Chromium flags via PASEO_ELECTRON_FLAGS for debugging
 // rendering issues (e.g. "--disable-gpu --ozone-platform=x11").

@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { hasConcurrentFrameConsumers, holdFrameProduction } from "./frame-production.js";
 import { BrowserAutomationExecuteRequestSchema } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import type {
   BrowserAutomationConsoleLogEntry,
@@ -95,6 +96,7 @@ interface BrowserAutomationWebContents extends ConsoleMessageEmitter {
   goForward(): void;
   reload(): void;
   beginFrameSubscription(onlyDirty: boolean, callback: (image: TabImage) => void): void;
+  capturePage?(): Promise<TabImage>;
   endFrameSubscription(): void;
   invalidate(): void;
   getBackgroundThrottling(): boolean;
@@ -124,12 +126,11 @@ export function adaptWebContents(contents: BrowserAutomationWebContents): TabCon
     captureFrame: (signal) => captureViewportFrame(contents, signal),
     invalidate: () => contents.invalidate(),
     withFrameProduction: async (capture) => {
-      const previous = contents.getBackgroundThrottling();
-      contents.setBackgroundThrottling(false);
+      const release = holdFrameProduction(contents);
       try {
         return await capture();
       } finally {
-        if (!contents.isDestroyed()) contents.setBackgroundThrottling(previous);
+        release();
       }
     },
     sendInputEvent: (event) => contents.sendInputEvent(event),
@@ -143,22 +144,29 @@ export function adaptWebContents(contents: BrowserAutomationWebContents): TabCon
   };
 }
 
+const pendingConcurrentCopies = new WeakSet<BrowserAutomationWebContents>();
+
 function captureViewportFrame(
   contents: BrowserAutomationWebContents,
   signal: AbortSignal,
 ): Promise<TabImage> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let copyTimer: ReturnType<typeof setTimeout> | undefined;
     const stop = () => {
+      if (copyTimer) clearTimeout(copyTimer);
       signal.removeEventListener("abort", abort);
       contents.removeListener("destroyed", destroyed);
       if (!contents.isDestroyed()) contents.endFrameSubscription();
     };
     const abort = () => {
+      settled = true;
       stop();
       reject(signal.reason);
     };
     const destroyed = () => {
+      settled = true;
       stop();
       reject(new BrowserTabClosedError());
     };
@@ -168,9 +176,36 @@ function captureViewportFrame(
       // A resized resident guest can paint while capturePage's surface-copy
       // request remains pending. Subscribe to its rendered frames instead.
       contents.beginFrameSubscription(false, (image) => {
+        if (settled) return;
+        settled = true;
         stop();
         resolve(image);
       });
+      // A display-media consumer can prevent a parked guest's frame subscription
+      // from delivering a fresh frame. Try one bounded-in-flight surface copy;
+      // some Chromium surfaces never complete capturePage, so never queue more.
+      if (
+        hasConcurrentFrameConsumers(contents) &&
+        contents.capturePage &&
+        !pendingConcurrentCopies.has(contents)
+      ) {
+        copyTimer = setTimeout(() => {
+          if (settled || contents.isDestroyed() || !contents.capturePage) return;
+          pendingConcurrentCopies.add(contents);
+          void Promise.resolve()
+            .then(() => contents.capturePage?.())
+            .then((image) => {
+              if (!image || settled || image.getSize().width === 0 || image.getSize().height === 0)
+                return undefined;
+              settled = true;
+              stop();
+              resolve(image);
+              return undefined;
+            })
+            .catch(() => {})
+            .finally(() => pendingConcurrentCopies.delete(contents));
+        }, 1000);
+      }
     } catch (error) {
       stop();
       reject(error);

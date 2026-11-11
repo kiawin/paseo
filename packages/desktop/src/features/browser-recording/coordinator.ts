@@ -89,6 +89,7 @@ export class BrowserRecordingCoordinator {
   private readonly frames = new Map<number, Map<string, string>>();
   private readonly listeners = new Set<(change: RecordingMembershipChange) => void>();
   private readonly beforeRemovalListeners = new Set<(member: RecordingMembership) => void>();
+  private readonly stopParticipants = new Set<(recordingId: string) => Promise<void>>();
   private readonly now: () => number;
   private readonly pendingTabTtlMs: number;
   private readonly maxPendingTabs: number;
@@ -310,6 +311,11 @@ export class BrowserRecordingCoordinator {
     return () => this.beforeRemovalListeners.delete(listener);
   }
 
+  public subscribeStop(listener: (recordingId: string) => Promise<void>): () => void {
+    this.stopParticipants.add(listener);
+    return () => this.stopParticipants.delete(listener);
+  }
+
   public registerFrame(input: {
     webContentsId: number;
     frameId: string;
@@ -464,6 +470,13 @@ export class BrowserRecordingCoordinator {
     // Publish the promise before callbacks: a pre-removal listener may itself
     // call stop, and must observe the same in-progress operation.
     this.stopped.set(recordingId, completion);
+    const participants = Array.from(this.stopParticipants, (listener) => {
+      try {
+        return listener(recordingId);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    });
     for (const member of Array.from(session.members.values())) this.notifyBeforeRemoval(member);
     this.sessions.delete(recordingId);
     for (const member of Array.from(session.members.values()))
@@ -474,6 +487,9 @@ export class BrowserRecordingCoordinator {
       if (gap.count > 1) void this.write(session, this.gapEvent(gap, true)).catch(() => {});
     }
     void (async () => {
+      const outcomes = await Promise.allSettled(participants);
+      for (const outcome of outcomes)
+        if (outcome.status === "rejected") this.rememberFailure(session, outcome.reason);
       await Promise.allSettled(session.pendingWrites);
       try {
         await session.sink.close?.();
