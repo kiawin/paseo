@@ -58,6 +58,7 @@ import { createBrowserRecordingLifecycle } from "./features/browser-recording/li
 import { createInteractionRecorder } from "./features/browser-recording/interaction-recorder.js";
 import { browserRecordingPopupOptions } from "./features/browser-recording/popup-options.js";
 import { BrowserRecordingStore } from "./features/browser-recording/store.js";
+import { recoverBrowserRecordingsOnStartup } from "./features/browser-recording/startup-recovery.js";
 import { createVideoCaptureManager } from "./features/browser-recording/video-capture.js";
 import { createRecordingBridge } from "./features/browser-recording/ipc.js";
 import {
@@ -1015,14 +1016,14 @@ async function bootstrap(): Promise<void> {
   }
 
   await app.whenReady();
-  if (!DISABLE_SINGLE_INSTANCE_LOCK) {
-    await browserRecordingStore.recover().catch((error: unknown) => {
-      browserRecordingRecoveryError = error instanceof Error ? error.message : String(error);
-      log.error("[browser-recording] recovery failed", error);
-    });
-  } else {
-    browserRecordingRecoveryError = "single-instance-lock-disabled";
+  browserRecordingRecoveryError = await recoverBrowserRecordingsOnStartup(
+    browserRecordingStore,
+    !DISABLE_SINGLE_INSTANCE_LOCK,
+  );
+  if (browserRecordingRecoveryError === "single-instance-lock-disabled") {
     log.warn("[browser-recording] recovery skipped because single-instance locking is disabled");
+  } else if (browserRecordingRecoveryError) {
+    log.error("[browser-recording] recovery failed", browserRecordingRecoveryError);
   }
 
   const appDistDir = getAppDistDir();

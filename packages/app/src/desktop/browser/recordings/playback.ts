@@ -98,6 +98,26 @@ export function createPlayback(segments: DesktopRecordingMediaSegment[]) {
 }
 
 type MediaReader = Pick<DesktopRecordingBridge, "readMedia">;
+function validateMediaPage(
+  page: { bytes: Uint8Array; totalBytes: number; sha256: string },
+  expectedSize: number,
+  expectedHash: string | null,
+  offset: number,
+  chunkSize: number,
+): void {
+  if (
+    !Number.isSafeInteger(page.totalBytes) ||
+    page.totalBytes <= 0 ||
+    page.totalBytes > 256 * 1024 * 1024 ||
+    page.totalBytes !== expectedSize ||
+    page.sha256 !== expectedHash ||
+    page.bytes.length === 0 ||
+    page.bytes.length > chunkSize ||
+    offset + page.bytes.length > page.totalBytes
+  )
+    throw new Error("Media integrity check failed");
+}
+
 export async function readVerifiedSegment(
   bridge: MediaReader,
   recordingId: string,
@@ -110,9 +130,11 @@ export async function readVerifiedSegment(
     throw new Error("Invalid media range size");
   let expectedSize: number | null = null;
   let expectedHash: string | null = null;
+  const verifiedChunks: Array<{ length: number; sha256: string }> = [];
   for (let pass = 0; pass < 2; pass++) {
     const hash = sha256.create();
     let offset = 0;
+    let chunkIndex = 0;
     do {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       const page = await bridge.readMedia({
@@ -126,19 +148,19 @@ export async function readVerifiedSegment(
         expectedSize = page.totalBytes;
         expectedHash = page.sha256;
       }
-      if (
-        !Number.isSafeInteger(page.totalBytes) ||
-        page.totalBytes <= 0 ||
-        page.totalBytes > 256 * 1024 * 1024 ||
-        page.totalBytes !== expectedSize ||
-        page.sha256 !== expectedHash ||
-        page.bytes.length === 0 ||
-        page.bytes.length > chunkSize ||
-        offset + page.bytes.length > page.totalBytes
-      )
-        throw new Error("Media integrity check failed");
+      validateMediaPage(page, expectedSize, expectedHash, offset, chunkSize);
       hash.update(page.bytes);
-      if (pass === 1) await consume(page.bytes);
+      const digest = bytesToHex(sha256(page.bytes));
+      if (pass === 0) {
+        if (verifiedChunks.length >= 4096) throw new Error("Media range count exceeds limit");
+        verifiedChunks.push({ length: page.bytes.length, sha256: digest });
+      } else {
+        const expected = verifiedChunks[chunkIndex];
+        if (!expected || expected.length !== page.bytes.length || expected.sha256 !== digest)
+          throw new Error("Media integrity check failed");
+        await consume(page.bytes);
+      }
+      chunkIndex++;
       offset += page.bytes.length;
     } while (offset < expectedSize!);
     if (bytesToHex(hash.digest()) !== expectedHash) throw new Error("Media integrity check failed");

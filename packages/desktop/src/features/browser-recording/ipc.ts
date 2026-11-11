@@ -51,13 +51,17 @@ interface ActiveRecording {
   browserIds: Set<string>;
   workspaceId: string;
   startedAt: number;
+  startedMonotonic: number;
   budget: CaptureBudget;
   bodyReads: BodyReadGate;
   recorders: Map<number, { recorder: NetworkRecorder; reader: BodyReader }>;
   unattached: Map<number, RecordingMembership>;
   pending: Set<Promise<void>>;
   failures: unknown[];
-  gaps: Map<string, { member: RecordingMembership; reason: string; count: number }>;
+  gaps: Map<
+    string,
+    { member: RecordingMembership; reason: string; count: number; startedMs: number }
+  >;
   stopping: boolean;
   started: boolean;
   interrupted: boolean;
@@ -277,7 +281,12 @@ export function createRecordingBridge(options: Options) {
       existing.count++;
       return;
     }
-    const gap = { member, reason: key === "gap-buffer-limit" ? key : reason, count: 1 };
+    const gap = {
+      member,
+      reason: key === "gap-buffer-limit" ? key : reason,
+      count: 1,
+      startedMs: Math.max(0, performance.now() - state.startedMonotonic),
+    };
     state.gaps.set(key, gap);
     track(
       state,
@@ -286,7 +295,7 @@ export function createRecordingBridge(options: Options) {
         memberId: member.memberId,
         webContentsId: member.webContentsId,
         frameAttribution: "unattributed",
-        timelineMs: Math.max(0, Date.now() - state.startedAt),
+        timelineMs: gap.startedMs,
         kind: "gap",
         payload: { reason: gap.reason, count: 1, summary: false },
       }),
@@ -360,8 +369,9 @@ export function createRecordingBridge(options: Options) {
             frameAttribution: identified ? "identified" : "unattributed",
             timelineMs: Math.max(
               0,
-              (transaction.wallTime === null ? Date.now() : transaction.wallTime * 1000) -
-                state.startedAt,
+              transaction.wallTime === null
+                ? transaction.observedAtMonotonic - state.startedMonotonic
+                : transaction.wallTime * 1000 - state.startedAt,
             ),
             kind: "network",
             payload: {
@@ -459,7 +469,7 @@ export function createRecordingBridge(options: Options) {
             memberId: gap.member.memberId,
             webContentsId: gap.member.webContentsId,
             frameAttribution: "unattributed",
-            timelineMs: Math.max(0, Date.now() - state.startedAt),
+            timelineMs: gap.startedMs,
             kind: "gap",
             payload: { reason: gap.reason, count: gap.count, summary: true },
           }),
@@ -605,6 +615,7 @@ export function createRecordingBridge(options: Options) {
         throw new Error("Browser is already recording");
       const recordingId = randomUUID();
       const startedAt = Date.now();
+      const startedMonotonic = performance.now();
       starting.set(key, recordingId);
       let created = false;
       try {
@@ -627,6 +638,7 @@ export function createRecordingBridge(options: Options) {
           browserIds: new Set([browserId]),
           workspaceId,
           startedAt,
+          startedMonotonic,
           budget: new CaptureBudget(32 * 1024 * 1024, captureBudget),
           bodyReads: new BodyReadGate(2, 16, 4000),
           recorders: new Map(),

@@ -191,8 +191,8 @@ export function createVideoCaptureManager({
           return;
         }
         try {
-          forcedRecovery = true;
           if (win && !win.isDestroyed()) win.destroy();
+          forcedRecovery = true;
           finish();
         } catch (error) {
           reject(error);

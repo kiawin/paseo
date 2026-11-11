@@ -37,6 +37,7 @@ export interface NetworkTransaction {
   resourceType: string | null;
   startedAt: number | null;
   wallTime: number | null;
+  observedAtMonotonic: number;
   completedAt: number | null;
   request: { url: string; method: string; headers: Record<string, string>; body: NetworkBody };
   response: null | {
@@ -499,6 +500,7 @@ export class NetworkRecorder {
       resourceType: str(p.type),
       startedAt: num(p.timestamp),
       wallTime: num(p.wallTime),
+      observedAtMonotonic: performance.now(),
       completedAt: null,
       request: {
         url: str(request.url) ?? "",

@@ -587,7 +587,11 @@ export class BrowserRecordingStore {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       if (/^\.deleted-[a-zA-Z0-9_-]{1,128}-[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(entry.name)) {
         try {
-          await rm(join(this.root, entry.name), { recursive: true });
+          const tombstone = join(this.root, entry.name);
+          const quota = await this.quotaState().catch(() => null);
+          const bytes = quota ? await measureTree(tombstone).catch(() => null) : null;
+          await rm(tombstone, { recursive: true });
+          if (quota && bytes !== null) quota.used = Math.max(0, quota.used - bytes);
           await this.syncDirectory(this.root);
         } catch (error) {
           failures.push(error);
