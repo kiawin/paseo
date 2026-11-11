@@ -198,6 +198,14 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
       length: number;
     }): Promise<{ bytes: Uint8Array; totalBytes: number; sha256: string }> =>
       ipcRenderer.invoke("paseo:recording:read-media", input),
+    readExportEvents: (input: { recordingId: string; offset: number; length: number }) =>
+      ipcRenderer.invoke("paseo:recording:read-export-events", input),
+    listShareAudit: (input: { recordingId: string }) =>
+      ipcRenderer.invoke("paseo:recording:list-share-audit", input),
+    forgetCorruptShareAudit: (input: { recordingId: string }): Promise<void> =>
+      ipcRenderer.invoke("paseo:recording:forget-corrupt-audit", input),
+    changeShareAudit: (input: { recordingId: string; entry?: unknown; removeShareId?: string }) =>
+      ipcRenderer.invoke("paseo:recording:change-share-audit", input),
     delete: (input: { recordingId: string }): Promise<void> =>
       ipcRenderer.invoke("paseo:recording:delete", input),
     onState: (handler: (state: RecordingState) => void): (() => void) => {

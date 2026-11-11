@@ -2228,6 +2228,28 @@ export const ar: TranslationResources = {
       deleteFailed: "تعذّر حذف العنصر",
     },
     recordings: {
+      moreCaptureProblems: "و{{extra}} من مشكلات التسجيل الأخرى؛ راجع التسجيل للتفاصيل.",
+      forgetCorruptAudit: "نسيان سجل المشاركة التالف",
+      forgetCorruptAuditMessage:
+        "هل تريد نسيان سجل المشاركة التالف؟ قد تظل النسخ البعيدة متاحة ولن تظهر هنا.",
+      shareHostUnavailable: "المضيف المحدد غير متصل أو لا يدعم مشاركة التسجيلات.",
+      shareAgentUnavailable: "الوكيل المحدد غير متاح. يمكنك إزالة النسخة المشتركة أدناه.",
+      forgetCopy: "نسيان النسخة المشتركة",
+      forgetCopyMessage:
+        "هل تريد نسيان النسخة المشتركة لـ {{agent}} على {{host}}؟ قد تظل النسخة البعيدة متاحة.",
+      sharePending: "النقل غير مكتمل أو الحالة غير معروفة · {{agent}} · {{host}} · {{time}}",
+      share: "مشاركة مع وكيل",
+      shareTitle: "مشاركة التسجيل",
+      shareConfirm: "مشاركة",
+      shareWarning:
+        "هل تريد مشاركة التسجيل الكامل مع {{agent}} على {{host}}؟ قد يحتوي على ملفات تعريف الارتباط ورموز الوصول وبيانات خاصة. {{completeness}}",
+      shareComplete: "لم يتم الإبلاغ عن فجوات في التسجيل.",
+      shareIncomplete: "التسجيل غير مكتمل: {{reasons}}",
+      shareDone: "تمت مشاركة التسجيل. راجع مسودة الوكيل قبل الإرسال.",
+      removeCopy: "إزالة النسخة المشتركة",
+      removeCopyMessage: "هل تريد إزالة نسخة {{agent}} على {{host}}؟",
+      remove: "إزالة",
+      sharedWith: "تمت المشاركة مع {{agent}} · {{host}} · {{time}}",
       audioUnknown: "تم طلب الصوت لكن حالة التقاطه غير معروفة.",
       muteAudio: "كتم الصوت",
       unmuteAudio: "إلغاء كتم الصوت",

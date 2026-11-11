@@ -2240,6 +2240,30 @@ export const ko: TranslationResources = {
       deleteFailed: "산출물을 삭제하지 못했습니다",
     },
     recordings: {
+      moreCaptureProblems:
+        "그 외 {{extra}}개의 캡처 문제가 있습니다. 자세한 내용은 녹화를 확인하세요.",
+      forgetCorruptAudit: "손상된 공유 기록 삭제",
+      forgetCorruptAuditMessage:
+        "손상된 공유 기록을 삭제할까요? 원격 사본은 계속 접근 가능할 수 있으며 여기에 더 이상 표시되지 않습니다.",
+      shareHostUnavailable: "선택한 호스트가 오프라인이거나 녹화 공유를 지원하지 않습니다.",
+      shareAgentUnavailable:
+        "선택한 에이전트를 사용할 수 없습니다. 아래에서 공유 사본을 삭제할 수 있습니다.",
+      forgetCopy: "공유 사본 기록 삭제",
+      forgetCopyMessage:
+        "{{host}}의 {{agent}}에 대한 공유 사본 기록을 삭제할까요? 원격 사본은 계속 접근 가능할 수 있습니다.",
+      sharePending: "전송이 불완전하거나 상태를 알 수 없음 · {{agent}} · {{host}} · {{time}}",
+      share: "에이전트와 공유",
+      shareTitle: "녹화 공유",
+      shareConfirm: "공유",
+      shareWarning:
+        "{{host}}의 {{agent}}에게 전체 녹화를 공유할까요? 쿠키, 액세스 토큰 및 개인 정보가 포함될 수 있습니다. {{completeness}}",
+      shareComplete: "캡처 누락이 보고되지 않았습니다.",
+      shareIncomplete: "캡처가 불완전합니다: {{reasons}}",
+      shareDone: "녹화를 공유했습니다. 전송하기 전에 에이전트 초안을 확인하세요.",
+      removeCopy: "공유 사본 삭제",
+      removeCopyMessage: "{{host}}의 {{agent}} 사본을 삭제할까요?",
+      remove: "삭제",
+      sharedWith: "공유 대상: {{agent}} · {{host}} · {{time}}",
       audioUnknown: "오디오가 요청되었지만 캡처 상태를 알 수 없습니다.",
       muteAudio: "오디오 음소거",
       unmuteAudio: "음소거 해제",

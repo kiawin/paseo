@@ -243,6 +243,20 @@ export interface DesktopRecordingBridge {
     offset: number;
     length: number;
   }): Promise<{ bytes: Uint8Array; totalBytes: number; sha256: string }>;
+  readExportEvents(input: {
+    recordingId: string;
+    offset: number;
+    length: number;
+  }): Promise<{ bytes: Uint8Array; totalBytes: number }>;
+  listShareAudit(input: {
+    recordingId: string;
+  }): Promise<import("@/attachments/recording-share").RecordingShareAudit[]>;
+  forgetCorruptShareAudit(input: { recordingId: string }): Promise<void>;
+  changeShareAudit(input: {
+    recordingId: string;
+    entry?: import("@/attachments/recording-share").RecordingShareAudit;
+    removeShareId?: string;
+  }): Promise<void>;
   delete(input: { recordingId: string }): Promise<void>;
   onState(handler: (state: DesktopRecordingState) => void): () => void;
 }

@@ -2278,6 +2278,31 @@ export const fr: TranslationResources = {
       deleteFailed: "Échec de la suppression de l’artefact",
     },
     recordings: {
+      moreCaptureProblems:
+        "Et {{extra}} autres problèmes de capture ; consultez l’enregistrement pour les détails.",
+      forgetCorruptAudit: "Oublier l’historique de partage endommagé",
+      forgetCorruptAuditMessage:
+        "Oublier cet historique endommagé ? Les copies distantes peuvent rester accessibles et ne seront plus affichées ici.",
+      shareHostUnavailable:
+        "L’hôte sélectionné est hors ligne ou ne prend pas en charge le partage d’enregistrements.",
+      shareAgentUnavailable:
+        "L’agent sélectionné est indisponible. Vous pouvez supprimer la copie partagée ci-dessous.",
+      forgetCopy: "Oublier la copie partagée",
+      forgetCopyMessage:
+        "Oublier la copie partagée de {{agent}} sur {{host}} ? La copie distante peut rester accessible.",
+      sharePending: "Transfert incomplet ou état inconnu · {{agent}} · {{host}} · {{time}}",
+      share: "Partager avec un agent",
+      shareTitle: "Partager l’enregistrement",
+      shareConfirm: "Partager",
+      shareWarning:
+        "Partager l’enregistrement complet avec {{agent}} sur {{host}} ? Il peut contenir des cookies, des jetons d’accès et des données privées. {{completeness}}",
+      shareComplete: "Aucune interruption de capture signalée.",
+      shareIncomplete: "La capture est incomplète : {{reasons}}",
+      shareDone: "Enregistrement partagé. Vérifiez le brouillon de l’agent avant l’envoi.",
+      removeCopy: "Supprimer la copie partagée",
+      removeCopyMessage: "Supprimer la copie de {{agent}} sur {{host}} ?",
+      remove: "Supprimer",
+      sharedWith: "Partagé avec {{agent}} · {{host}} · {{time}}",
       audioUnknown: "Le son a été demandé, mais son état de capture est inconnu.",
       muteAudio: "Couper le son",
       unmuteAudio: "Activer le son",

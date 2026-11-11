@@ -2263,6 +2263,32 @@ export const ptBR: TranslationResources = {
       deleteFailed: "Não foi possível excluir o artefato",
     },
     recordings: {
+      moreCaptureProblems:
+        "E mais {{extra}} problemas de captura; consulte a gravação para detalhes.",
+      forgetCorruptAudit: "Esquecer histórico de compartilhamento danificado",
+      forgetCorruptAuditMessage:
+        "Esquecer o histórico danificado? As cópias remotas podem continuar acessíveis e não serão mais listadas aqui.",
+      shareHostUnavailable:
+        "O host selecionado está offline ou não permite compartilhar gravações.",
+      shareAgentUnavailable:
+        "O agente selecionado está indisponível. Você pode remover a cópia compartilhada abaixo.",
+      forgetCopy: "Esquecer cópia compartilhada",
+      forgetCopyMessage:
+        "Esquecer a cópia compartilhada de {{agent}} em {{host}}? A cópia remota pode continuar acessível.",
+      sharePending:
+        "Transferência incompleta ou estado desconhecido · {{agent}} · {{host}} · {{time}}",
+      share: "Compartilhar com agente",
+      shareTitle: "Compartilhar gravação",
+      shareConfirm: "Compartilhar",
+      shareWarning:
+        "Compartilhar a gravação completa com {{agent}} em {{host}}? Ela pode conter cookies, tokens de acesso e dados privados. {{completeness}}",
+      shareComplete: "Nenhuma falha de captura foi relatada.",
+      shareIncomplete: "A captura está incompleta: {{reasons}}",
+      shareDone: "Gravação compartilhada. Confira o rascunho do agente antes de enviar.",
+      removeCopy: "Remover cópia compartilhada",
+      removeCopyMessage: "Remover a cópia de {{agent}} em {{host}}?",
+      remove: "Remover",
+      sharedWith: "Compartilhado com {{agent}} · {{host}} · {{time}}",
       audioUnknown: "O áudio foi solicitado, mas o estado da captura é desconhecido.",
       muteAudio: "Silenciar áudio",
       unmuteAudio: "Ativar áudio",

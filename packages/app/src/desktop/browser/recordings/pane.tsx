@@ -8,6 +8,7 @@ import { getDesktopHost } from "@/desktop/host";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { createRecordingsModel, type RecordingsState } from "./model";
 import { RecordingPlayer, type RecordingSeek } from "./player";
+import { RecordingShare } from "./share";
 import { createPlayback } from "./playback";
 import { classifyStorageError } from "./storage-errors";
 
@@ -292,6 +293,11 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
             {recordingHeading(snapshot)}
           </Text>
           <RecordingWarnings snapshot={snapshot} />
+          {snapshot.recordings
+            .filter((item) => item.recordingId === snapshot.selectedId)
+            .map((item) => (
+              <RecordingShare key={item.recordingId} recording={item} />
+            ))}
           <RecordingPlayer
             key={snapshot.selectedId}
             recordingId={snapshot.selectedId}

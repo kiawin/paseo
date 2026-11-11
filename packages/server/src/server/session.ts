@@ -3830,8 +3830,9 @@ export class Session {
     let source: object | undefined;
     const operation = this.delivery.operation(
       (message) =>
-        message.type === "recording.share.upload.response" &&
-        message.payload.requestId === msg.requestId,
+        (message.type === "recording.share.upload.response" &&
+          message.payload.requestId === msg.requestId) ||
+        (message.type === "fs.transfer.ack" && message.requestId === msg.requestId),
       () => (source ? this.recordingShares.cancelUpload(msg.requestId, source) : undefined),
     );
     source = operation.source;
@@ -3849,10 +3850,7 @@ export class Session {
           this.releaseRecordingOperation(operation);
         },
         (bytesReceived) =>
-          this.emitForSource(
-            { type: "fs.transfer.ack", requestId: msg.requestId, bytesReceived },
-            operation.source,
-          ),
+          operation.emit({ type: "fs.transfer.ack", requestId: msg.requestId, bytesReceived }),
       );
     } catch (error) {
       operation.emit({
@@ -3908,7 +3906,27 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "recording.share.delete.request" }>,
   ): Promise<void> {
     try {
-      await this.recordingShares.deleteCompleted(msg.shareId, msg.recipientAgentId);
+      const source = this.delivery.currentSource;
+      const owner = this.recordingShareOwners.get(msg.shareId);
+      let pendingRecipient: string | undefined;
+      if (owner && source) {
+        try {
+          pendingRecipient = this.recordingShares.recipientFor(source, msg.shareId);
+        } catch {
+          /* Completion may have published before a sync error. */
+        }
+      }
+      if (pendingRecipient !== undefined) {
+        if (pendingRecipient !== msg.recipientAgentId)
+          throw new Error("Recording share recipient does not match");
+        await this.recordingShares.cancel(msg.shareId);
+      } else {
+        await this.recordingShares.deleteCompleted(msg.shareId, msg.recipientAgentId);
+      }
+      if (owner) {
+        this.recordingShareOwners.delete(msg.shareId);
+        await owner.release();
+      }
       this.emit({
         type: "recording.share.delete.response",
         payload: { requestId: msg.requestId, success: true, error: null },

@@ -2264,6 +2264,29 @@ export const ru: TranslationResources = {
       deleteFailed: "Не удалось удалить артефакт",
     },
     recordings: {
+      moreCaptureProblems: "И ещё {{extra}} проблем записи; подробности приведены в записи.",
+      forgetCorruptAudit: "Забыть повреждённую историю доступа",
+      forgetCorruptAuditMessage:
+        "Забыть повреждённую историю? Удалённые копии могут остаться доступны и больше не будут показаны здесь.",
+      shareHostUnavailable: "Выбранный хост не в сети или не поддерживает передачу записей.",
+      shareAgentUnavailable: "Выбранный агент недоступен. Вы можете удалить общую копию ниже.",
+      forgetCopy: "Забыть общую копию",
+      forgetCopyMessage:
+        "Забыть общую копию для {{agent}} на {{host}}? Удалённая копия может остаться доступной.",
+      sharePending:
+        "Передача не завершена или состояние неизвестно · {{agent}} · {{host}} · {{time}}",
+      share: "Поделиться с агентом",
+      shareTitle: "Поделиться записью",
+      shareConfirm: "Поделиться",
+      shareWarning:
+        "Поделиться полной записью с {{agent}} на {{host}}? Она может содержать файлы cookie, токены доступа и личные данные. {{completeness}}",
+      shareComplete: "Пропуски записи не обнаружены.",
+      shareIncomplete: "Запись неполная: {{reasons}}",
+      shareDone: "Запись передана. Проверьте черновик агента перед отправкой.",
+      removeCopy: "Удалить общую копию",
+      removeCopyMessage: "Удалить копию для {{agent}} на {{host}}?",
+      remove: "Удалить",
+      sharedWith: "Получатель: {{agent}} · {{host}} · {{time}}",
       audioUnknown: "Звук был запрошен, но состояние захвата неизвестно.",
       muteAudio: "Выключить звук",
       unmuteAudio: "Включить звук",

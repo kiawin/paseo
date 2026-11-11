@@ -2279,6 +2279,32 @@ export const es: TranslationResources = {
       deleteFailed: "No se pudo eliminar el artefacto",
     },
     recordings: {
+      moreCaptureProblems:
+        "Y {{extra}} problemas de captura más; consulta la grabación para más detalles.",
+      forgetCorruptAudit: "Olvidar historial de copias dañado",
+      forgetCorruptAuditMessage:
+        "¿Olvidar el historial dañado? Las copias remotas pueden seguir disponibles y dejarán de aparecer aquí.",
+      shareHostUnavailable:
+        "El host seleccionado está desconectado o no admite compartir grabaciones.",
+      shareAgentUnavailable:
+        "El agente seleccionado no está disponible. Puedes eliminar la copia compartida a continuación.",
+      forgetCopy: "Olvidar copia compartida",
+      forgetCopyMessage:
+        "¿Olvidar la copia compartida de {{agent}} en {{host}}? La copia remota puede seguir disponible.",
+      sharePending:
+        "Transferencia incompleta o estado desconocido · {{agent}} · {{host}} · {{time}}",
+      share: "Compartir con agente",
+      shareTitle: "Compartir grabación",
+      shareConfirm: "Compartir",
+      shareWarning:
+        "¿Compartir la grabación completa con {{agent}} en {{host}}? Puede contener cookies, tokens de acceso y datos privados. {{completeness}}",
+      shareComplete: "No se notificaron interrupciones en la captura.",
+      shareIncomplete: "La captura está incompleta: {{reasons}}",
+      shareDone: "Grabación compartida. Revisa el borrador del agente antes de enviarlo.",
+      removeCopy: "Eliminar copia compartida",
+      removeCopyMessage: "¿Eliminar la copia de {{agent}} en {{host}}?",
+      remove: "Eliminar",
+      sharedWith: "Compartido con {{agent}} · {{host}} · {{time}}",
       audioUnknown: "Se solicitó audio, pero se desconoce su estado de captura.",
       muteAudio: "Silenciar audio",
       unmuteAudio: "Activar audio",

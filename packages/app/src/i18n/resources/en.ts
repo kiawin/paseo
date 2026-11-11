@@ -2254,6 +2254,29 @@ export const en = {
       deleteFailed: "Failed to delete artifact",
     },
     recordings: {
+      moreCaptureProblems: "And {{extra}} more capture issues; see the recording for details.",
+      forgetCorruptAudit: "Forget damaged share history",
+      forgetCorruptAuditMessage:
+        "Forget the damaged share history? Remote copies may remain accessible and will no longer be listed here.",
+      shareHostUnavailable: "The selected host is offline or does not support recording sharing.",
+      shareAgentUnavailable:
+        "The selected agent is unavailable. You can remove the shared copy below.",
+      forgetCopy: "Forget shared copy",
+      forgetCopyMessage:
+        "Forget this shared copy for {{agent}} on {{host}}? The remote copy may remain accessible.",
+      sharePending: "Transfer incomplete or status unknown · {{agent}} · {{host}} · {{time}}",
+      share: "Share with agent",
+      shareTitle: "Share recording",
+      shareConfirm: "Share",
+      shareWarning:
+        "Share the full recording with {{agent}} on {{host}}? It can contain cookies, access tokens and private data. {{completeness}}",
+      shareComplete: "No capture gaps were reported.",
+      shareIncomplete: "Capture is incomplete: {{reasons}}",
+      shareDone: "Recording shared. Check the agent draft before sending.",
+      removeCopy: "Remove shared copy",
+      removeCopyMessage: "Remove the copy for {{agent}} on {{host}}?",
+      remove: "Remove",
+      sharedWith: "Shared with {{agent}} · {{host}} · {{time}}",
       audioUnknown: "Audio was requested, but its capture status is unknown.",
       muteAudio: "Mute audio",
       unmuteAudio: "Unmute audio",

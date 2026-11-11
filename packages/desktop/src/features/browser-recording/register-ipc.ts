@@ -3,7 +3,18 @@ import type { createRecordingBridge } from "./ipc.js";
 
 type Bridge = Pick<
   ReturnType<typeof createRecordingBridge>,
-  "active" | "start" | "stop" | "list" | "listMedia" | "readEvents" | "readMedia" | "delete"
+  | "active"
+  | "start"
+  | "stop"
+  | "list"
+  | "listMedia"
+  | "readEvents"
+  | "readMedia"
+  | "readExportEvents"
+  | "listShareAudit"
+  | "forgetCorruptShareAudit"
+  | "changeShareAudit"
+  | "delete"
 >;
 interface Registry {
   handle(channel: string, listener: (event: IpcMainInvokeEvent, input: unknown) => unknown): void;
@@ -40,6 +51,10 @@ export function registerRecordingIpc(ipc: Registry, bridge: Bridge): () => void 
     "paseo:recording:list-media": bridge.listMedia,
     "paseo:recording:read-events": bridge.readEvents,
     "paseo:recording:read-media": bridge.readMedia,
+    "paseo:recording:read-export-events": bridge.readExportEvents,
+    "paseo:recording:list-share-audit": bridge.listShareAudit,
+    "paseo:recording:change-share-audit": bridge.changeShareAudit,
+    "paseo:recording:forget-corrupt-audit": bridge.forgetCorruptShareAudit,
     "paseo:recording:delete": bridge.delete,
   };
   for (const [channel, handler] of Object.entries(handlers))

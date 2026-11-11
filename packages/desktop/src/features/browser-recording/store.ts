@@ -38,6 +38,22 @@ const metadataSchema = z
     recoveryWarnings: z.array(z.string().max(1024)).max(10).optional(),
   })
   .passthrough();
+const shareAuditSchema = z
+  .array(
+    z.object({
+      recordingId: identifier,
+      serverId: z.string().min(1).max(256),
+      agentId: z.string().min(1).max(256),
+      shareId: z.string().uuid(),
+      time: z.number().finite().nonnegative(),
+      completeness: z.object({
+        complete: z.boolean(),
+        reasons: z.array(z.string().max(1024)).max(100),
+      }),
+      manifestPath: z.string().max(4096),
+    }),
+  )
+  .max(1000);
 const eventSchema = z
   .object({
     recordingId: identifier,
@@ -598,11 +614,167 @@ export class BrowserRecordingStore {
     }
   }
 
+  async readExportEvents(
+    id: string,
+    offset: number,
+    length: number,
+  ): Promise<{ bytes: Uint8Array; totalBytes: number }> {
+    identifier.parse(id);
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(length) ||
+      length <= 0 ||
+      length > 1024 * 1024
+    )
+      throw new Error("Invalid event range");
+    return this.queue(id, async () => {
+      const directory = await this.recordingDirectory(id);
+      if ((await this.readMetadata(id)).status === "recording")
+        throw new Error("Stop recording before sharing");
+      let handle;
+      try {
+        handle = await open(join(directory, "events.jsonl"), fsConstants.O_RDONLY | noFollow);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT" && offset === 0)
+          return { bytes: new Uint8Array(), totalBytes: 0 };
+        throw error;
+      }
+      try {
+        const stat = await handle.stat();
+        if (!stat.isFile() || stat.nlink !== 1 || offset > stat.size)
+          throw new Error("Invalid event file");
+        const bytes = Buffer.alloc(Math.min(length, stat.size - offset));
+        let done = 0;
+        while (done < bytes.length) {
+          const read = await handle.read(bytes, done, bytes.length - done, offset + done);
+          if (!read.bytesRead) throw new Error("Event file changed while sharing");
+          done += read.bytesRead;
+        }
+        return { bytes, totalBytes: stat.size };
+      } finally {
+        await handle.close();
+      }
+    });
+  }
+
+  async listShareAudit(id: string): Promise<unknown[]> {
+    identifier.parse(id);
+    return this.queue(id, async () => {
+      const directory = await this.recordingDirectory(id);
+      try {
+        return shareAuditSchema.parse(
+          JSON.parse(decodeUtf8(await this.readFile(join(directory, "shares.json"), 1024 * 1024))),
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+        throw error;
+      }
+    });
+  }
+
+  async forgetCorruptShareAudit(id: string): Promise<void> {
+    identifier.parse(id);
+    await this.queue(id, async () => {
+      const directory = await this.recordingDirectory(id);
+      const path = join(directory, "shares.json");
+      const info = await lstat(path);
+      if (!info.isFile() && !info.isSymbolicLink()) throw new Error("Share audit is unsafe");
+      let corrupt = info.isSymbolicLink() || info.nlink !== 1 || info.size > 1024 * 1024;
+      if (!corrupt) {
+        const bytes = await this.readFile(path, 1024 * 1024);
+        try {
+          shareAuditSchema.parse(JSON.parse(decodeUtf8(bytes)));
+        } catch (error) {
+          if (
+            !(error instanceof SyntaxError) &&
+            !(error instanceof z.ZodError) &&
+            !(error instanceof TypeError)
+          )
+            throw error;
+          corrupt = true;
+        }
+      }
+      if (!corrupt) throw new Error("Share audit is valid; remove entries individually");
+      await rename(path, join(directory, `.corrupt-shares-${randomUUID()}`));
+      await this.syncDirectory(directory);
+    });
+  }
+
+  async changeShareAudit(
+    id: string,
+    input: { entry?: unknown; removeShareId?: string },
+  ): Promise<void> {
+    identifier.parse(id);
+    const entry =
+      input.entry === undefined ? undefined : shareAuditSchema.element.parse(input.entry);
+    if (entry && entry.recordingId !== id) throw new Error("Recording audit identity mismatch");
+    const remove =
+      input.removeShareId === undefined ? undefined : z.string().uuid().parse(input.removeShareId);
+    if ((!entry && !remove) || (entry && remove)) throw new Error("Invalid audit update");
+    await this.queue(id, async () => {
+      const directory = await this.recordingDirectory(id);
+      let entries: z.infer<typeof shareAuditSchema> = [];
+      try {
+        entries = shareAuditSchema.parse(
+          JSON.parse(decodeUtf8(await this.readFile(join(directory, "shares.json"), 1024 * 1024))),
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      entries = entries.filter((item) => item.shareId !== (entry?.shareId ?? remove));
+      if (entry) entries.push(entry);
+      const encoded = Buffer.from(JSON.stringify(shareAuditSchema.parse(entries)));
+      if (encoded.length > 1024 * 1024) throw new Error("Recording share audit exceeds size limit");
+      const auditPath = join(directory, "shares.json");
+      const oldSize = await lstat(auditPath)
+        .then((info) => info.size)
+        .catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return 0;
+          throw error;
+        });
+      const existingNames = new Set(await readdir(directory));
+      const delta = encoded.length - oldSize;
+      const finish = await this.reserveStorage(Math.max(0, delta), true);
+      let charge = encoded.length;
+      try {
+        await this.writeAtomic(directory, "shares.json", encoded);
+        charge = delta;
+      } catch (error) {
+        try {
+          const names = (await readdir(directory)).filter(
+            (name) => name.startsWith(".") && name.endsWith(".tmp") && !existingNames.has(name),
+          );
+          const afterSize = await lstat(auditPath)
+            .then((info) => info.size)
+            .catch(() => 0);
+          charge =
+            afterSize -
+            oldSize +
+            (await survivingBytes(names.map((name) => join(directory, name))));
+        } catch {
+          /* Keep the conservative charge if accounting fails. */
+        }
+        throw error;
+      } finally {
+        finish(charge);
+      }
+    });
+  }
+
   async delete(id: string): Promise<void> {
     identifier.parse(id);
     await this.queue(id, async () => {
       const quota = await this.quotaState().catch(() => null);
       const directory = await this.recordingDirectory(id);
+      try {
+        const entries = shareAuditSchema.parse(
+          JSON.parse(decodeUtf8(await this.readFile(join(directory, "shares.json"), 1024 * 1024))),
+        );
+        if (entries.length) throw new Error("Remove shared copies before deleting the recording");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
       const bytes = quota ? await measureTree(directory).catch(() => null) : null;
       const tombstone = join(this.root, `.deleted-${id}-${randomUUID()}`);
       await rename(directory, tombstone);

@@ -2251,6 +2251,30 @@ export const ja: TranslationResources = {
       deleteFailed: "成果物を削除できませんでした",
     },
     recordings: {
+      moreCaptureProblems:
+        "他に {{extra}} 件のキャプチャ問題があります。詳細は録画を確認してください。",
+      forgetCorruptAudit: "破損した共有履歴を忘れる",
+      forgetCorruptAuditMessage:
+        "破損した共有履歴を忘れますか？リモートコピーはアクセス可能なまま、ここには表示されなくなる場合があります。",
+      shareHostUnavailable: "選択したホストはオフラインか、録画の共有に対応していません。",
+      shareAgentUnavailable:
+        "選択したエージェントを利用できません。共有コピーは以下から削除できます。",
+      forgetCopy: "共有コピーを忘れる",
+      forgetCopyMessage:
+        "{{host}} の {{agent}} の共有コピーを忘れますか？リモートコピーは引き続きアクセス可能な場合があります。",
+      sharePending: "転送が不完全か状態不明 · {{agent}} · {{host}} · {{time}}",
+      share: "エージェントと共有",
+      shareTitle: "録画を共有",
+      shareConfirm: "共有",
+      shareWarning:
+        "{{host}} の {{agent}} と録画全体を共有しますか？ Cookie、アクセストークン、非公開データが含まれる場合があります。{{completeness}}",
+      shareComplete: "キャプチャの欠落は報告されていません。",
+      shareIncomplete: "キャプチャは不完全です: {{reasons}}",
+      shareDone: "録画を共有しました。送信前にエージェントの下書きを確認してください。",
+      removeCopy: "共有コピーを削除",
+      removeCopyMessage: "{{host}} の {{agent}} のコピーを削除しますか？",
+      remove: "削除",
+      sharedWith: "共有先: {{agent}} · {{host}} · {{time}}",
       audioUnknown: "音声が要求されましたが、取得状態は不明です。",
       muteAudio: "音声をミュート",
       unmuteAudio: "ミュートを解除",

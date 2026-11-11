@@ -764,6 +764,46 @@ export function createRecordingBridge(options: Options) {
       });
       return { ...result, bytes: Uint8Array.from(result.bytes) };
     },
+    async readExportEvents(caller: Caller, input: unknown) {
+      assertCaller(caller);
+      const { recordingId, offset, length } = z
+        .object({
+          recordingId: identifier,
+          offset: z.number().int().nonnegative(),
+          length: z
+            .number()
+            .int()
+            .positive()
+            .max(1024 * 1024),
+        })
+        .strict()
+        .parse(input);
+      if (active.has(recordingId)) throw new Error("Stop recording before sharing");
+      const result = await store.readExportEvents(recordingId, offset, length);
+      return { ...result, bytes: Uint8Array.from(result.bytes) };
+    },
+    async listShareAudit(caller: Caller, input: unknown) {
+      assertCaller(caller);
+      const { recordingId } = stopInput.parse(input);
+      return store.listShareAudit(recordingId);
+    },
+    async forgetCorruptShareAudit(caller: Caller, input: unknown) {
+      assertCaller(caller);
+      const { recordingId } = stopInput.parse(input);
+      await store.forgetCorruptShareAudit(recordingId);
+    },
+    async changeShareAudit(caller: Caller, input: unknown) {
+      assertCaller(caller);
+      const parsed = z
+        .object({
+          recordingId: identifier,
+          entry: z.unknown().optional(),
+          removeShareId: z.string().uuid().optional(),
+        })
+        .strict()
+        .parse(input);
+      await store.changeShareAudit(parsed.recordingId, parsed);
+    },
     async delete(caller: Caller, input: unknown) {
       assertCaller(caller);
       const { recordingId } = stopInput.parse(input);

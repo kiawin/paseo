@@ -665,7 +665,13 @@ export class RecordingShareStore {
   async deleteCompleted(shareId: string, recipientAgentId: string): Promise<void> {
     return withRootLock(this.root, async () => {
       const directory = join(this.root, shareId);
-      const info = await lstat(directory);
+      let info;
+      try {
+        info = await lstat(directory);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw error;
+      }
       if (!info.isDirectory() || info.isSymbolicLink())
         throw new Error("Recording share is unavailable");
       const metadataFile = join(directory, "manifest.json");
