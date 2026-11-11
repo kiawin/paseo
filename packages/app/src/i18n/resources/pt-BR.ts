@@ -2258,6 +2258,18 @@ export const ptBR: TranslationResources = {
       deleteFailed: "Não foi possível excluir o artefato",
     },
     recordings: {
+      recoveryDisabled:
+        "A recuperação de gravações fica desativada quando o bloqueio de instância única está desligado.",
+      recoveryProblem:
+        "Algumas gravações não puderam ser recuperadas. Resolva o problema de armazenamento e reinicie o Paseo.",
+      unpublishedMetadata: "Um arquivo de metadados incompleto foi preservado.",
+      eventLogUnreadable: "Não foi possível ler o registro de eventos.",
+      recoveryWriteFailed:
+        "Não foi possível salvar a recuperação; libere espaço e reinicie o Paseo.",
+
+      storageQuota: "Cota de gravações atingida. Exclua uma gravação para liberar espaço.",
+      diskFull: "O disco está cheio. Libere espaço para continuar.",
+
       eventUntimed: "Este evento não tem tempo de gravação.",
       missingView: "Nenhum vídeo foi capturado para esta visualização.",
 

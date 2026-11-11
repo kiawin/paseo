@@ -29,14 +29,17 @@ export interface RecordingsState {
   mediaPending: boolean;
   loading: boolean;
   error: string | null;
+  recoveryError: string | null;
 }
 interface IncomingRecording extends Omit<DesktopRecordingMetadata, "status"> {
   status: string;
 }
 interface Bridge extends Pick<DesktopRecordingBridge, "readEvents" | "delete"> {
-  list(input: {
-    workspaceId: string;
-  }): Promise<{ recordings: IncomingRecording[]; incomplete: string[] }>;
+  list(input: { workspaceId: string }): Promise<{
+    recordings: IncomingRecording[];
+    incomplete: string[];
+    recoveryError?: string | null;
+  }>;
   listMedia(input: { recordingId: string; cursor: string | null; limit: number }): Promise<{
     segments: DesktopRecordingMediaSegment[];
     incomplete: RecordingMediaGap[];
@@ -63,6 +66,7 @@ export function createRecordingsModel(
     mediaPending: false,
     loading: false,
     error: null,
+    recoveryError: null,
   };
   let generation = 0;
   let disposed = false;
@@ -123,7 +127,11 @@ export function createRecordingsModel(
         )
         .map((item) => item.recordingId);
       if (!disposed)
-        update({ recordings, incomplete: [...new Set([...data.incomplete, ...invalid])] });
+        update({
+          recordings,
+          incomplete: [...new Set([...data.incomplete, ...invalid])],
+          recoveryError: data.recoveryError ?? null,
+        });
     } catch (error) {
       if (!disposed) update({ error: errorMessage(error) });
     }

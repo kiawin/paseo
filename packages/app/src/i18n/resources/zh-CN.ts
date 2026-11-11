@@ -2198,6 +2198,15 @@ export const zhCN: TranslationResources = {
       deleteFailed: "无法删除成果物",
     },
     recordings: {
+      recoveryDisabled: "关闭单实例锁定时，录制恢复功能不可用。",
+      recoveryProblem: "部分录制无法恢复。请解决存储问题并重启 Paseo。",
+      unpublishedMetadata: "已保留未完成的元数据文件。",
+      eventLogUnreadable: "无法读取事件日志。",
+      recoveryWriteFailed: "无法保存恢复结果；请释放空间并重启 Paseo。",
+
+      storageQuota: "录制存储已达到上限。请删除录制以释放空间。",
+      diskFull: "磁盘空间不足。请释放空间后继续录制。",
+
       eventUntimed: "此事件没有录制时间。",
       missingView: "此视图没有录制视频。",
 

@@ -365,6 +365,27 @@ module.exports = {
         "response arriving at stop is retained",
       );
       assert.equal((await store.readMetadata(recording.recordingId)).status, "complete");
+      const diskFailure = await host.webContents.executeJavaScript(
+        "window.paseoDesktop.recording.start({browserId: 'root'})",
+      );
+      bridge.reportStorageFailure(
+        diskFailure.recordingId,
+        Object.assign(new Error("disk full"), { code: "ENOSPC" }),
+      );
+      await eventually(
+        async () => (await store.readMetadata(diskFailure.recordingId)).status === "interrupted",
+        "disk-full interruption is persisted",
+      );
+      const failureStates = await host.webContents.executeJavaScript("window.recordingStates");
+      assert(
+        failureStates.some(
+          (state) =>
+            state.recordingId === diskFailure.recordingId &&
+            state.status === "interrupted" &&
+            state.reason === "disk-full",
+        ),
+        "disk-full reason reaches the desktop window",
+      );
       await host.loadURL(`http://localhost:${server.address().port}/`);
       await assert.rejects(
         host.webContents.executeJavaScript(

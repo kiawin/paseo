@@ -9,6 +9,7 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { createRecordingsModel, type RecordingsState } from "./model";
 import { RecordingPlayer, type RecordingSeek } from "./player";
 import { createPlayback } from "./playback";
+import { classifyStorageError } from "./storage-errors";
 
 function EventRow({
   event,
@@ -61,6 +62,9 @@ function RecordingRow({
     <PressHighlight accessibilityRole="button" onPress={onPress} style={styles.row}>
       <Text style={styles.label}>{recordingLabel(item)}</Text>
       <Text style={styles.muted}>{t(`panels.recordings.status.${item.status}`)}</Text>
+      {item.captureErrors?.length || item.recoveryWarnings?.length ? (
+        <Text style={styles.error}>{t("panels.recordings.incomplete")}</Text>
+      ) : null}
     </PressHighlight>
   );
 }
@@ -116,6 +120,35 @@ function EventDetails({
           {t("panels.recordings.showFull")}
         </Button>
       ) : null}
+    </>
+  );
+}
+function StorageError({ message }: { message: string }) {
+  const { t } = useTranslation();
+  const kind = classifyStorageError(message);
+  if (kind === "quota")
+    return <Text style={styles.error}>{t("panels.recordings.storageQuota")}</Text>;
+  if (kind === "disk-full")
+    return <Text style={styles.error}>{t("panels.recordings.diskFull")}</Text>;
+  return <Text style={styles.error}>{message}</Text>;
+}
+function RecordingWarnings({ snapshot }: { snapshot: RecordingsState }) {
+  const { t } = useTranslation();
+  const item = snapshot.recordings.find(
+    (candidate) => candidate.recordingId === snapshot.selectedId,
+  );
+  const errors = [...new Set([...(item?.captureErrors ?? []), ...(item?.recoveryWarnings ?? [])])];
+  const labels: Record<string, string> = {
+    "incomplete-event-tail": t("panels.recordings.incompleteTail"),
+    "unpublished-metadata": t("panels.recordings.unpublishedMetadata"),
+    "event-log-unreadable": t("panels.recordings.eventLogUnreadable"),
+    "recovery-write-failed": t("panels.recordings.recoveryWriteFailed"),
+  };
+  return (
+    <>
+      {errors.map((error) => (
+        <StorageError key={error} message={labels[error] ?? error} />
+      ))}
     </>
   );
 }
@@ -225,7 +258,16 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
     );
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {snapshot.error ? <Text style={styles.error}>{snapshot.error}</Text> : null}
+      {snapshot.error ? <StorageError message={snapshot.error} /> : null}
+      {snapshot.recoveryError ? (
+        <Text style={styles.error}>
+          {t(
+            snapshot.recoveryError === "single-instance-lock-disabled"
+              ? "panels.recordings.recoveryDisabled"
+              : "panels.recordings.recoveryProblem",
+          )}
+        </Text>
+      ) : null}
       {snapshot.selectedId ? (
         <>
           <Button size="sm" variant="ghost" onPress={back}>
@@ -234,6 +276,7 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
           <Text selectable style={styles.heading}>
             {recordingHeading(snapshot)}
           </Text>
+          <RecordingWarnings snapshot={snapshot} />
           <RecordingPlayer
             key={snapshot.selectedId}
             recordingId={snapshot.selectedId}

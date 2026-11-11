@@ -2223,6 +2223,15 @@ export const ar: TranslationResources = {
       deleteFailed: "تعذّر حذف العنصر",
     },
     recordings: {
+      recoveryDisabled: "استرداد التسجيلات معطل عند إيقاف قفل المثيل الواحد.",
+      recoveryProblem: "تعذر استرداد بعض التسجيلات. عالج مشكلة التخزين وأعد تشغيل Paseo.",
+      unpublishedMetadata: "تم الاحتفاظ بملف بيانات غير مكتمل.",
+      eventLogUnreadable: "تعذرت قراءة سجل الأحداث.",
+      recoveryWriteFailed: "تعذر حفظ الاسترداد؛ أفرغ مساحة وأعد تشغيل Paseo.",
+
+      storageQuota: "تم بلوغ حد مساحة التسجيلات. احذف تسجيلاً لتوفير مساحة.",
+      diskFull: "القرص ممتلئ. أفرغ مساحة لمتابعة التسجيل.",
+
       eventUntimed: "لا يتوفر وقت تسجيل لهذا الحدث.",
       missingView: "لم يتم تسجيل فيديو لهذا العرض.",
 

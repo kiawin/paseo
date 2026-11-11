@@ -2235,6 +2235,16 @@ export const ko: TranslationResources = {
       deleteFailed: "산출물을 삭제하지 못했습니다",
     },
     recordings: {
+      recoveryDisabled: "단일 인스턴스 잠금이 꺼져 있으면 기록 복구도 비활성화됩니다.",
+      recoveryProblem:
+        "일부 기록을 복구할 수 없습니다. 저장소 문제를 해결하고 Paseo를 재시작하세요.",
+      unpublishedMetadata: "완료되지 않은 메타데이터 파일을 보존했습니다.",
+      eventLogUnreadable: "이벤트 로그를 읽을 수 없습니다.",
+      recoveryWriteFailed: "복구 결과를 저장할 수 없습니다. 공간을 확보하고 Paseo를 재시작하세요.",
+
+      storageQuota: "기록 저장 한도에 도달했습니다. 기록을 삭제해 공간을 확보하세요.",
+      diskFull: "디스크가 가득 찼습니다. 공간을 확보하세요.",
+
       eventUntimed: "이 이벤트에는 기록 시간이 없습니다.",
       missingView: "이 보기에는 캡처된 동영상이 없습니다.",
 

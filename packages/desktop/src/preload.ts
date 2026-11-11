@@ -36,11 +36,13 @@ interface RecordingMetadata {
   status: "recording" | "complete" | "interrupted";
   title?: string;
   captureErrors?: string[];
+  recoveryWarnings?: string[];
 }
 interface RecordingState {
   recordingId: string;
   browserId: string;
   status: "starting" | "recording" | "stopping" | "complete" | "interrupted";
+  reason?: "quota" | "disk-full";
 }
 
 contextBridge.exposeInMainWorld("paseoDesktop", {
@@ -166,8 +168,11 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
       ipcRenderer.invoke("paseo:recording:stop", input),
     list: (input: {
       workspaceId: string;
-    }): Promise<{ recordings: RecordingMetadata[]; incomplete: string[] }> =>
-      ipcRenderer.invoke("paseo:recording:list", input),
+    }): Promise<{
+      recordings: RecordingMetadata[];
+      incomplete: string[];
+      recoveryError?: string | null;
+    }> => ipcRenderer.invoke("paseo:recording:list", input),
     listMedia: (input: { recordingId: string; cursor: string | null; limit: number }) =>
       ipcRenderer.invoke("paseo:recording:list-media", input),
     readEvents: (input: {

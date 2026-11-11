@@ -2246,6 +2246,17 @@ export const ja: TranslationResources = {
       deleteFailed: "成果物を削除できませんでした",
     },
     recordings: {
+      recoveryDisabled: "単一インスタンスのロックが無効な間は記録の復旧も無効です。",
+      recoveryProblem:
+        "一部の記録を復旧できませんでした。ストレージの問題を解決してPaseoを再起動してください。",
+      unpublishedMetadata: "未完了のメタデータファイルを保持しました。",
+      eventLogUnreadable: "イベントログを読み取れませんでした。",
+      recoveryWriteFailed:
+        "復旧結果を保存できません。空き容量を増やしてPaseoを再起動してください。",
+
+      storageQuota: "記録の保存容量に達しました。記録を削除してください。",
+      diskFull: "ディスクの空き容量がありません。空き容量を増やしてください。",
+
       eventUntimed: "このイベントの記録時刻はありません。",
       missingView: "このビューの動画は記録されていません。",
 

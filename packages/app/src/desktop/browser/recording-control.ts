@@ -6,6 +6,7 @@ export interface RecordingControlState {
   status: Status;
   recordingId: string | null;
   error: string | null;
+  reason?: "quota" | "disk-full";
 }
 type Bridge = Pick<DesktopRecordingBridge, "start" | "stop" | "active" | "onState">;
 
@@ -34,14 +35,27 @@ export function createRecordingControl(
     )
       return;
     revision++;
+    const storageReason = startPending ? undefined : event.reason;
+    let reason: string | null = null;
+    if (storageReason === "quota") reason = "Recording storage quota exceeded";
+    if (storageReason === "disk-full") reason = "ENOSPC";
     if (event.status === "complete" || event.status === "interrupted") {
       set({
         status: "idle",
         recordingId: null,
-        error: event.status === "interrupted" && !startPending ? RECORDING_INTERRUPTED : null,
+        error:
+          event.status === "interrupted" && !startPending
+            ? (reason ?? RECORDING_INTERRUPTED)
+            : null,
+        reason: storageReason,
       });
     } else {
-      set({ status: event.status, recordingId: event.recordingId, error: null });
+      set({
+        status: event.status,
+        recordingId: event.recordingId,
+        error: event.status === "stopping" ? reason : null,
+        reason: event.status === "stopping" ? storageReason : undefined,
+      });
     }
   };
   const failure = (error: unknown) =>

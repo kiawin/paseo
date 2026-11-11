@@ -2273,6 +2273,19 @@ export const fr: TranslationResources = {
       deleteFailed: "Échec de la suppression de l’artefact",
     },
     recordings: {
+      recoveryDisabled:
+        "La récupération est désactivée lorsque le verrouillage d’instance unique est désactivé.",
+      recoveryProblem:
+        "Certains enregistrements n’ont pas pu être récupérés. Résolvez le problème de stockage et redémarrez Paseo.",
+      unpublishedMetadata: "Un fichier de métadonnées inachevé a été conservé.",
+      eventLogUnreadable: "Le journal des événements est illisible.",
+      recoveryWriteFailed:
+        "La récupération n’a pas pu être enregistrée ; libérez de l’espace et redémarrez Paseo.",
+
+      storageQuota:
+        "Quota d’enregistrement atteint. Supprimez un enregistrement pour libérer de l’espace.",
+      diskFull: "Le disque est plein. Libérez de l’espace pour continuer.",
+
       eventUntimed: "Cet événement n’a pas de temps d’enregistrement.",
       missingView: "Aucune vidéo capturée pour cette vue.",
 

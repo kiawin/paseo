@@ -10243,6 +10243,9 @@ export class Session {
     this.isCleanedUp = true;
     this.unsubscribeSetupObservation();
     await this.delivery.close();
+    await this.recordingShares.close().catch((error: unknown) => {
+      this.sessionLogger.error({ err: error }, "Recording share cleanup failed");
+    });
 
     if (this.unsubscribeAgentEvents) {
       this.unsubscribeAgentEvents();

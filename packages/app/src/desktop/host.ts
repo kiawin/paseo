@@ -188,11 +188,13 @@ export interface DesktopRecordingMetadata {
   status: "recording" | "complete" | "interrupted";
   title?: string;
   captureErrors?: string[];
+  recoveryWarnings?: string[];
 }
 export interface DesktopRecordingState {
   recordingId: string;
   browserId: string;
   status: "starting" | "recording" | "stopping" | "complete" | "interrupted";
+  reason?: "quota" | "disk-full";
 }
 export interface DesktopRecordingMediaSegment {
   streamId: string;
@@ -209,9 +211,11 @@ export interface DesktopRecordingBridge {
   active(input: { browserId: string }): Promise<DesktopRecordingState | null>;
   start(input: { browserId: string }): Promise<{ recordingId: string; status: string }>;
   stop(input: { recordingId: string }): Promise<void>;
-  list(input: {
-    workspaceId: string;
-  }): Promise<{ recordings: DesktopRecordingMetadata[]; incomplete: string[] }>;
+  list(input: { workspaceId: string }): Promise<{
+    recordings: DesktopRecordingMetadata[];
+    incomplete: string[];
+    recoveryError?: string | null;
+  }>;
   listMedia(input: { recordingId: string; cursor: string | null; limit: number }): Promise<{
     segments: DesktopRecordingMediaSegment[];
     incomplete: Array<{ streamId: string | null; segmentId: string | null; reason: string }>;

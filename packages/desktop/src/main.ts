@@ -312,10 +312,13 @@ if (forcedUserDataDir) {
 export const browserRecordingStore = new BrowserRecordingStore(
   path.join(app.getPath("userData"), "browser-recordings"),
 );
+let browserRecordingRecoveryError: string | null = null;
 export const browserVideoCaptureManager = createVideoCaptureManager({
   coordinator: browserRecordingLifecycle.coordinator,
   store: browserRecordingStore,
   onError: (error) => log.error("[browser-recording] video error", error),
+  onStorageError: (recordingId, error) =>
+    browserRecordingBridge?.reportStorageFailure(recordingId, error),
 });
 function recordingResponseBody(result: unknown): { body: string; base64Encoded: boolean } {
   if (
@@ -340,6 +343,7 @@ browserRecordingBridge = createRecordingBridge({
   registry: getPaseoBrowserWebviewRegistry(),
   coordinator: browserRecordingLifecycle.coordinator,
   store: browserRecordingStore,
+  getRecoveryError: () => browserRecordingRecoveryError,
   video: browserVideoCaptureManager,
   ensureInteractionReady: async (id) => {
     await browserRecordingLifecycle.ready(id);
@@ -1010,6 +1014,15 @@ async function bootstrap(): Promise<void> {
   }
 
   await app.whenReady();
+  if (!DISABLE_SINGLE_INSTANCE_LOCK) {
+    await browserRecordingStore.recover().catch((error: unknown) => {
+      browserRecordingRecoveryError = error instanceof Error ? error.message : String(error);
+      log.error("[browser-recording] recovery failed", error);
+    });
+  } else {
+    browserRecordingRecoveryError = "single-instance-lock-disabled";
+    log.warn("[browser-recording] recovery skipped because single-instance locking is disabled");
+  }
 
   const appDistDir = getAppDistDir();
   protocol.handle(APP_SCHEME, (request) => {

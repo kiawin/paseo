@@ -2249,6 +2249,16 @@ export const en = {
       deleteFailed: "Failed to delete artifact",
     },
     recordings: {
+      recoveryDisabled: "Recording recovery is disabled while single-instance locking is off.",
+      recoveryProblem:
+        "Some recordings could not be recovered. Resolve the storage issue and restart Paseo.",
+      unpublishedMetadata: "An unfinished metadata file was preserved.",
+      eventLogUnreadable: "The event log could not be read.",
+      recoveryWriteFailed: "Recovery could not be saved; free space and restart Paseo.",
+
+      storageQuota: "Recording storage quota reached. Delete a recording to make room.",
+      diskFull: "Disk is full. Free space to continue recording.",
+
       eventUntimed: "This event has no recording time.",
       missingView: "No video was captured for this view.",
 

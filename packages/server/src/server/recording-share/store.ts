@@ -5,6 +5,7 @@ import {
   mkdir,
   open,
   readFile,
+  readlink,
   readdir,
   rename,
   rm,
@@ -35,6 +36,7 @@ interface PendingShare {
   recordingId: string;
   manifest: Manifest;
   directory: string;
+  marker: string;
   completedSegments: Set<string>;
   idleTimer: ReturnType<typeof setTimeout> | undefined;
   expired: () => void;
@@ -65,10 +67,13 @@ interface Upload {
 const rootInitializations = new Map<string, Promise<void>>();
 const rootLocks = new Map<string, Promise<void>>();
 const SHARE_QUOTA_BYTES = 4 * 1024 * 1024 * 1024;
+const MAX_SHARE_BYTES = 1024 * 1024 * 1024;
 export const RECORDING_UPLOAD_CHUNK_BYTES = 256 * 1024;
 export const RECORDING_UPLOAD_QUEUE_BYTES = TRANSFER_WINDOW_BYTES + RECORDING_UPLOAD_CHUNK_BYTES;
 
 async function withRootLock<T>(root: string, task: () => Promise<T>): Promise<T> {
+  // This serializes stores in one process. Separate daemons can briefly
+  // reserve concurrently; each share remains capped at MAX_SHARE_BYTES.
   const previous = rootLocks.get(root) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => {
@@ -104,8 +109,18 @@ async function reservedBytes(root: string): Promise<number> {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
     }
-    if (!content) throw new Error("Recording share metadata is incomplete");
-    total += reservedManifestBytes(content);
+    if (!content) {
+      if (!(await hasLiveShareMarker(root, entry.name)))
+        throw new Error("Recording share metadata is incomplete");
+      total += MAX_SHARE_BYTES;
+    } else {
+      try {
+        total += reservedManifestBytes(content);
+      } catch (error) {
+        if (!(await hasLiveShareMarker(root, entry.name))) throw error;
+        total += MAX_SHARE_BYTES;
+      }
+    }
     if (total > SHARE_QUOTA_BYTES) throw new Error("Recording share quota exceeded");
   }
   return total;
@@ -127,6 +142,50 @@ function reservedManifestBytes(content: string): number {
   }, 0);
 }
 
+const liveShares = new Set<string>();
+const shareName = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const markerName =
+  /^\.active-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})-([1-9][0-9]*)(?:-(ns[0-9]+|host|unknown))?$/i;
+const liveKey = (root: string, id: string) => JSON.stringify([root, id]);
+let namespacePromise: Promise<string> | undefined;
+function processNamespace(): Promise<string> {
+  if (process.platform !== "linux") return Promise.resolve("host");
+  return (namespacePromise ??= readlink("/proc/self/ns/pid")
+    .then((value) => {
+      const id = /^pid:\[([0-9]+)\]$/.exec(value)?.[1];
+      return id ? `ns${id}` : "unknown";
+    })
+    .catch(() => "unknown"));
+}
+function processAlive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+function markerIsLive(
+  root: string,
+  id: string,
+  match: RegExpExecArray,
+  ownNamespace: string,
+): boolean {
+  const namespace = match[3] ?? "unknown";
+  // A PID from a different or unknown namespace cannot be checked safely.
+  if (namespace === "unknown" || ownNamespace === "unknown" || namespace !== ownNamespace)
+    return true;
+  const pid = Number(match[2]);
+  return pid === process.pid ? liveShares.has(liveKey(root, id)) : processAlive(pid);
+}
+async function hasLiveShareMarker(root: string, id: string): Promise<boolean> {
+  const namespace = await processNamespace();
+  return (await readdir(root)).some((name) => {
+    const match = markerName.exec(name);
+    return match?.[1] === id && markerIsLive(root, id, match, namespace);
+  });
+}
 function initializeRoot(root: string): Promise<void> {
   const existing = rootInitializations.get(root);
   if (existing) return existing;
@@ -136,16 +195,6 @@ function initializeRoot(root: string): Promise<void> {
     if (!info.isDirectory() || info.isSymbolicLink())
       throw new Error("Unsafe recording share directory");
     if (process.platform !== "win32") await chmod(root, 0o700);
-    for (const entry of await readdir(root, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(entry.name)) continue;
-      const directory = join(root, entry.name);
-      try {
-        await lstat(join(directory, "manifest.json"));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        await rm(directory, { recursive: true, force: true });
-      }
-    }
   })();
   rootInitializations.set(root, initialization);
   void initialization.catch(() => {
@@ -153,12 +202,63 @@ function initializeRoot(root: string): Promise<void> {
   });
   return initialization;
 }
+async function hasCompletedManifest(directory: string): Promise<boolean> {
+  try {
+    await lstat(join(directory, "manifest.json"));
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+async function recoverRoot(root: string): Promise<void> {
+  await initializeRoot(root);
+  await withRootLock(root, async () => {
+    const namespace = await processNamespace();
+    const entries = await readdir(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !shareName.test(entry.name)) continue;
+      const directory = join(root, entry.name);
+      if (await hasCompletedManifest(directory)) continue;
+      // A marker is created before its share directory. Read names again so a
+      // concurrent daemon's marker is visible even if the first scan raced it.
+      const markers = (await readdir(root))
+        .map((name) => ({ name, match: markerName.exec(name) }))
+        .filter((item) => item.match?.[1] === entry.name);
+      const active = markers.some(({ match }) => markerIsLive(root, entry.name, match!, namespace));
+      if (active || (await hasCompletedManifest(directory))) continue;
+      await rm(directory, { recursive: true, force: true });
+      for (const marker of markers)
+        await unlink(join(root, marker.name)).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+    }
+    for (const entry of entries) {
+      const match = markerName.exec(entry.name);
+      if (!match || !entry.isFile()) continue;
+      const [, id] = match;
+      if (markerIsLive(root, id, match, namespace)) continue;
+      const directory = join(root, id);
+      try {
+        await lstat(directory);
+        if (!(await hasCompletedManifest(directory))) continue;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      await unlink(join(root, entry.name)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    }
+  });
+}
 
 /** Private, source-owned staging for a recording selected by an authorized caller. */
 export class RecordingShareStore {
   private readonly root: string;
   private readonly pending = new Map<string, PendingShare>();
   private readonly uploads = new Map<string, Upload>();
+  private readonly closeController = new AbortController();
+  private readonly startWaiters = new Set<() => void>();
   private starting = 0;
 
   constructor(
@@ -166,6 +266,23 @@ export class RecordingShareStore {
     private readonly onError: (error: unknown) => void = () => {},
   ) {
     this.root = join(paseoHome, "recording-shares");
+  }
+
+  async recover(): Promise<void> {
+    await recoverRoot(this.root);
+  }
+  async close(): Promise<void> {
+    this.closeController.abort();
+    if (this.starting) await new Promise<void>((resolve) => this.startWaiters.add(resolve));
+    const results = await Promise.allSettled([...this.pending.keys()].map((id) => this.cancel(id)));
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failures.length)
+      throw new AggregateError(
+        failures.map((result) => result.reason),
+        "Recording share cleanup failed",
+      );
   }
 
   async begin(
@@ -176,6 +293,8 @@ export class RecordingShareStore {
     signal: AbortSignal,
     expired: () => void,
   ): Promise<string> {
+    if (this.closeController.signal.aborted) throw new Error("Recording share store is closed");
+    signal = AbortSignal.any([signal, this.closeController.signal]);
     if (this.pending.size + this.starting >= 32)
       throw new Error("Too many active recording shares");
     if (
@@ -189,12 +308,12 @@ export class RecordingShareStore {
       )
     )
       throw new Error("Reserved recording segment identifier");
-    if (manifest.segments.reduce((sum, segment) => sum + segment.size, 0) > 1024 * 1024 * 1024)
+    if (manifest.segments.reduce((sum, segment) => sum + segment.size, 0) > MAX_SHARE_BYTES)
       throw new Error("Recording share exceeds size limit");
     this.starting++;
     try {
       signal.throwIfAborted();
-      await initializeRoot(this.root);
+      await this.recover();
       return await withRootLock(this.root, async () => {
         signal.throwIfAborted();
         const rootInfo = await lstat(this.root);
@@ -208,13 +327,26 @@ export class RecordingShareStore {
           throw new Error("Recording share quota exceeded");
         const shareId = randomUUID();
         const directory = join(this.root, shareId);
-        await mkdir(directory, { mode: 0o700 });
+        const marker = join(
+          this.root,
+          `.active-${shareId}-${process.pid}-${await processNamespace()}`,
+        );
+        await writeFile(marker, "", { flag: "wx", mode: 0o600 });
+        liveShares.add(liveKey(this.root, shareId));
+        try {
+          await mkdir(directory, { mode: 0o700 });
+        } catch (error) {
+          liveShares.delete(liveKey(this.root, shareId));
+          await unlink(marker).catch(() => {});
+          throw error;
+        }
         const entry: PendingShare = {
           source,
           recipientAgentId,
           recordingId,
           manifest,
           directory,
+          marker,
           completedSegments: new Set(),
           idleTimer: undefined,
           expired,
@@ -235,12 +367,18 @@ export class RecordingShareStore {
         } catch (error) {
           if (entry.idleTimer) clearTimeout(entry.idleTimer);
           this.pending.delete(shareId);
+          liveShares.delete(liveKey(this.root, shareId));
           await rm(directory, { recursive: true, force: true });
+          await unlink(marker).catch(() => {});
           throw error;
         }
       });
     } finally {
       this.starting--;
+      if (!this.starting) {
+        for (const resolve of this.startWaiters) resolve();
+        this.startWaiters.clear();
+      }
     }
   }
 
@@ -275,7 +413,14 @@ export class RecordingShareStore {
     await Promise.allSettled(uploads.map((upload) => upload.queue));
     await Promise.allSettled(uploads.map(async (upload) => (await upload.ready).close()));
     for (const upload of uploads) this.uploads.delete(upload.requestId);
-    await withRootLock(this.root, () => rm(entry.directory, { recursive: true, force: true }));
+    try {
+      await withRootLock(this.root, () => rm(entry.directory, { recursive: true, force: true }));
+      await unlink(entry.marker).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    } finally {
+      liveShares.delete(liveKey(this.root, shareId));
+    }
   }
 
   private armShareIdleTimer(shareId: string, share: PendingShare): void {
@@ -486,6 +631,8 @@ export class RecordingShareStore {
         if (share.cancelRequested) throw new Error("Recording share was cancelled");
         await rename(join(share.directory, "manifest.pending.json"), destination);
         this.pending.delete(shareId);
+        liveShares.delete(liveKey(this.root, shareId));
+        await unlink(share.marker).catch(this.onError);
         if (process.platform !== "win32") {
           const directory = await open(share.directory, "r");
           try {

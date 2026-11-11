@@ -32,6 +32,7 @@ const metadataSchema = z
     status: z.enum(["recording", "complete", "interrupted"]),
     title: z.string().max(1024).optional(),
     captureErrors: z.array(z.string().max(1024)).max(100).optional(),
+    recoveryWarnings: z.array(z.string().max(1024)).max(10).optional(),
   })
   .passthrough();
 const eventSchema = z
@@ -85,8 +86,16 @@ interface Options {
   maxEventReadBytes?: number;
   maxQueuedBytes?: number;
   maxQueuedOperations?: number;
+  maxStorageBytes?: number;
 }
 const noFollow = fsConstants.O_NOFOLLOW ?? 0;
+function isCorruptMetadata(error: unknown): boolean {
+  return (
+    (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") ||
+    error instanceof SyntaxError ||
+    error instanceof z.ZodError
+  );
+}
 async function pathExists(path: string): Promise<boolean> {
   try {
     await lstat(path);
@@ -96,8 +105,46 @@ async function pathExists(path: string): Promise<boolean> {
     throw error;
   }
 }
+async function survivingBytes(paths: string[]): Promise<number> {
+  let total = 0;
+  for (const path of paths) {
+    try {
+      const info = await lstat(path);
+      if (info.isFile() && !info.isSymbolicLink()) total += info.size;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return total;
+}
 const sharedQueues = new Map<string, Promise<void>>();
 const sharedQueueCounts = new Map<string, number>();
+interface QuotaState {
+  used: number;
+  reserved: number;
+  ready: Promise<void>;
+}
+const sharedQuotaStates = new Map<string, QuotaState>();
+async function measureTree(path: string): Promise<number> {
+  let bytes = 0;
+  const directories = [path];
+  let entriesSeen = 0;
+  while (directories.length) {
+    const current = directories.pop()!;
+    const entries = await opendir(current);
+    for await (const entry of entries) {
+      if (++entriesSeen > 1_000_000) throw new Error("Recording storage scan limit exceeded");
+      if (entry.isSymbolicLink()) continue;
+      const child = join(current, entry.name);
+      if (entry.isDirectory()) directories.push(child);
+      else if (entry.isFile()) {
+        const stat = await lstat(child);
+        if (stat.isFile() && !stat.isSymbolicLink()) bytes += stat.size;
+      }
+    }
+  }
+  return bytes;
+}
 const sharedQueuedBytes = new Map<string, number>();
 const decodeUtf8 = (bytes: Uint8Array): string =>
   new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -181,7 +228,9 @@ export class BrowserRecordingStore {
   private readonly maxEventReadBytes: number;
   private readonly maxQueuedBytes: number;
   private readonly maxQueuedOperations: number;
+  private readonly maxStorageBytes: number;
   private readonly queuedOperations = sharedQueueCounts;
+  private readonly recoveryOverrides = new Map<string, RecordingMetadata>();
   constructor(root: string, options: Options = {}) {
     if (!isAbsolute(root) || resolve(root) === parse(resolve(root)).root)
       throw new Error("Recording root must be an absolute non-root directory");
@@ -191,12 +240,14 @@ export class BrowserRecordingStore {
     this.maxEventReadBytes = options.maxEventReadBytes ?? 64 * 1024 * 1024;
     this.maxQueuedBytes = options.maxQueuedBytes ?? 128 * 1024 * 1024;
     this.maxQueuedOperations = options.maxQueuedOperations ?? 1024;
+    this.maxStorageBytes = options.maxStorageBytes ?? 4 * 1024 * 1024 * 1024;
     for (const limit of [
       this.maxMediaSegmentBytes,
       this.maxEventBytes,
       this.maxEventReadBytes,
       this.maxQueuedBytes,
       this.maxQueuedOperations,
+      this.maxStorageBytes,
     ]) {
       if (!Number.isSafeInteger(limit) || limit <= 0)
         throw new Error("Invalid recording storage limit");
@@ -209,6 +260,45 @@ export class BrowserRecordingStore {
       this.maxQueuedOperations > 1024
     )
       throw new Error("Recording storage limit is too large");
+  }
+  private async quotaState(): Promise<QuotaState> {
+    const existing = sharedQuotaStates.get(this.root);
+    if (existing) {
+      await existing.ready;
+      return existing;
+    }
+    await this.ensureDirectory(this.root);
+    let state = sharedQuotaStates.get(this.root);
+    if (!state) {
+      state = { used: 0, reserved: 0, ready: Promise.resolve() };
+      const current = state;
+      state.ready = measureTree(this.root).then((bytes) => {
+        current.used = bytes;
+        return undefined;
+      });
+      sharedQuotaStates.set(this.root, state);
+      void state.ready.catch(() => {
+        if (sharedQuotaStates.get(this.root) === current) sharedQuotaStates.delete(this.root);
+      });
+    }
+    await state.ready;
+    return state;
+  }
+  private async reserveStorage(
+    bytes: number,
+    allowOverQuota = false,
+  ): Promise<(delta?: number) => void> {
+    const state = await this.quotaState();
+    if (!allowOverQuota && state.used + state.reserved + bytes > this.maxStorageBytes)
+      throw new Error("Recording storage quota exceeded");
+    state.reserved += bytes;
+    let released = false;
+    return (delta = bytes) => {
+      if (released) return;
+      released = true;
+      state.reserved -= bytes;
+      state.used = Math.max(0, state.used + delta);
+    };
   }
   private path(id: string): string {
     return join(this.root, identifier.parse(id));
@@ -310,8 +400,20 @@ export class BrowserRecordingStore {
       await handle.writeFile(bytes);
       await handle.sync();
     } catch (error) {
-      await handle.close();
-      await unlink(temporary).catch(() => {});
+      const cleanupErrors: unknown[] = [];
+      await handle.close().catch((failure: unknown) => cleanupErrors.push(failure));
+      let retainedBytes = 0;
+      await unlink(temporary).catch((failure: unknown) => {
+        if ((failure as NodeJS.ErrnoException).code !== "ENOENT") {
+          retainedBytes = bytes.length;
+          cleanupErrors.push(failure);
+        }
+      });
+      if (cleanupErrors.length)
+        throw Object.assign(
+          new AggregateError([error, ...cleanupErrors], "Recording temporary cleanup failed"),
+          { retainedBytes },
+        );
       throw error;
     }
     await handle.close();
@@ -332,15 +434,24 @@ export class BrowserRecordingStore {
     const encoded = Buffer.from(JSON.stringify(parsed));
     if (encoded.length > 1024 * 1024) throw new Error("Recording metadata exceeds size limit");
     await this.queue(parsed.recordingId, async () => {
-      await this.ensureDirectory(this.root);
-      const path = this.path(parsed.recordingId);
-      await mkdir(path, { mode: 0o700 });
-      if (process.platform !== "win32") await chmod(path, 0o700);
-      await this.syncDirectory(this.root);
-      await this.writeAtomic(path, "metadata.json", encoded);
+      const finish = await this.reserveStorage(encoded.length);
+      let created = false;
+      try {
+        await this.ensureDirectory(this.root);
+        const path = this.path(parsed.recordingId);
+        await mkdir(path, { mode: 0o700 });
+        created = true;
+        if (process.platform !== "win32") await chmod(path, 0o700);
+        await this.syncDirectory(this.root);
+        await this.writeAtomic(path, "metadata.json", encoded);
+      } finally {
+        finish(created ? encoded.length : 0);
+      }
     });
   }
   async readMetadata(id: string): Promise<RecordingMetadata> {
+    const override = this.recoveryOverrides.get(identifier.parse(id));
+    if (override) return override;
     const path = await this.recordingDirectory(id);
     const parsed = metadataSchema.parse(
       JSON.parse(decodeUtf8(await this.readFile(join(path, "metadata.json"), 1024 * 1024))),
@@ -377,6 +488,103 @@ export class BrowserRecordingStore {
     return { recordings, incomplete };
   }
 
+  private async eventTailWarning(path: string): Promise<string | null> {
+    try {
+      const handle = await open(join(path, "events.jsonl"), fsConstants.O_RDONLY | noFollow);
+      try {
+        const info = await handle.stat();
+        if (!info.isFile() || info.nlink !== 1) return "event-log-unreadable";
+        if (!info.size) return null;
+        const last = Buffer.alloc(1);
+        const read = await handle.read(last, 0, 1, info.size - 1);
+        return read.bytesRead !== 1 || last[0] !== 10 ? "incomplete-event-tail" : null;
+      } finally {
+        await handle.close();
+      }
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ENOENT" ? null : "event-log-unreadable";
+    }
+  }
+  private async recoverRecording(id: string): Promise<void> {
+    let metadata: RecordingMetadata;
+    try {
+      metadata = await this.readMetadata(id);
+    } catch (error) {
+      if (isCorruptMetadata(error)) return;
+      throw error;
+    }
+    const errors = new Set(metadata.captureErrors ?? []);
+    const warnings = new Set(metadata.recoveryWarnings ?? []);
+    const needsPersist = this.recoveryOverrides.has(id);
+    if (needsPersist) warnings.delete("recovery-write-failed");
+    const addWarning = (warning: string) => {
+      warnings.add(warning);
+      if (errors.size < 100) errors.add(warning);
+    };
+    const path = await this.recordingDirectory(id);
+    const names = await readdir(path);
+    if (names.some((name) => name.startsWith(".") && name.endsWith(".tmp")))
+      addWarning("unpublished-metadata");
+    const tailWarning = await this.eventTailWarning(path);
+    if (tailWarning) addWarning(tailWarning);
+    const interrupted = metadata.status === "recording";
+    if (
+      !needsPersist &&
+      !interrupted &&
+      errors.size === (metadata.captureErrors?.length ?? 0) &&
+      warnings.size === (metadata.recoveryWarnings?.length ?? 0)
+    )
+      return;
+    const patch = {
+      status: interrupted ? "interrupted" : metadata.status,
+      ...(interrupted ? { endedAt: Date.now() } : {}),
+      captureErrors: [...errors].slice(0, 100),
+      recoveryWarnings: [...warnings].slice(0, 10),
+    } as const;
+    try {
+      await this.updateMetadata(id, patch);
+    } catch (error) {
+      this.recoveryOverrides.set(id, {
+        ...metadata,
+        ...patch,
+        recoveryWarnings: [
+          ...new Set([...patch.recoveryWarnings.slice(0, 9), "recovery-write-failed"]),
+        ],
+      });
+      throw error;
+    }
+  }
+  async recover(): Promise<void> {
+    try {
+      await this.existingDirectory(this.root);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    const entries = await readdir(this.root, { withFileTypes: true });
+    if (entries.length > 10_000) throw new Error("Recording list exceeds its limit");
+    const failures: unknown[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      if (/^\.deleted-[a-zA-Z0-9_-]{1,128}-[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(entry.name)) {
+        try {
+          await rm(join(this.root, entry.name), { recursive: true });
+          await this.syncDirectory(this.root);
+        } catch (error) {
+          failures.push(error);
+        }
+      } else if (identifier.safeParse(entry.name).success) {
+        try {
+          await this.recoverRecording(entry.name);
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+    }
+    if (failures.length)
+      throw new AggregateError(failures, "Recording recovery could not save metadata");
+  }
+
   private async recordingEntryExists(id: string): Promise<boolean> {
     try {
       const entry = await lstat(this.path(id));
@@ -390,17 +598,23 @@ export class BrowserRecordingStore {
   async delete(id: string): Promise<void> {
     identifier.parse(id);
     await this.queue(id, async () => {
+      const quota = await this.quotaState().catch(() => null);
       const directory = await this.recordingDirectory(id);
+      const bytes = quota ? await measureTree(directory).catch(() => null) : null;
       const tombstone = join(this.root, `.deleted-${id}-${randomUUID()}`);
       await rename(directory, tombstone);
       await this.syncDirectory(this.root);
       await rm(tombstone, { recursive: true });
+      this.recoveryOverrides.delete(id);
+      if (quota && bytes !== null) quota.used = Math.max(0, quota.used - bytes);
       await this.syncDirectory(this.root);
     });
   }
   async updateMetadata(
     id: string,
-    patch: Partial<Pick<RecordingMetadata, "status" | "title" | "endedAt" | "captureErrors">>,
+    patch: Partial<
+      Pick<RecordingMetadata, "status" | "title" | "endedAt" | "captureErrors" | "recoveryWarnings">
+    >,
   ): Promise<void> {
     identifier.parse(id);
     const parsedPatch = z
@@ -409,6 +623,7 @@ export class BrowserRecordingStore {
         title: metadataSchema.shape.title,
         endedAt: metadataSchema.shape.endedAt,
         captureErrors: metadataSchema.shape.captureErrors,
+        recoveryWarnings: metadataSchema.shape.recoveryWarnings,
       })
       .strict()
       .parse(patch);
@@ -422,7 +637,41 @@ export class BrowserRecordingStore {
       const encoded = Buffer.from(JSON.stringify(next));
       if (encoded.length > 1024 * 1024) throw new Error("Recording metadata exceeds size limit");
       const path = await this.recordingDirectory(id);
-      await this.writeAtomic(path, "metadata.json", encoded);
+      const oldSize = (await lstat(join(path, "metadata.json"))).size;
+      const existingNames = new Set(await readdir(path));
+      const delta = encoded.length - oldSize;
+      const essential =
+        allowed.status !== undefined ||
+        allowed.endedAt !== undefined ||
+        allowed.captureErrors !== undefined ||
+        allowed.recoveryWarnings !== undefined;
+      const finish = await this.reserveStorage(Math.max(0, delta), essential).catch(
+        (error: unknown) => {
+          if (essential) return () => {};
+          throw error;
+        },
+      );
+      let written = false;
+      let failedCharge = encoded.length;
+      try {
+        await this.writeAtomic(path, "metadata.json", encoded);
+        written = true;
+        this.recoveryOverrides.delete(id);
+      } catch (error) {
+        try {
+          const names = (await readdir(path)).filter(
+            (name) => name.startsWith(".") && name.endsWith(".tmp") && !existingNames.has(name),
+          );
+          const afterSize = (await lstat(join(path, "metadata.json"))).size;
+          failedCharge =
+            afterSize - oldSize + (await survivingBytes(names.map((name) => join(path, name))));
+        } catch {
+          /* Keep the conservative charge when accounting is unavailable. */
+        }
+        throw error;
+      } finally {
+        finish(written ? delta : failedCharge);
+      }
     });
   }
   async appendEvent(id: string, event: StoredRecordingEvent): Promise<void> {
@@ -435,40 +684,48 @@ export class BrowserRecordingStore {
     const release = this.reserveBytes(bytes.length);
     try {
       await this.queue(id, async () => {
-        const path = await this.recordingDirectory(id);
-        const handle = await open(
-          join(path, "events.jsonl"),
-          fsConstants.O_CREAT | fsConstants.O_RDWR | fsConstants.O_APPEND | noFollow,
-          0o600,
-        );
+        const finish = await this.reserveStorage(bytes.length);
+        let charge = 0;
         try {
-          const info = await handle.stat();
-          if (!info.isFile() || info.nlink !== 1)
-            throw new Error("Recording event file is not safe");
-          if (process.platform !== "win32") await handle.chmod(0o600);
-          if (info.size) {
-            const last = Buffer.alloc(1);
-            const read = await handle.read(last, 0, 1, info.size - 1);
-            if (read.bytesRead !== 1 || last[0] !== 10)
-              throw new Error("Recording event file has an incomplete trailing record");
-          }
+          const path = await this.recordingDirectory(id);
+          const handle = await open(
+            join(path, "events.jsonl"),
+            fsConstants.O_CREAT | fsConstants.O_RDWR | fsConstants.O_APPEND | noFollow,
+            0o600,
+          );
           try {
-            await handle.writeFile(bytes);
-            // Per-record sync preserves the completed prefix on a process crash;
-            // queue limits are surfaced to the caller when storage cannot keep up.
-            await handle.sync();
-          } catch (error) {
-            try {
-              await handle.truncate(info.size);
-              await handle.sync();
-            } catch (rollbackError) {
-              throw appendRollbackFailure(error, rollbackError);
+            const info = await handle.stat();
+            if (!info.isFile() || info.nlink !== 1)
+              throw new Error("Recording event file is not safe");
+            if (process.platform !== "win32") await handle.chmod(0o600);
+            if (info.size) {
+              const last = Buffer.alloc(1);
+              const read = await handle.read(last, 0, 1, info.size - 1);
+              if (read.bytesRead !== 1 || last[0] !== 10)
+                throw new Error("Recording event file has an incomplete trailing record");
             }
-            throw error;
+            try {
+              charge = bytes.length;
+              await handle.writeFile(bytes);
+              // Per-record sync preserves the completed prefix on a process crash;
+              // queue limits are surfaced to the caller when storage cannot keep up.
+              await handle.sync();
+            } catch (error) {
+              try {
+                await handle.truncate(info.size);
+                await handle.sync();
+                charge = 0;
+              } catch (rollbackError) {
+                throw appendRollbackFailure(error, rollbackError);
+              }
+              throw error;
+            }
+            if (info.size === 0) await this.syncDirectory(path);
+          } finally {
+            await handle.close();
           }
-          if (info.size === 0) await this.syncDirectory(path);
         } finally {
-          await handle.close();
+          finish(charge);
         }
       });
     } finally {
@@ -645,24 +902,62 @@ export class BrowserRecordingStore {
         byteLength: bytes.length,
         sha256: createHash("sha256").update(bytes).digest("hex"),
       });
+      const infoBytes = Buffer.from(JSON.stringify(stored));
       await this.queue(id, async () => {
-        const path = await this.mediaDirectory(id, info.streamId, true);
-        const dataTemp = await this.writeTemporary(path, bytes);
+        const finish = await this.reserveStorage(bytes.length + infoBytes.length);
+        let charge = 0;
+        let completed = false;
+        let path: string | undefined;
+        let dataTemp: string | undefined;
         let infoTemp: string | undefined;
-        let published = false;
+        let attemptedPublication = false;
+        let dataPublished = false;
+        let retainedUnknown = 0;
         try {
-          infoTemp = await this.writeTemporary(path, Buffer.from(JSON.stringify(stored)));
-          await link(dataTemp, join(path, `${info.segmentId}.bin`));
-          published = true;
-          await link(infoTemp, join(path, `${info.segmentId}.json`));
-        } catch (error) {
-          if (published) await unlink(join(path, `${info.segmentId}.bin`)).catch(() => {});
-          throw error;
+          path = await this.mediaDirectory(id, info.streamId, true);
+          const dataPath = join(path, `${info.segmentId}.bin`);
+          const infoPath = join(path, `${info.segmentId}.json`);
+          if ((await pathExists(dataPath)) || (await pathExists(infoPath)))
+            throw new Error("Media segment already exists");
+          try {
+            dataTemp = await this.writeTemporary(path, bytes);
+            infoTemp = await this.writeTemporary(path, infoBytes);
+            attemptedPublication = true;
+            await link(dataTemp, dataPath);
+            dataPublished = true;
+            await link(infoTemp, infoPath);
+          } catch (error) {
+            retainedUnknown =
+              typeof (error as { retainedBytes?: unknown })?.retainedBytes === "number"
+                ? (error as { retainedBytes: number }).retainedBytes
+                : 0;
+            if (dataPublished) await unlink(dataPath).catch(() => {});
+            throw error;
+          } finally {
+            if (dataTemp) await unlink(dataTemp).catch(() => {});
+            if (infoTemp) await unlink(infoTemp).catch(() => {});
+          }
+          await this.syncDirectory(path);
+          completed = true;
         } finally {
-          await unlink(dataTemp).catch(() => {});
-          if (infoTemp) await unlink(infoTemp).catch(() => {});
+          if (completed) charge = bytes.length + infoBytes.length;
+          else if (path) {
+            const candidates = [dataTemp, infoTemp].filter((value): value is string =>
+              Boolean(value),
+            );
+            if (attemptedPublication)
+              candidates.push(
+                join(path, `${info.segmentId}.bin`),
+                join(path, `${info.segmentId}.json`),
+              );
+            try {
+              charge = retainedUnknown + (await survivingBytes(candidates));
+            } catch {
+              charge = 2 * (bytes.length + infoBytes.length);
+            }
+          } else charge = retainedUnknown;
+          finish(charge);
         }
-        await this.syncDirectory(path);
       });
     } finally {
       release();

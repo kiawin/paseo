@@ -28,6 +28,7 @@ interface Options {
   video: { start: (id: string) => Promise<void> };
   ensureInteractionReady: (contentsId: number) => Promise<void | boolean>;
   isTrustedHost: (senderId: number, url?: string) => boolean;
+  getRecoveryError?: () => string | null;
   notify: (senderId: number, value: unknown) => void;
   onError?: (error: unknown) => void;
   startupTimeoutMs?: number;
@@ -44,6 +45,7 @@ interface Options {
   ) => Promise<{ postData: string }>;
 }
 interface ActiveRecording {
+  recordingId: string;
   owner: number;
   browserId: string;
   browserIds: Set<string>;
@@ -59,6 +61,8 @@ interface ActiveRecording {
   stopping: boolean;
   started: boolean;
   interrupted: boolean;
+  failureReason?: "quota" | "disk-full";
+  failureDescription?: string;
   verifiedDocuments: Set<string>;
   finalization?: Promise<void>;
   stopped: Promise<void>;
@@ -86,6 +90,30 @@ const listMediaInput = z
     limit: z.number().int().positive().max(100),
   })
   .strict();
+function describeCaptureFailure(error: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  const visit = (value: unknown, depth: number) => {
+    if (seen.has(value) || parts.length >= 8 || depth > 3) return;
+    seen.add(value);
+    const code =
+      value instanceof Error && typeof (value as NodeJS.ErrnoException).code === "string"
+        ? `${(value as NodeJS.ErrnoException).code}: `
+        : "";
+    parts.push(`${code}${String(value)}`.slice(0, 256));
+    if (value instanceof AggregateError)
+      for (const nested of value.errors) visit(nested, depth + 1);
+    else if (value instanceof Error && value.cause) visit(value.cause, depth + 1);
+  };
+  visit(error, 0);
+  return parts.join(": ").slice(0, 1024);
+}
+function storageFailureReason(error: unknown): "quota" | "disk-full" | null {
+  const description = describeCaptureFailure(error);
+  if (/\b(?:ENOSPC|EDQUOT)\b|no space left on device/i.test(description)) return "disk-full";
+  if (/recording (?:storage )?quota (?:exceeded|reached)/i.test(description)) return "quota";
+  return null;
+}
 const mediaInput = z
   .object({
     recordingId: identifier,
@@ -124,7 +152,27 @@ export function createRecordingBridge(options: Options) {
   const starting = new Map<string, string>();
   const notifyState = (recordingId: string, state: ActiveRecording, status: string) => {
     for (const browserId of state.browserIds)
-      options.notify(state.owner, { recordingId, browserId, status });
+      options.notify(state.owner, {
+        recordingId,
+        browserId,
+        status,
+        ...(state.failureReason && (status === "stopping" || status === "interrupted")
+          ? { reason: state.failureReason }
+          : {}),
+      });
+  };
+  const reportStorageFailure = (recordingId: string, error: unknown) => {
+    const state = active.get(recordingId);
+    const reason = storageFailureReason(error);
+    if (!state || !reason || state.failureReason) return;
+    state.failureReason = reason;
+    state.failureDescription = describeCaptureFailure(error);
+    state.interrupted = true;
+    notifyState(recordingId, state, "stopping");
+    queueMicrotask(() => {
+      if (active.get(recordingId) !== state || state.stopping) return;
+      void stopOwned(recordingId, state).catch((failure: unknown) => options.onError?.(failure));
+    });
   };
   const notifyInterrupted = (
     recordingId: string,
@@ -159,7 +207,7 @@ export function createRecordingBridge(options: Options) {
       return await Promise.race([
         work,
         state.stopped.then(() => {
-          throw new Error("Recording stopped during startup");
+          throw new Error(state.failureDescription ?? "Recording stopped during startup");
         }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
@@ -179,6 +227,7 @@ export function createRecordingBridge(options: Options) {
       (error: unknown) => {
         state.pending.delete(work);
         if (state.failures.length < 100) state.failures.push(error);
+        reportStorageFailure(state.recordingId, error);
       },
     );
   };
@@ -264,22 +313,30 @@ export function createRecordingBridge(options: Options) {
         const identified =
           (!!frame && frame.documentId === transaction.documentId) ||
           state.verifiedDocuments.has(key);
-        await store.appendEvent(member.recordingId, {
-          recordingId: member.recordingId,
-          memberId: member.memberId,
-          webContentsId: member.webContentsId,
-          ...(identified
-            ? { frameId: transaction.frameId!, documentId: transaction.documentId! }
-            : {}),
-          frameAttribution: identified ? "identified" : "unattributed",
-          timelineMs: Math.max(
-            0,
-            (transaction.wallTime === null ? Date.now() : transaction.wallTime * 1000) -
-              state.startedAt,
-          ),
-          kind: "network",
-          payload: { ...transaction, frameAttribution: identified ? "identified" : "unattributed" },
-        });
+        await store
+          .appendEvent(member.recordingId, {
+            recordingId: member.recordingId,
+            memberId: member.memberId,
+            webContentsId: member.webContentsId,
+            ...(identified
+              ? { frameId: transaction.frameId!, documentId: transaction.documentId! }
+              : {}),
+            frameAttribution: identified ? "identified" : "unattributed",
+            timelineMs: Math.max(
+              0,
+              (transaction.wallTime === null ? Date.now() : transaction.wallTime * 1000) -
+                state.startedAt,
+            ),
+            kind: "network",
+            payload: {
+              ...transaction,
+              frameAttribution: identified ? "identified" : "unattributed",
+            },
+          })
+          .catch((error: unknown) => {
+            reportStorageFailure(member.recordingId, error);
+            throw error;
+          });
       },
     });
     state.recorders.set(member.webContentsId, { recorder, reader });
@@ -381,14 +438,24 @@ export function createRecordingBridge(options: Options) {
       try {
         await completion;
         const status = state.started && !state.interrupted ? "complete" : "interrupted";
-        await store.updateMetadata(recordingId, { status, endedAt: Date.now() });
+        await store.updateMetadata(recordingId, {
+          status,
+          endedAt: Date.now(),
+          ...(state.failureDescription ? { captureErrors: [state.failureDescription] } : {}),
+        });
         notifyState(recordingId, state, status);
       } catch (error) {
         try {
           await store.updateMetadata(recordingId, {
             status: "interrupted",
             endedAt: Date.now(),
-            captureErrors: [String(error).slice(0, 1024)],
+            captureErrors: [
+              ...new Set(
+                [state.failureDescription, describeCaptureFailure(error)].filter(
+                  (value): value is string => Boolean(value),
+                ),
+              ),
+            ],
           });
         } finally {
           notifyState(recordingId, state, "interrupted");
@@ -453,6 +520,7 @@ export function createRecordingBridge(options: Options) {
     return disposePromise;
   };
   return {
+    reportStorageFailure,
     async active(caller: Caller, input: unknown) {
       assertCaller(caller);
       const { browserId } = startInput.parse(input);
@@ -505,6 +573,7 @@ export function createRecordingBridge(options: Options) {
           signalStop = resolve;
         });
         const state: ActiveRecording = {
+          recordingId,
           owner: caller.senderId,
           browserId,
           browserIds: new Set([browserId]),
@@ -538,11 +607,16 @@ export function createRecordingBridge(options: Options) {
                 typeof payload?.receivedAt === "number" && Number.isFinite(payload.receivedAt)
                   ? payload.receivedAt
                   : Date.now();
-              return store.appendEvent(recordingId, {
-                ...event,
-                timelineMs: event.timelineMs ?? Math.max(0, time - startedAt),
-                payload: event.payload,
-              });
+              return store
+                .appendEvent(recordingId, {
+                  ...event,
+                  timelineMs: event.timelineMs ?? Math.max(0, time - startedAt),
+                  payload: event.payload,
+                })
+                .catch((error: unknown) => {
+                  reportStorageFailure(recordingId, error);
+                  throw error;
+                });
             },
           },
         });
@@ -579,7 +653,7 @@ export function createRecordingBridge(options: Options) {
               await store.updateMetadata(recordingId, {
                 status: "interrupted",
                 endedAt: Date.now(),
-                captureErrors: [String(error).slice(0, 1024)],
+                captureErrors: [describeCaptureFailure(error)],
               });
             } finally {
               notifyInterrupted(recordingId, state, caller.senderId, browserId);
@@ -620,6 +694,7 @@ export function createRecordingBridge(options: Options) {
       return {
         recordings: result.recordings.filter((recording) => recording.workspaceId === workspaceId),
         incomplete: result.incomplete,
+        recoveryError: options.getRecoveryError?.() ?? null,
       };
     },
     async readMedia(caller: Caller, input: unknown) {

@@ -9,6 +9,7 @@ interface Options {
   coordinator: BrowserRecordingCoordinator;
   store: BrowserRecordingStore;
   onError: (error: unknown) => void;
+  onStorageError?: (recordingId: string, error: unknown) => void;
 }
 interface View {
   member: RecordingMembership;
@@ -52,7 +53,12 @@ function isVideoChunk(
   );
 }
 
-export function createVideoCaptureManager({ coordinator, store, onError }: Options) {
+export function createVideoCaptureManager({
+  coordinator,
+  store,
+  onError,
+  onStorageError,
+}: Options) {
   const active = new Map<string, Active>();
   let workers = 0;
   const sources = new Map<BrowserWindow, WebContents>();
@@ -265,6 +271,7 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
         expectedSequence++;
       } catch (error) {
         failedWrites.push(error);
+        onStorageError?.(member.recordingId, error);
         report(member, "video-storage-failed");
         failureReported = true;
         reject(error);

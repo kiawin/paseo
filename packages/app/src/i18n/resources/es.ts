@@ -2274,6 +2274,17 @@ export const es: TranslationResources = {
       deleteFailed: "No se pudo eliminar el artefacto",
     },
     recordings: {
+      recoveryDisabled:
+        "La recuperación de grabaciones está desactivada mientras el bloqueo de instancia única esté desactivado.",
+      recoveryProblem:
+        "No se pudieron recuperar algunas grabaciones. Resuelve el problema de almacenamiento y reinicia Paseo.",
+      unpublishedMetadata: "Se conservó un archivo de metadatos incompleto.",
+      eventLogUnreadable: "No se pudo leer el registro de eventos.",
+      recoveryWriteFailed: "No se pudo guardar la recuperación; libera espacio y reinicia Paseo.",
+
+      storageQuota: "Se alcanzó la cuota de grabaciones. Elimina una para liberar espacio.",
+      diskFull: "El disco está lleno. Libera espacio para continuar grabando.",
+
       eventUntimed: "Este evento no tiene hora de grabación.",
       missingView: "No se capturó vídeo para esta vista.",
 

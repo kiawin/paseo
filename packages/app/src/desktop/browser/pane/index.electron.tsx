@@ -85,6 +85,7 @@ import {
   RECORDING_INTERRUPTED,
   type RecordingControlState,
 } from "../recording-control";
+import { classifyStorageError } from "../recordings/storage-errors";
 
 type ElectronWebview = HTMLElement & {
   canGoBack?: () => boolean;
@@ -499,13 +500,15 @@ function RecordingButton({ browserId }: { browserId: string }) {
     };
   }, [browserId]);
   useEffect(() => {
-    if (state.error)
-      toast?.error(
-        state.error === RECORDING_INTERRUPTED
-          ? t("workspace.browser.controls.recordingInterrupted")
-          : state.error,
-      );
-  }, [state.error, t, toast]);
+    if (!state.error) return;
+    const kind = state.reason ?? classifyStorageError(state.error);
+    let message = state.error;
+    if (kind === "quota") message = t("panels.recordings.storageQuota");
+    else if (kind === "disk-full") message = t("panels.recordings.diskFull");
+    else if (state.error === RECORDING_INTERRUPTED)
+      message = t("workspace.browser.controls.recordingInterrupted");
+    toast?.error(message);
+  }, [state.error, state.reason, t, toast]);
   const buttonStyle = useCallback(
     ({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => [
       styles.iconButton,
