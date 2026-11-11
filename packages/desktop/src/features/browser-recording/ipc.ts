@@ -78,6 +78,13 @@ const readInput = z
   })
   .strict();
 const listInput = z.object({ workspaceId: z.string().min(1).max(2048) }).strict();
+const listMediaInput = z
+  .object({
+    recordingId: identifier,
+    cursor: z.string().max(1024).nullable(),
+    limit: z.number().int().positive().max(100),
+  })
+  .strict();
 const mediaInput = z
   .object({
     recordingId: identifier,
@@ -568,6 +575,15 @@ export function createRecordingBridge(options: Options) {
       }
     },
     stop,
+    async listMedia(caller: Caller, input: unknown) {
+      assertCaller(caller);
+      const { recordingId, cursor, limit } = listMediaInput.parse(input);
+      const state = active.get(recordingId);
+      if (state && state.owner !== caller.senderId)
+        throw new Error("Recording is not owned by this window");
+      if (state) return { segments: [], incomplete: [], nextCursor: null, pending: true };
+      return { ...(await store.listMediaSegmentsPage(recordingId, cursor, limit)), pending: false };
+    },
     async readEvents(caller: Caller, input: unknown) {
       // Saved recordings belong to the local app; trusted app windows share access.
       // An active session remains bound to the window that started it.
@@ -576,7 +592,7 @@ export function createRecordingBridge(options: Options) {
       const state = active.get(recordingId);
       if (state && state.owner !== caller.senderId)
         throw new Error("Recording is not owned by this window");
-      return store.readEventsPage(recordingId, { cursor, maxBytes });
+      return store.inspectEventsPage(recordingId, { cursor, maxBytes });
     },
     async list(caller: Caller, input: unknown) {
       assertCaller(caller);

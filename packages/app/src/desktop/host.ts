@@ -194,6 +194,17 @@ export interface DesktopRecordingState {
   browserId: string;
   status: "starting" | "recording" | "stopping" | "complete" | "interrupted";
 }
+export interface DesktopRecordingMediaSegment {
+  streamId: string;
+  segmentId: string;
+  startMs: number;
+  durationMs: number;
+  mimeType: string;
+  track?: "video" | "audio" | "combined";
+  codec?: string;
+  generationId?: string;
+  sequence?: number;
+}
 export interface DesktopRecordingBridge {
   active(input: { browserId: string }): Promise<DesktopRecordingState | null>;
   start(input: { browserId: string }): Promise<{ recordingId: string; status: string }>;
@@ -201,6 +212,12 @@ export interface DesktopRecordingBridge {
   list(input: {
     workspaceId: string;
   }): Promise<{ recordings: DesktopRecordingMetadata[]; incomplete: string[] }>;
+  listMedia(input: { recordingId: string; cursor: string | null; limit: number }): Promise<{
+    segments: DesktopRecordingMediaSegment[];
+    incomplete: Array<{ streamId: string | null; segmentId: string | null; reason: string }>;
+    nextCursor: string | null;
+    pending: boolean;
+  }>;
   readEvents(input: {
     recordingId: string;
     cursor: number;

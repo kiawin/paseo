@@ -168,6 +168,8 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
       workspaceId: string;
     }): Promise<{ recordings: RecordingMetadata[]; incomplete: string[] }> =>
       ipcRenderer.invoke("paseo:recording:list", input),
+    listMedia: (input: { recordingId: string; cursor: string | null; limit: number }) =>
+      ipcRenderer.invoke("paseo:recording:list-media", input),
     readEvents: (input: {
       recordingId: string;
       cursor: number;

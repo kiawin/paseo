@@ -3,7 +3,7 @@ import type { createRecordingBridge } from "./ipc.js";
 
 type Bridge = Pick<
   ReturnType<typeof createRecordingBridge>,
-  "active" | "start" | "stop" | "list" | "readEvents" | "readMedia" | "delete"
+  "active" | "start" | "stop" | "list" | "listMedia" | "readEvents" | "readMedia" | "delete"
 >;
 interface Registry {
   handle(channel: string, listener: (event: IpcMainInvokeEvent, input: unknown) => unknown): void;
@@ -37,6 +37,7 @@ export function registerRecordingIpc(ipc: Registry, bridge: Bridge): () => void 
     "paseo:recording:active": bridge.active,
     "paseo:recording:stop": bridge.stop,
     "paseo:recording:list": bridge.list,
+    "paseo:recording:list-media": bridge.listMedia,
     "paseo:recording:read-events": bridge.readEvents,
     "paseo:recording:read-media": bridge.readMedia,
     "paseo:recording:delete": bridge.delete,

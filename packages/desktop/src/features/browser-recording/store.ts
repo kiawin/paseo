@@ -1,5 +1,16 @@
 import { constants as fsConstants } from "node:fs";
-import { chmod, link, lstat, mkdir, open, readdir, rename, rm, unlink } from "node:fs/promises";
+import {
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  open,
+  opendir,
+  readdir,
+  rename,
+  rm,
+  unlink,
+} from "node:fs/promises";
 import { isAbsolute, join, parse, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -75,6 +86,15 @@ interface Options {
   maxQueuedOperations?: number;
 }
 const noFollow = fsConstants.O_NOFOLLOW ?? 0;
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
 const sharedQueues = new Map<string, Promise<void>>();
 const sharedQueueCounts = new Map<string, number>();
 const sharedQueuedBytes = new Map<string, number>();
@@ -525,6 +545,13 @@ export class BrowserRecordingStore {
     identifier.parse(id);
     return this.queue(id, () => this.readEventsPageInternal(id, input));
   }
+  async inspectEventsPage(id: string, input: { cursor: number; maxBytes: number }) {
+    this.validatePageInput(input);
+    identifier.parse(id);
+    // A snapshot read does not wait behind a sustained durable-write backlog.
+    // If it sees an append in progress, the caller receives an incomplete tail.
+    return this.readEventsPageInternal(id, input);
+  }
   private async readEventsPageInternal(
     id: string,
     input: { cursor: number; maxBytes: number },
@@ -723,7 +750,9 @@ export class BrowserRecordingStore {
     if (!entry.isFile() || entry.isSymbolicLink()) throw new Error("Media segment file is unsafe");
     if (entry.nlink === 1) return;
     let removed = false;
-    for (const temporary of await readdir(directory)) {
+    const temporaryEntries = await opendir(directory);
+    for await (const temporaryEntry of temporaryEntries) {
+      const temporary = temporaryEntry.name;
       if (
         !/^\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/i.test(
           temporary,
@@ -745,6 +774,26 @@ export class BrowserRecordingStore {
     if (removed) await this.syncDirectory(directory);
     if ((await lstat(path)).nlink !== 1)
       throw new Error("Media segment file has an unsafe hardlink");
+  }
+  private async recoverTemporaryLink(directory: string, name: string): Promise<boolean> {
+    const path = join(directory, name);
+    const temporary = await lstat(path);
+    if (!temporary.isFile() || temporary.isSymbolicLink() || temporary.nlink < 2) return false;
+    const entries = await opendir(directory);
+    for await (const entry of entries) {
+      if (!entry.name.endsWith(".json") && !entry.name.endsWith(".bin")) continue;
+      const candidate = await lstat(join(directory, entry.name));
+      if (
+        candidate.isFile() &&
+        !candidate.isSymbolicLink() &&
+        candidate.dev === temporary.dev &&
+        candidate.ino === temporary.ino
+      ) {
+        await this.recoverPublishedLink(directory, entry.name);
+        return !(await pathExists(path));
+      }
+    }
+    return false;
   }
   private async inspectMediaEntry(
     path: string,
@@ -867,6 +916,125 @@ export class BrowserRecordingStore {
   async listMediaSegmentsWithGaps(id: string): Promise<MediaSegmentListing> {
     identifier.parse(id);
     return this.queue(id, () => this.scanMediaSegments(id));
+  }
+  async listMediaSegmentsPage(
+    id: string,
+    cursor: string | null,
+    limit: number,
+  ): Promise<MediaSegmentListing & { nextCursor: string | null }> {
+    identifier.parse(id);
+    if (
+      (cursor !== null && (typeof cursor !== "string" || cursor.length > 1024)) ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    )
+      throw new Error("Invalid media page");
+    // Media pages recover interrupted publications, so serialize them with
+    // other media reads and deletion. Active recordings are gated by IPC.
+    return this.queue(id, () => this.listMediaSegmentsPageInternal(id, cursor, limit));
+  }
+  // eslint-disable-next-line complexity
+  private async listMediaSegmentsPageInternal(
+    id: string,
+    cursor: string | null,
+    limit: number,
+  ): Promise<MediaSegmentListing & { nextCursor: string | null }> {
+    const recording = await this.recordingDirectory(id);
+    const media = join(recording, "media");
+    try {
+      await this.existingDirectory(media);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        return { segments: [], incomplete: [], nextCursor: null };
+      throw error;
+    }
+    // Keep only the next bounded set of names. The keyset cursor is independent
+    // of filesystem enumeration order and of entries inserted before the cursor.
+    const candidates: Array<{ key: string; stream: string; name: string | null }> = [];
+    const add = (stream: string, name: string | null) => {
+      const key = `${stream}/${name ?? ""}`;
+      if (cursor !== null && key <= cursor) return;
+      let low = 0;
+      let high = candidates.length;
+      while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (candidates[mid].key < key) low = mid + 1;
+        else high = mid;
+      }
+      candidates.splice(low, 0, { key, stream, name });
+      if (candidates.length > limit + 1) candidates.pop();
+    };
+    const streams = await opendir(media);
+    for await (const stream of streams) {
+      if (
+        !identifier.safeParse(stream.name).success ||
+        !stream.isDirectory() ||
+        stream.isSymbolicLink()
+      ) {
+        add(stream.name, null);
+        continue;
+      }
+      let path: string;
+      try {
+        path = await this.mediaDirectory(id, stream.name, false);
+      } catch {
+        add(stream.name, null);
+        continue;
+      }
+      const entries = await opendir(path);
+      for await (const entry of entries) add(stream.name, entry.name);
+    }
+    const result: MediaSegmentListing & { nextCursor: string | null } = {
+      segments: [],
+      incomplete: [],
+      nextCursor: candidates.length > limit ? candidates[limit - 1].key : null,
+    };
+    for (const candidate of candidates.slice(0, limit)) {
+      if (candidate.name === null) {
+        result.incomplete.push({
+          streamId: null,
+          segmentId: null,
+          reason: "Media stream directory is unsafe",
+        });
+        continue;
+      }
+      let path: string;
+      try {
+        path = await this.mediaDirectory(id, candidate.stream, false);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      const name = candidate.name;
+      if (!(await pathExists(join(path, name)))) continue;
+      if (name.endsWith(".tmp")) {
+        try {
+          if (await this.recoverTemporaryLink(path, name)) continue;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+          throw error;
+        }
+      }
+      let other: string | null = null;
+      if (name.endsWith(".json")) other = `${name.slice(0, -5)}.bin`;
+      if (name.endsWith(".bin")) other = `${name.slice(0, -4)}.json`;
+      const names = new Set([name]);
+      if (other && (await pathExists(join(path, other)))) names.add(other);
+      const unsafe = new Set<string>();
+      for (const part of names) {
+        if (!part.endsWith(".bin") && !part.endsWith(".json")) continue;
+        try {
+          await this.recoverPublishedLink(path, part);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") names.delete(part);
+          else unsafe.add(part);
+        }
+      }
+      if (!names.has(name)) continue;
+      await this.inspectMediaEntry(path, candidate.stream, name, names, unsafe, result);
+    }
+    return result;
   }
   async listMediaSegments(id: string): Promise<MediaSegmentInfo[]> {
     const listing = await this.listMediaSegmentsWithGaps(id);
