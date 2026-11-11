@@ -3688,6 +3688,46 @@ export const FileUploadRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const RecordingShareBeginRequestSchema = z.object({
+  type: z.literal("recording.share.begin.request"),
+  recipientAgentId: z.string().min(1).max(256),
+  recordingId: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
+  manifest: z.object({
+    version: z.literal(1),
+    segments: z
+      .array(
+        z.object({
+          id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
+          size: z
+            .number()
+            .int()
+            .nonnegative()
+            .max(16 * 1024 * 1024),
+          sha256: z.string().regex(/^[0-9a-f]{64}$/),
+        }),
+      )
+      .max(1024),
+  }),
+  requestId: z.string().min(1).max(256),
+});
+export const RecordingShareUploadRequestSchema = z.object({
+  type: z.literal("recording.share.upload.request"),
+  shareId: z.string().uuid(),
+  segmentId: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
+  requestId: z.string().min(1).max(128),
+});
+export const RecordingShareCompleteRequestSchema = z.object({
+  type: z.literal("recording.share.complete.request"),
+  shareId: z.string().uuid(),
+  requestId: z.string().min(1).max(128),
+});
+export const RecordingShareDeleteRequestSchema = z.object({
+  type: z.literal("recording.share.delete.request"),
+  shareId: z.string().uuid(),
+  recipientAgentId: z.string().min(1).max(256),
+  requestId: z.string().min(1).max(128),
+});
+
 export const ClearAgentAttentionMessageSchema = z.object({
   type: z.literal("clear_agent_attention"),
   agentId: z.union([z.string(), z.array(z.string())]),
@@ -4246,6 +4286,10 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectIconGetRequestSchema,
   FileDownloadTokenRequestSchema,
   FileUploadRequestSchema,
+  RecordingShareBeginRequestSchema,
+  RecordingShareUploadRequestSchema,
+  RecordingShareCompleteRequestSchema,
+  RecordingShareDeleteRequestSchema,
   ClearAgentAttentionMessageSchema,
   ClientHeartbeatMessageSchema,
   PingMessageSchema,
@@ -4693,6 +4737,7 @@ export const ServerInfoStatusPayloadSchema = z
         entityMetadata: z.boolean().optional(),
         diffSubscription: z.boolean().optional(),
         binaryChunkingV1: z.boolean().optional(),
+        recordingShare: z.boolean().optional(),
         workspaceSetupObservation: z.boolean().optional(),
         workspaceSortTimes: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
@@ -7570,6 +7615,33 @@ export const FileUploadResponseSchema = z.object({
   }),
 });
 
+export const RecordingShareBeginResponseSchema = z.object({
+  type: z.literal("recording.share.begin.response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    shareId: z.string().nullable(),
+  }),
+});
+export const RecordingShareUploadResponseSchema = z.object({
+  type: z.literal("recording.share.upload.response"),
+  payload: z.object({ requestId: z.string(), success: z.boolean(), error: z.string().nullable() }),
+});
+export const RecordingShareCompleteResponseSchema = z.object({
+  type: z.literal("recording.share.complete.response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    manifestPath: z.string().nullable(),
+  }),
+});
+export const RecordingShareDeleteResponseSchema = z.object({
+  type: z.literal("recording.share.delete.response"),
+  payload: z.object({ requestId: z.string(), success: z.boolean(), error: z.string().nullable() }),
+});
+
 export const ListProviderModelsResponseMessageSchema = z.object({
   type: z.literal("list_provider_models_response"),
   payload: z.object({
@@ -8555,6 +8627,10 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ProjectIconGetResponseSchema,
   FileDownloadTokenResponseSchema,
   FileUploadResponseSchema,
+  RecordingShareBeginResponseSchema,
+  RecordingShareUploadResponseSchema,
+  RecordingShareCompleteResponseSchema,
+  RecordingShareDeleteResponseSchema,
   ListProviderModelsResponseMessageSchema,
   ListProviderModesResponseMessageSchema,
   ListProviderFeaturesResponseMessageSchema,

@@ -27,7 +27,11 @@ import type { MessageReceipts } from "./message-receipts/index.js";
 import type { AgentBackgroundWorkItem } from "./agent/background-work/index.js";
 import equal from "fast-deep-equal";
 import { WorkspaceSetupObservation } from "./workspace-setup-observation.js";
-import { SessionDelivery, type OwnedSubscription } from "./session/owned-subscriptions/index.js";
+import {
+  SessionDelivery,
+  type OwnedOperation,
+  type OwnedSubscription,
+} from "./session/owned-subscriptions/index.js";
 import { v4 as uuidv4 } from "uuid";
 import { lstat, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "path";
@@ -211,6 +215,7 @@ import {
   type SpeechModelsSessionOptions,
 } from "./session/speech/speech-models-session.js";
 import { WorkspaceFilesSession } from "./session/files/workspace-files-session.js";
+import { RecordingShareStore } from "./recording-share/store.js";
 import { ArtifactsSession } from "./session/artifacts/artifacts-session.js";
 import type { ArtifactStore } from "./artifact-store.js";
 import { NotesSession } from "./session/notes/notes-session.js";
@@ -895,6 +900,8 @@ export class Session {
   private readonly usageSession: UsageSession;
   private readonly speechModelsSession: SpeechModelsSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
+  private readonly recordingShares: RecordingShareStore;
+  private readonly recordingShareOwners = new Map<string, OwnedOperation>();
   private readonly artifactsSession: ArtifactsSession;
   private readonly notesSession: NotesSession;
   private readonly prWatchSession: PrWatchSession;
@@ -1007,6 +1014,9 @@ export class Session {
       clientId: this.clientId,
       sessionId: this.sessionId,
     });
+    this.recordingShares = new RecordingShareStore(paseoHome, (error) =>
+      this.sessionLogger.error({ err: error }, "Recording share cleanup failed"),
+    );
     this.workspaceFilesSession = new WorkspaceFilesSession({
       host: {
         emit: (msg, source) => this.emitForSource(msg, source),
@@ -2741,6 +2751,7 @@ export class Session {
     (msg) => this.dispatchMetadataMessage(msg),
     (msg) => this.dispatchWorkspaceAndProjectMessage(msg),
     (msg, source) => this.dispatchWorkspaceFileMessage(msg, source),
+    (msg) => this.dispatchRecordingShareMessage(msg),
     (msg, source) => this.dispatchArtifactMessage(msg, source),
     (msg, source) => this.dispatchNoteMessage(msg, source),
     (msg, source) => this.dispatchPrWatchMessage(msg, source),
@@ -2756,6 +2767,23 @@ export class Session {
   ];
 
   private async dispatchInboundMessage(msg: SessionInboundMessage, source?: object): Promise<void> {
+    if (
+      (msg.type === "fs.entry.upload.request" ||
+        msg.type === "fs.entry.download.request" ||
+        msg.type === "file.upload.request" ||
+        msg.type === "artifact.entry.download.request") &&
+      this.recordingShares.hasUpload(msg.requestId)
+    ) {
+      this.emit({
+        type: "rpc_error",
+        payload: {
+          requestId: msg.requestId,
+          requestType: msg.type,
+          error: "Transfer identifier is already in use",
+        },
+      });
+      return;
+    }
     for (const dispatch of this.inboundDispatchers) {
       const promise = dispatch(msg, source);
       if (promise) {
@@ -3691,6 +3719,12 @@ export class Session {
       case "fs.transfer.cancel":
         this.workspaceFilesSession.handleFileTransferCancel(msg);
         this.artifactsSession.handleFileTransferCancel(msg);
+        if (source)
+          void this.recordingShares
+            .cancelUpload(msg.requestId, source, true)
+            .catch((error: unknown) =>
+              this.sessionLogger.error({ err: error }, "Recording upload cancellation failed"),
+            );
         return undefined;
       case "project_icon_request":
         return this.workspaceFilesSession.handleProjectIconRequest(msg);
@@ -3703,6 +3737,191 @@ export class Session {
         return undefined;
       default:
         return undefined;
+    }
+  }
+
+  private dispatchRecordingShareMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "recording.share.begin.request":
+        return this.beginRecordingShare(msg);
+      case "recording.share.upload.request":
+        this.uploadRecordingShareSegment(msg);
+        return undefined;
+      case "recording.share.complete.request":
+        return this.completeRecordingShare(msg);
+      case "recording.share.delete.request":
+        return this.deleteRecordingShare(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private async beginRecordingShare(
+    msg: Extract<SessionInboundMessage, { type: "recording.share.begin.request" }>,
+  ): Promise<void> {
+    if (!this.agentManager.getAgent(msg.recipientAgentId)) {
+      this.emit({
+        type: "recording.share.begin.response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Recording recipient is unavailable",
+          shareId: null,
+        },
+      });
+      return;
+    }
+    let shareId: string | undefined;
+    const operation = this.delivery.operation(
+      (message) =>
+        message.type === "recording.share.begin.response" &&
+        message.payload.requestId === msg.requestId,
+      () => {
+        if (!shareId) return undefined;
+        this.recordingShareOwners.delete(shareId);
+        return this.recordingShares.cancel(shareId);
+      },
+    );
+    try {
+      shareId = await this.recordingShares.begin(
+        operation.source,
+        msg.recipientAgentId,
+        msg.recordingId,
+        msg.manifest,
+        operation.signal,
+        () => this.releaseRecordingOperation(operation),
+      );
+      this.recordingShareOwners.set(shareId, operation);
+      operation.emit({
+        type: "recording.share.begin.response",
+        payload: { requestId: msg.requestId, success: true, error: null, shareId },
+      });
+    } catch (error) {
+      operation.emit({
+        type: "recording.share.begin.response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: error instanceof Error ? error.message : "Recording share failed",
+          shareId: null,
+        },
+      });
+      await operation.release();
+    }
+  }
+
+  private uploadRecordingShareSegment(
+    msg: Extract<SessionInboundMessage, { type: "recording.share.upload.request" }>,
+  ): void {
+    if (
+      this.workspaceFilesSession.hasTransfer(msg.requestId) ||
+      this.artifactsSession.hasTransfer(msg.requestId)
+    ) {
+      this.emit({
+        type: "recording.share.upload.response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Transfer identifier is already in use",
+        },
+      });
+      return;
+    }
+    let source: object | undefined;
+    const operation = this.delivery.operation(
+      (message) =>
+        message.type === "recording.share.upload.response" &&
+        message.payload.requestId === msg.requestId,
+      () => (source ? this.recordingShares.cancelUpload(msg.requestId, source) : undefined),
+    );
+    source = operation.source;
+    try {
+      this.recordingShares.beginUpload(
+        source,
+        msg.shareId,
+        msg.segmentId,
+        msg.requestId,
+        (error) => {
+          operation.emit({
+            type: "recording.share.upload.response",
+            payload: { requestId: msg.requestId, success: !error, error: error?.message ?? null },
+          });
+          this.releaseRecordingOperation(operation);
+        },
+        (bytesReceived) =>
+          this.emitForSource(
+            { type: "fs.transfer.ack", requestId: msg.requestId, bytesReceived },
+            operation.source,
+          ),
+      );
+    } catch (error) {
+      operation.emit({
+        type: "recording.share.upload.response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: error instanceof Error ? error.message : "Recording upload failed",
+        },
+      });
+      this.releaseRecordingOperation(operation);
+    }
+  }
+
+  private releaseRecordingOperation(operation: OwnedOperation): void {
+    void operation
+      .release()
+      .catch((failure: unknown) =>
+        this.sessionLogger.error({ err: failure }, "Recording operation cleanup failed"),
+      );
+  }
+
+  private async completeRecordingShare(
+    msg: Extract<SessionInboundMessage, { type: "recording.share.complete.request" }>,
+  ): Promise<void> {
+    try {
+      const source = this.delivery.currentSource;
+      if (!source) throw new Error("Recording share is unavailable");
+      if (!this.agentManager.getAgent(this.recordingShares.recipientFor(source, msg.shareId)))
+        throw new Error("Recording recipient is unavailable");
+      const manifestPath = await this.recordingShares.complete(source, msg.shareId);
+      const owner = this.recordingShareOwners.get(msg.shareId);
+      this.recordingShareOwners.delete(msg.shareId);
+      await owner?.release();
+      this.emit({
+        type: "recording.share.complete.response",
+        payload: { requestId: msg.requestId, success: true, error: null, manifestPath },
+      });
+    } catch (error) {
+      this.emit({
+        type: "recording.share.complete.response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: error instanceof Error ? error.message : "Recording completion failed",
+          manifestPath: null,
+        },
+      });
+    }
+  }
+
+  private async deleteRecordingShare(
+    msg: Extract<SessionInboundMessage, { type: "recording.share.delete.request" }>,
+  ): Promise<void> {
+    try {
+      await this.recordingShares.deleteCompleted(msg.shareId, msg.recipientAgentId);
+      this.emit({
+        type: "recording.share.delete.response",
+        payload: { requestId: msg.requestId, success: true, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "recording.share.delete.response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: error instanceof Error ? error.message : "Recording cleanup failed",
+        },
+      });
     }
   }
 
@@ -3844,6 +4063,10 @@ export class Session {
       return;
     }
     if (binaryFrame.kind === "file_transfer") {
+      if (this.recordingShares.hasUpload(binaryFrame.frame.requestId, source)) {
+        await this.recordingShares.receiveFrame(binaryFrame.frame, source);
+        return;
+      }
       await this.workspaceFilesSession.handleFileTransferFrame(binaryFrame.frame, source);
       return;
     }

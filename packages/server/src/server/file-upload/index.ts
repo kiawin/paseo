@@ -42,6 +42,10 @@ export class FileUploadStore {
       options.staleUploadTimeoutMs ?? FileUploadStore.defaultStaleUploadTimeoutMs;
   }
 
+  hasUpload(requestId: string): boolean {
+    return [...this.pending.values()].some((uploads) => uploads.has(requestId));
+  }
+
   beginUpload(
     request: FileUploadRequest,
     source: object = this.defaultSource,
