@@ -319,6 +319,7 @@ export const browserVideoCaptureManager = createVideoCaptureManager({
   onError: (error) => log.error("[browser-recording] video error", error),
   onStorageError: (recordingId, error) =>
     browserRecordingBridge?.reportStorageFailure(recordingId, error),
+  onAudioStatus: (value) => browserRecordingBridge?.reportAudioStatus(value),
 });
 function recordingResponseBody(result: unknown): { body: string; base64Encoded: boolean } {
   if (

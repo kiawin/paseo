@@ -634,6 +634,11 @@ export const ru: TranslationResources = {
         refresh: "Обновить",
         recordingInterrupted: "Запись прервана",
         startRecording: "Записать браузер",
+        audioOn: "Включить звук вкладки",
+        audioOff: "Не включать звук",
+        audioStarting: "Запуск захвата звука",
+        audioRecording: "Захват звука включён",
+        audioUnavailable: "Звук недоступен в одном или нескольких видах; видео продолжается.",
         startingRecording: "Начало записи",
         stopRecording: "Остановить запись",
         stoppingRecording: "Остановка записи",
@@ -2259,6 +2264,9 @@ export const ru: TranslationResources = {
       deleteFailed: "Не удалось удалить артефакт",
     },
     recordings: {
+      audioUnknown: "Звук был запрошен, но состояние захвата неизвестно.",
+      muteAudio: "Выключить звук",
+      unmuteAudio: "Включить звук",
       recoveryDisabled:
         "Восстановление записей отключено при отключённой блокировке одного экземпляра.",
       recoveryProblem:

@@ -625,6 +625,11 @@ export const en = {
         refresh: "Refresh",
         recordingInterrupted: "Recording interrupted",
         startRecording: "Record browser",
+        audioOn: "Include tab audio",
+        audioOff: "Do not include audio",
+        audioStarting: "Starting audio capture",
+        audioRecording: "Audio capture enabled",
+        audioUnavailable: "Audio unavailable for one or more views; video continues.",
         startingRecording: "Starting recording",
         stopRecording: "Stop recording",
         stoppingRecording: "Stopping recording",
@@ -2249,6 +2254,9 @@ export const en = {
       deleteFailed: "Failed to delete artifact",
     },
     recordings: {
+      audioUnknown: "Audio was requested, but its capture status is unknown.",
+      muteAudio: "Mute audio",
+      unmuteAudio: "Unmute audio",
       recoveryDisabled: "Recording recovery is disabled while single-instance locking is off.",
       recoveryProblem:
         "Some recordings could not be recovered. Resolve the storage issue and restart Paseo.",

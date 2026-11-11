@@ -1,7 +1,11 @@
 import { ipcRenderer } from "electron";
+const ignoreSendFailure = () => {};
 
 // This preload belongs only to the private recorder window, never to a page.
-function configure(_event: Electron.IpcRendererEvent, config: { channel: string }) {
+function configure(
+  _event: Electron.IpcRendererEvent,
+  config: { channel: string; audio?: boolean },
+) {
   let recorder: MediaRecorder | undefined;
   let stream: MediaStream | undefined;
   let tail = Promise.resolve();
@@ -10,12 +14,50 @@ function configure(_event: Electron.IpcRendererEvent, config: { channel: string 
   let previous = 0;
   let stopping = false;
   const send = (message: Record<string, unknown>) => ipcRenderer.invoke(config.channel, message);
+  const reportAudioEnded = () => {
+    if (!stopping)
+      tail = tail
+        .then(async () => {
+          await send({ type: "audio-status", status: "unavailable", reason: "ended" });
+          return undefined;
+        })
+        .catch(ignoreSendFailure);
+  };
   window.addEventListener(
     "paseo-video-start",
     () => {
       void (async () => {
         try {
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          let reason: string | undefined;
+          try {
+            stream = await navigator.mediaDevices.getDisplayMedia({
+              video: true,
+              audio: config.audio === true,
+            });
+          } catch (error) {
+            if (!config.audio) throw error;
+            reason =
+              error instanceof DOMException && error.name === "NotAllowedError"
+                ? "denied"
+                : "unsupported";
+            stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          }
+          if (!config.audio) {
+            for (const track of stream.getAudioTracks()) {
+              stream.removeTrack(track);
+              track.stop();
+            }
+          }
+          const audioTrack = config.audio ? stream.getAudioTracks()[0] : undefined;
+          if (config.audio) {
+            const status = audioTrack ? "captured" : "unavailable";
+            await send({
+              type: "audio-status",
+              status,
+              ...(status === "unavailable" ? { reason: reason ?? "unsupported" } : {}),
+            });
+          }
+          audioTrack?.addEventListener("ended", reportAudioEnded);
           recorder = new MediaRecorder(stream, { videoBitsPerSecond: 1_000_000 });
           const origin = performance.now();
           previous = 0;

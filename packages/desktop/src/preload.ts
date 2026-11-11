@@ -37,12 +37,18 @@ interface RecordingMetadata {
   title?: string;
   captureErrors?: string[];
   recoveryWarnings?: string[];
+  audioRequested?: boolean;
+  audioStatus?: "starting" | "captured" | "unavailable" | "disabled";
+  audioReason?: string;
 }
 interface RecordingState {
   recordingId: string;
   browserId: string;
   status: "starting" | "recording" | "stopping" | "complete" | "interrupted";
   reason?: "quota" | "disk-full";
+  audioRequested?: boolean;
+  audioStatus?: "starting" | "captured" | "unavailable" | "disabled";
+  audioReason?: string;
 }
 
 contextBridge.exposeInMainWorld("paseoDesktop", {
@@ -162,7 +168,10 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
   recording: {
     active: (input: { browserId: string }): Promise<RecordingState | null> =>
       ipcRenderer.invoke("paseo:recording:active", input),
-    start: (input: { browserId: string }): Promise<{ recordingId: string; status: string }> =>
+    start: (input: {
+      browserId: string;
+      audio?: boolean;
+    }): Promise<{ recordingId: string; status: string }> =>
       ipcRenderer.invoke("paseo:recording:start", input),
     stop: (input: { recordingId: string }): Promise<void> =>
       ipcRenderer.invoke("paseo:recording:stop", input),

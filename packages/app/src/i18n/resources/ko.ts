@@ -629,6 +629,11 @@ export const ko: TranslationResources = {
         refresh: "새로고침",
         recordingInterrupted: "기록이 중단되었습니다",
         startRecording: "브라우저 기록",
+        audioOn: "탭 오디오 포함",
+        audioOff: "오디오 포함 안 함",
+        audioStarting: "오디오 캡처 시작 중",
+        audioRecording: "오디오 캡처 사용 중",
+        audioUnavailable: "일부 보기에서 오디오를 사용할 수 없지만 동영상은 계속됩니다.",
         startingRecording: "기록 시작 중",
         stopRecording: "기록 중지",
         stoppingRecording: "기록 중지 중",
@@ -2235,6 +2240,9 @@ export const ko: TranslationResources = {
       deleteFailed: "산출물을 삭제하지 못했습니다",
     },
     recordings: {
+      audioUnknown: "오디오가 요청되었지만 캡처 상태를 알 수 없습니다.",
+      muteAudio: "오디오 음소거",
+      unmuteAudio: "음소거 해제",
       recoveryDisabled: "단일 인스턴스 잠금이 꺼져 있으면 기록 복구도 비활성화됩니다.",
       recoveryProblem:
         "일부 기록을 복구할 수 없습니다. 저장소 문제를 해결하고 Paseo를 재시작하세요.",

@@ -32,6 +32,9 @@ const metadataSchema = z
     status: z.enum(["recording", "complete", "interrupted"]),
     title: z.string().max(1024).optional(),
     captureErrors: z.array(z.string().max(1024)).max(100).optional(),
+    audioRequested: z.boolean().optional(),
+    audioStatus: z.enum(["starting", "captured", "unavailable", "disabled"]).optional(),
+    audioReason: z.string().max(128).optional(),
     recoveryWarnings: z.array(z.string().max(1024)).max(10).optional(),
   })
   .passthrough();
@@ -613,7 +616,16 @@ export class BrowserRecordingStore {
   async updateMetadata(
     id: string,
     patch: Partial<
-      Pick<RecordingMetadata, "status" | "title" | "endedAt" | "captureErrors" | "recoveryWarnings">
+      Pick<
+        RecordingMetadata,
+        | "status"
+        | "title"
+        | "endedAt"
+        | "captureErrors"
+        | "recoveryWarnings"
+        | "audioStatus"
+        | "audioReason"
+      >
     >,
   ): Promise<void> {
     identifier.parse(id);
@@ -624,6 +636,8 @@ export class BrowserRecordingStore {
         endedAt: metadataSchema.shape.endedAt,
         captureErrors: metadataSchema.shape.captureErrors,
         recoveryWarnings: metadataSchema.shape.recoveryWarnings,
+        audioStatus: metadataSchema.shape.audioStatus,
+        audioReason: metadataSchema.shape.audioReason,
       })
       .strict()
       .parse(patch);

@@ -45,6 +45,18 @@ const gapSegments = [
     mimeType: "video/webm",
   },
 ];
+const audioSegments = [
+  {
+    streamId: "tab",
+    segmentId: "a",
+    generationId: "g1",
+    sequence: 0,
+    startMs: 100,
+    durationMs: 1000,
+    mimeType: "video/webm",
+    track: "combined" as const,
+  },
+];
 vi.mock("@/desktop/host", () => ({
   getDesktopHost: () => ({
     recording: {
@@ -89,6 +101,29 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("recording player presentation", () => {
+  it("allows recorded audio to be muted and unmuted", async () => {
+    vi.stubGlobal("MediaSource", FakeMediaSource);
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL() {
+          return "blob:test";
+        }
+        static revokeObjectURL() {}
+      },
+    );
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const { RecordingPlayer } = await import("./player.electron");
+    const { container } = render(
+      <RecordingPlayer recordingId="r" segments={audioSegments} hasMore={false} seek={eventSeek} />,
+    );
+    const video = container.querySelector("video")!;
+    fireEvent.click(screen.getByText("panels.recordings.muteAudio"));
+    expect(video.muted).toBe(true);
+    fireEvent.click(screen.getByText("panels.recordings.unmuteAudio"));
+    expect(video.muted).toBe(false);
+  });
   it("can play through a gap after an integrity error", async () => {
     corruptMedia = true;
     vi.stubGlobal("MediaSource", FakeMediaSource);

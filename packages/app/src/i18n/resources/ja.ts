@@ -634,6 +634,11 @@ export const ja: TranslationResources = {
         refresh: "更新",
         recordingInterrupted: "記録が中断されました",
         startRecording: "ブラウザを記録",
+        audioOn: "タブの音声を含める",
+        audioOff: "音声を含めない",
+        audioStarting: "音声の取得を開始中",
+        audioRecording: "音声取得が有効",
+        audioUnavailable: "一部のビューで音声を取得できません。動画は継続します。",
         startingRecording: "記録を開始中",
         stopRecording: "記録を停止",
         stoppingRecording: "記録を停止中",
@@ -2246,6 +2251,9 @@ export const ja: TranslationResources = {
       deleteFailed: "成果物を削除できませんでした",
     },
     recordings: {
+      audioUnknown: "音声が要求されましたが、取得状態は不明です。",
+      muteAudio: "音声をミュート",
+      unmuteAudio: "ミュートを解除",
       recoveryDisabled: "単一インスタンスのロックが無効な間は記録の復旧も無効です。",
       recoveryProblem:
         "一部の記録を復旧できませんでした。ストレージの問題を解決してPaseoを再起動してください。",

@@ -633,6 +633,11 @@ export const ptBR: TranslationResources = {
         refresh: "Atualizar",
         recordingInterrupted: "Gravação interrompida",
         startRecording: "Gravar navegador",
+        audioOn: "Incluir áudio da aba",
+        audioOff: "Não incluir áudio",
+        audioStarting: "Iniciando captura de áudio",
+        audioRecording: "Captura de áudio ativada",
+        audioUnavailable: "Áudio indisponível em uma ou mais visualizações; o vídeo continua.",
         startingRecording: "Iniciando gravação",
         stopRecording: "Parar gravação",
         stoppingRecording: "Parando gravação",
@@ -2258,6 +2263,9 @@ export const ptBR: TranslationResources = {
       deleteFailed: "Não foi possível excluir o artefato",
     },
     recordings: {
+      audioUnknown: "O áudio foi solicitado, mas o estado da captura é desconhecido.",
+      muteAudio: "Silenciar áudio",
+      unmuteAudio: "Ativar áudio",
       recoveryDisabled:
         "A recuperação de gravações fica desativada quando o bloqueio de instância única está desligado.",
       recoveryProblem:

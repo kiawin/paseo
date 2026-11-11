@@ -634,6 +634,11 @@ export const es: TranslationResources = {
         refresh: "Refrescar",
         recordingInterrupted: "Grabación interrumpida",
         startRecording: "Grabar navegador",
+        audioOn: "Incluir audio de la pestaña",
+        audioOff: "No incluir audio",
+        audioStarting: "Iniciando captura de audio",
+        audioRecording: "Captura de audio activada",
+        audioUnavailable: "Audio no disponible en una o más vistas; el vídeo continúa.",
         startingRecording: "Iniciando grabación",
         stopRecording: "Detener grabación",
         stoppingRecording: "Deteniendo grabación",
@@ -2274,6 +2279,9 @@ export const es: TranslationResources = {
       deleteFailed: "No se pudo eliminar el artefacto",
     },
     recordings: {
+      audioUnknown: "Se solicitó audio, pero se desconoce su estado de captura.",
+      muteAudio: "Silenciar audio",
+      unmuteAudio: "Activar audio",
       recoveryDisabled:
         "La recuperación de grabaciones está desactivada mientras el bloqueo de instancia única esté desactivado.",
       recoveryProblem:

@@ -634,6 +634,11 @@ export const fr: TranslationResources = {
         refresh: "Actualiser",
         recordingInterrupted: "Enregistrement interrompu",
         startRecording: "Enregistrer le navigateur",
+        audioOn: "Inclure le son de l’onglet",
+        audioOff: "Ne pas inclure le son",
+        audioStarting: "Démarrage de la capture audio",
+        audioRecording: "Capture audio activée",
+        audioUnavailable: "Son indisponible pour une ou plusieurs vues ; la vidéo continue.",
         startingRecording: "Démarrage de l’enregistrement",
         stopRecording: "Arrêter l’enregistrement",
         stoppingRecording: "Arrêt de l’enregistrement",
@@ -2273,6 +2278,9 @@ export const fr: TranslationResources = {
       deleteFailed: "Échec de la suppression de l’artefact",
     },
     recordings: {
+      audioUnknown: "Le son a été demandé, mais son état de capture est inconnu.",
+      muteAudio: "Couper le son",
+      unmuteAudio: "Activer le son",
       recoveryDisabled:
         "La récupération est désactivée lorsque le verrouillage d’instance unique est désactivé.",
       recoveryProblem:

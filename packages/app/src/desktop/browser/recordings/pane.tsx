@@ -11,6 +11,19 @@ import { RecordingPlayer, type RecordingSeek } from "./player";
 import { createPlayback } from "./playback";
 import { classifyStorageError } from "./storage-errors";
 
+function networkSummary(payload: Record<string, unknown>): string {
+  const request = payload.request as
+    | { method?: string; url?: string; body?: { state?: string } }
+    | undefined;
+  const response = payload.response as
+    | { status?: number; body?: { state?: string } }
+    | null
+    | undefined;
+  return `${request?.method ?? ""} ${request?.url ?? ""} ${response?.status ?? ""} · ${request?.body?.state ?? ""} / ${response?.body?.state ?? ""}`.slice(
+    0,
+    2048,
+  );
+}
 function EventRow({
   event,
   index,
@@ -20,24 +33,20 @@ function EventRow({
   index: number;
   select: (index: number) => void;
 }) {
+  const { t } = useTranslation();
   const onPress = useCallback(() => select(index), [select, index]);
   const summary = useMemo(() => {
     const payload = event.payload;
+    if (event.kind === "media" && payload?.type === "audio-status") {
+      if (payload.status === "captured") return t("workspace.browser.controls.audioRecording");
+      if (payload.status === "unavailable") return t("workspace.browser.controls.audioUnavailable");
+      if (payload.status === "disabled") return t("workspace.browser.controls.audioOff");
+    }
     if (event.kind === "gap" && typeof payload?.reason === "string")
       return payload.reason.slice(0, 2048);
     if (event.kind !== "network" || !payload || typeof payload !== "object") return event.kind;
-    const request = payload.request as
-      | { method?: string; url?: string; body?: { state?: string } }
-      | undefined;
-    const response = payload.response as
-      | { status?: number; body?: { state?: string } }
-      | null
-      | undefined;
-    return `${request?.method ?? ""} ${request?.url ?? ""} ${response?.status ?? ""} · ${request?.body?.state ?? ""} / ${response?.body?.state ?? ""}`.slice(
-      0,
-      2048,
-    );
-  }, [event]);
+    return networkSummary(payload);
+  }, [event, t]);
   return (
     <PressHighlight accessibilityRole="button" onPress={onPress} style={styles.row}>
       <Text selectable style={styles.label}>
@@ -146,6 +155,12 @@ function RecordingWarnings({ snapshot }: { snapshot: RecordingsState }) {
   };
   return (
     <>
+      {item?.audioRequested && item.audioStatus === "unavailable" ? (
+        <Text style={styles.error}>{t("workspace.browser.controls.audioUnavailable")}</Text>
+      ) : null}
+      {item?.audioRequested && item.audioStatus === "starting" && item.status !== "recording" ? (
+        <Text style={styles.muted}>{t("panels.recordings.audioUnknown")}</Text>
+      ) : null}
       {errors.map((error) => (
         <StorageError key={error} message={labels[error] ?? error} />
       ))}

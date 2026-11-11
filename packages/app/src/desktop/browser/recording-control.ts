@@ -7,8 +7,18 @@ export interface RecordingControlState {
   recordingId: string | null;
   error: string | null;
   reason?: "quota" | "disk-full";
+  audioRequested?: boolean;
+  audioStatus?: "starting" | "captured" | "unavailable" | "disabled";
+  audioReason?: string;
 }
 type Bridge = Pick<DesktopRecordingBridge, "start" | "stop" | "active" | "onState">;
+function audioState(event: DesktopRecordingState, state: RecordingControlState) {
+  return {
+    audioRequested: event.audioRequested ?? state.audioRequested,
+    audioStatus: event.audioStatus ?? state.audioStatus,
+    audioReason: event.audioReason ?? state.audioReason,
+  };
+}
 
 export function createRecordingControl(
   bridge: Bridge,
@@ -39,6 +49,7 @@ export function createRecordingControl(
     let reason: string | null = null;
     if (storageReason === "quota") reason = "Recording storage quota exceeded";
     if (storageReason === "disk-full") reason = "ENOSPC";
+    const audio = audioState(event, state);
     if (event.status === "complete" || event.status === "interrupted") {
       set({
         status: "idle",
@@ -48,6 +59,7 @@ export function createRecordingControl(
             ? (reason ?? RECORDING_INTERRUPTED)
             : null,
         reason: storageReason,
+        ...audio,
       });
     } else {
       set({
@@ -55,6 +67,7 @@ export function createRecordingControl(
         recordingId: event.recordingId,
         error: event.status === "stopping" ? reason : null,
         reason: event.status === "stopping" ? storageReason : undefined,
+        ...audio,
       });
     }
   };
@@ -63,6 +76,24 @@ export function createRecordingControl(
       /^Error invoking remote method '[^']+': (?:Error: )?/,
       "",
     );
+  const handleFailure = async (error: unknown, id: string | null, before: number) => {
+    if (id) {
+      try {
+        const current = await bridge.active({ browserId });
+        if (revision === before)
+          set({
+            ...(current?.status === "recording" ? audioState(current, state) : {}),
+            status: current?.status === "recording" ? "recording" : "idle",
+            recordingId: current?.status === "recording" ? current.recordingId : null,
+            error: failure(error),
+          });
+      } catch {
+        if (revision === before) set({ status: "idle", recordingId: null, error: failure(error) });
+      }
+    } else if (revision === before || state.status !== "recording") {
+      set({ status: "idle", recordingId: null, error: failure(error) });
+    }
+  };
   return {
     getState: () => state,
     async connect() {
@@ -78,40 +109,35 @@ export function createRecordingControl(
           set({ status: "idle", recordingId: null, error: failure(error) });
       }
     },
-    async toggle() {
+    async toggle(audio = false) {
       if (disposed || busy || (state.status !== "idle" && state.status !== "recording")) return;
       busy = true;
       const id = state.recordingId;
       startPending = !id;
       const before = revision;
-      set({ ...state, status: id ? "stopping" : "starting", error: null });
+      set({
+        ...state,
+        status: id ? "stopping" : "starting",
+        error: null,
+        ...(id
+          ? {}
+          : {
+              audioRequested: audio,
+              audioStatus: audio ? "starting" : "disabled",
+              audioReason: undefined,
+            }),
+      });
       try {
         if (id) {
           await bridge.stop({ recordingId: id });
           if (revision === before) set({ status: "idle", recordingId: null, error: null });
         } else {
-          const result = await bridge.start({ browserId });
+          const result = await bridge.start(audio ? { browserId, audio: true } : { browserId });
           if (revision === before)
-            set({ status: "recording", recordingId: result.recordingId, error: null });
+            set({ ...state, status: "recording", recordingId: result.recordingId, error: null });
         }
       } catch (error) {
-        // Reconcile a failed stop with main before deciding whether it is still active.
-        if (id) {
-          try {
-            const current = await bridge.active({ browserId });
-            if (revision === before)
-              set({
-                status: current?.status === "recording" ? "recording" : "idle",
-                recordingId: current?.status === "recording" ? current.recordingId : null,
-                error: failure(error),
-              });
-          } catch {
-            if (revision === before)
-              set({ status: "idle", recordingId: null, error: failure(error) });
-          }
-        } else if (revision === before || state.status !== "recording") {
-          set({ status: "idle", recordingId: null, error: failure(error) });
-        }
+        await handleFailure(error, id, before);
       } finally {
         busy = false;
         startPending = false;

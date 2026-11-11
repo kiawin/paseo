@@ -1,5 +1,7 @@
 # Browser Capture Harness
 
+For recording audio behavior and platform evidence, see [browser-recording.md](browser-recording.md).
+
 The desktop capture harness is the real-Electron verification path for browser screenshots.
 It validates the compositor behavior that unit tests cannot see:
 

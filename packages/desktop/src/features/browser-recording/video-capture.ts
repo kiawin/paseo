@@ -10,6 +10,13 @@ interface Options {
   store: BrowserRecordingStore;
   onError: (error: unknown) => void;
   onStorageError?: (recordingId: string, error: unknown) => void;
+  allowAudio?: (member: RecordingMembership) => boolean;
+  onAudioStatus?: (value: {
+    recordingId: string;
+    memberId: string;
+    status: "captured" | "unavailable";
+    reason?: string;
+  }) => void;
 }
 interface View {
   member: RecordingMembership;
@@ -18,6 +25,7 @@ interface View {
   done: () => Promise<void>;
 }
 interface Active {
+  audio: boolean;
   baseOffset: number;
   baseMonotonic: number;
   views: Map<string, View>;
@@ -58,23 +66,33 @@ export function createVideoCaptureManager({
   store,
   onError,
   onStorageError,
+  allowAudio,
+  onAudioStatus,
 }: Options) {
   const active = new Map<string, Active>();
   let workers = 0;
-  const sources = new Map<BrowserWindow, WebContents>();
+  const sources = new Map<BrowserWindow, { target: WebContents; audioAllowed: boolean }>();
   let videoSession: Electron.Session | undefined;
   const getVideoSession = () => {
     if (videoSession) return videoSession;
     videoSession = session.fromPartition(`paseo-video-${randomUUID()}`);
     videoSession.setDisplayMediaRequestHandler((request, callback) => {
-      if (request.videoRequested && !request.audioRequested) {
-        for (const [window, target] of sources) {
+      if (request.videoRequested) {
+        for (const [window, source] of sources) {
+          const { target } = source;
           if (
             !window.isDestroyed() &&
             request.frame === window.webContents.mainFrame &&
             !target.isDestroyed()
           ) {
-            callback({ video: target.mainFrame });
+            if (request.audioRequested && !source.audioAllowed) {
+              callback({ video: target.mainFrame });
+              return;
+            }
+            callback({
+              video: target.mainFrame,
+              ...(request.audioRequested ? { audio: target.mainFrame } : {}),
+            });
             return;
           }
         }
@@ -134,6 +152,9 @@ export function createVideoCaptureManager({
     let initialized = false;
     let failureReported = false;
     let generationStart = 0;
+    // Each begin() owns one generation. The preload reports audio before
+    // "started", so this resets here rather than in the started handler.
+    let audioCaptured = false;
     let watchdog: ReturnType<typeof setTimeout> | undefined;
     const pendingWrites = new Set<Promise<void>>();
     const failedWrites: unknown[] = [];
@@ -214,6 +235,28 @@ export function createVideoCaptureManager({
       state.resumes.set(member.memberId, () => target.removeListener("did-stop-loading", resume));
       target.once("did-stop-loading", resume);
     };
+    const handleAudioStatus = (item: Record<string, unknown>) => {
+      if (item.status !== "captured" && item.status !== "unavailable")
+        throw new Error("Invalid audio status");
+      if (!state.audio) throw new Error("Unexpected audio status");
+      if (item.status === "captured") audioCaptured = true;
+      const reason = typeof item.reason === "string" ? item.reason.slice(0, 128) : undefined;
+      const value: Parameters<NonNullable<Options["onAudioStatus"]>>[0] = {
+        recordingId: member.recordingId,
+        memberId: member.memberId,
+        status: item.status,
+        ...(reason ? { reason } : {}),
+      };
+      onAudioStatus?.(value);
+      if (item.status === "unavailable") report(member, "audio-unavailable");
+      void coordinator
+        .emit({
+          webContentsId: member.webContentsId,
+          kind: "media",
+          payload: { type: "audio-status", status: item.status, ...(reason ? { reason } : {}) },
+        })
+        .catch(onError);
+    };
     target.on("did-start-navigation", navigation);
     ipcMain.handle(channel, async (event, message: unknown) => {
       if (
@@ -242,6 +285,10 @@ export function createVideoCaptureManager({
         armWatchdog();
         return;
       }
+      if (item.type === "audio-status") {
+        handleAudioStatus(item);
+        return;
+      }
       if (item.type === "stopped") {
         finish();
         return;
@@ -262,7 +309,9 @@ export function createVideoCaptureManager({
         startMs: Math.max(0, generationStart + item.start),
         durationMs: item.end - item.start,
         mimeType: item.mimeType,
-        track: "video",
+        // Track identifies the container codec, even if audio later ends.
+        // Timed audio-status events mark missing sound within this generation.
+        track: audioCaptured ? "combined" : "video",
         bytes: new Uint8Array(item.bytes),
       });
       pendingWrites.add(write);
@@ -296,11 +345,11 @@ export function createVideoCaptureManager({
         });
         win.webContents.on("will-navigate", (event) => event.preventDefault());
         win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-        sources.set(win, target);
+        sources.set(win, { target, audioAllowed: state.audio && (allowAudio?.(member) ?? true) });
         armWatchdog();
         await Promise.race([win.loadFile(join(__dirname, "recorder.html")), completed]);
         if (stopping) return;
-        win.webContents.send("paseo-video-config", { channel });
+        win.webContents.send("paseo-video-config", { channel, audio: state.audio });
         await Promise.race([
           ready,
           completed,
@@ -394,12 +443,13 @@ export function createVideoCaptureManager({
   };
   const unsubscribeStop = coordinator.subscribeStop(stop);
   return {
-    async start(recordingId: string) {
+    async start(recordingId: string, options: { audio?: boolean } = {}) {
       if (active.has(recordingId)) throw new Error("Video capture is already active");
       const metadata = await store.readMetadata(recordingId);
       const members = coordinator.listMemberships(recordingId);
       if (!members.length) throw new Error("Recording has no live members");
       active.set(recordingId, {
+        audio: options.audio === true,
         baseOffset: Math.max(0, Date.now() - metadata.startedAt),
         baseMonotonic: performance.now(),
         views: new Map(),

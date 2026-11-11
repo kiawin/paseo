@@ -49,6 +49,7 @@ export function RecordingPlayer({
   const [selected, setSelected] = useState<string | null>(null);
   const [timeMs, setTimeMs] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [heldGeneration, setHeldGeneration] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +187,7 @@ export function RecordingPlayer({
       setHeldGeneration(generation.generationId);
     setPlaying((value) => !value);
   }, [duration, generation, playing, timeMs]);
+  const toggleMuted = useCallback(() => setMuted((value) => !value), []);
   const selectView = useCallback((id: string) => setSelected(id), []);
   useEffect(() => {
     const element = video.current;
@@ -327,6 +329,7 @@ export function RecordingPlayer({
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <video
         ref={video}
+        muted={muted}
         onTimeUpdate={onTimeUpdate}
         onEnded={onEnded}
         onCanPlay={onCanPlay}
@@ -351,6 +354,11 @@ export function RecordingPlayer({
         <Button size="sm" onPress={togglePlaying} disabled={hasMore}>
           {playing ? t("panels.recordings.pause") : t("panels.recordings.play")}
         </Button>
+        {segments.some((segment) => segment.track === "combined" || segment.track === "audio") ? (
+          <Button size="sm" variant="ghost" onPress={toggleMuted}>
+            {t(muted ? "panels.recordings.unmuteAudio" : "panels.recordings.muteAudio")}
+          </Button>
+        ) : null}
         <Text style={styles.muted}>
           {(timeMs / 1000).toFixed(1)}s / {(duration / 1000).toFixed(1)}s
         </Text>

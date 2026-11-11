@@ -25,7 +25,7 @@ interface Options {
   registry: PaseoBrowserWebviewRegistry;
   coordinator: BrowserRecordingCoordinator;
   store: BrowserRecordingStore;
-  video: { start: (id: string) => Promise<void> };
+  video: { start: (id: string, options?: { audio?: boolean }) => Promise<void> };
   ensureInteractionReady: (contentsId: number) => Promise<void | boolean>;
   isTrustedHost: (senderId: number, url?: string) => boolean;
   getRecoveryError?: () => string | null;
@@ -63,13 +63,18 @@ interface ActiveRecording {
   interrupted: boolean;
   failureReason?: "quota" | "disk-full";
   failureDescription?: string;
+  audioRequested: boolean;
+  audioStatus: "starting" | "captured" | "unavailable" | "disabled";
+  audioReason?: string;
   verifiedDocuments: Set<string>;
   finalization?: Promise<void>;
   stopped: Promise<void>;
   signalStop: () => void;
 }
 const identifier = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
-const startInput = z.object({ browserId: z.string().min(1).max(256) }).strict();
+const startInput = z
+  .object({ browserId: z.string().min(1).max(256), audio: z.boolean().optional() })
+  .strict();
 const stopInput = z.object({ recordingId: identifier }).strict();
 const readInput = z
   .object({
@@ -156,6 +161,9 @@ export function createRecordingBridge(options: Options) {
         recordingId,
         browserId,
         status,
+        audioRequested: state.audioRequested,
+        audioStatus: state.audioStatus,
+        ...(state.audioReason ? { audioReason: state.audioReason } : {}),
         ...(state.failureReason && (status === "stopping" || status === "interrupted")
           ? { reason: state.failureReason }
           : {}),
@@ -173,6 +181,34 @@ export function createRecordingBridge(options: Options) {
       if (active.get(recordingId) !== state || state.stopping) return;
       void stopOwned(recordingId, state).catch((failure: unknown) => options.onError?.(failure));
     });
+  };
+  const reportAudioStatus = (value: {
+    recordingId: string;
+    memberId: string;
+    status: "captured" | "unavailable";
+    reason?: string;
+  }) => {
+    const state = active.get(value.recordingId);
+    if (!state || (state.stopping && value.status !== "unavailable")) return;
+    // A missing interval stays visible even if a later generation captures audio.
+    const previousStatus = state.audioStatus;
+    const previousReason = state.audioReason;
+    if (value.status === "unavailable" || state.audioStatus !== "unavailable") {
+      state.audioStatus = value.status;
+      state.audioReason = value.reason;
+    }
+    if (
+      state.audioRequested &&
+      (state.audioStatus !== previousStatus || state.audioReason !== previousReason)
+    )
+      track(
+        state,
+        store.updateMetadata(value.recordingId, {
+          audioStatus: state.audioStatus,
+          audioReason: state.audioReason,
+        }),
+      );
+    notifyState(value.recordingId, state, activeStatus(state));
   };
   const notifyInterrupted = (
     recordingId: string,
@@ -377,6 +413,9 @@ export function createRecordingBridge(options: Options) {
         recordingId: change.member.recordingId,
         browserId,
         status: state.started ? "recording" : "starting",
+        audioRequested: state.audioRequested,
+        audioStatus: state.audioStatus,
+        ...(state.audioReason ? { audioReason: state.audioReason } : {}),
       });
     }
     if (browserId && change.type === "removed" && !state.stopping) {
@@ -521,6 +560,7 @@ export function createRecordingBridge(options: Options) {
   };
   return {
     reportStorageFailure,
+    reportAudioStatus,
     async active(caller: Caller, input: unknown) {
       assertCaller(caller);
       const { browserId } = startInput.parse(input);
@@ -535,12 +575,19 @@ export function createRecordingBridge(options: Options) {
         return recordingId ? { recordingId, browserId, status: "starting" as const } : null;
       }
       const [recordingId, state] = entry;
-      return { recordingId, browserId, status: activeStatus(state) };
+      return {
+        recordingId,
+        browserId,
+        status: activeStatus(state),
+        audioRequested: state.audioRequested,
+        audioStatus: state.audioStatus,
+        ...(state.audioReason ? { audioReason: state.audioReason } : {}),
+      };
     },
     async start(caller: Caller, input: unknown) {
       assertCaller(caller);
       if (disposePromise) throw new Error("Recording bridge is closed");
-      const { browserId } = startInput.parse(input);
+      const { browserId, audio } = startInput.parse(input);
       const contentsId = registry.getWebContentsIdForBrowserInHostWindow(
         caller.senderId,
         browserId,
@@ -565,6 +612,7 @@ export function createRecordingBridge(options: Options) {
           recordingId,
           workspaceId,
           startedAt,
+          ...(audio ? { audioRequested: true, audioStatus: "starting" as const } : {}),
           status: "recording",
         });
         created = true;
@@ -589,6 +637,8 @@ export function createRecordingBridge(options: Options) {
           stopping: false,
           started: false,
           interrupted: false,
+          audioRequested: audio === true,
+          audioStatus: audio ? "starting" : "disabled",
           verifiedDocuments: new Set(),
           stopped,
           signalStop,
@@ -631,7 +681,12 @@ export function createRecordingBridge(options: Options) {
             reason: "interaction-startup-unverified",
           });
         if (state.stopping) throw new Error("Recording stopped during startup");
-        await waitForStartup(state, options.video.start(recordingId));
+        await waitForStartup(
+          state,
+          audio
+            ? options.video.start(recordingId, { audio: true })
+            : options.video.start(recordingId),
+        );
         if (state.stopping) throw new Error("Recording stopped during startup");
         state.started = true;
         notifyState(recordingId, state, "recording");
