@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { chmod, link, lstat, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, open, readdir, rename, rm, unlink } from "node:fs/promises";
 import { isAbsolute, join, parse, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -326,6 +326,56 @@ export class BrowserRecordingStore {
     );
     if (parsed.recordingId !== id) throw new Error("Recording metadata identity mismatch");
     return parsed;
+  }
+
+  async list(): Promise<{ recordings: RecordingMetadata[]; incomplete: string[] }> {
+    try {
+      await this.existingDirectory(this.root);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        return { recordings: [], incomplete: [] };
+      throw error;
+    }
+    const entries = await readdir(this.root, { withFileTypes: true });
+    if (entries.length > 10_000) throw new Error("Recording list exceeds its limit");
+    const recordings: RecordingMetadata[] = [];
+    const incomplete: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !identifier.safeParse(entry.name).success) continue;
+      try {
+        recordings.push(await this.readMetadata(entry.name));
+      } catch (error) {
+        if (
+          (error as NodeJS.ErrnoException).code !== "ENOENT" ||
+          (await this.recordingEntryExists(entry.name))
+        )
+          incomplete.push(entry.name);
+      }
+    }
+    recordings.sort((a, b) => b.startedAt - a.startedAt);
+    return { recordings, incomplete };
+  }
+
+  private async recordingEntryExists(id: string): Promise<boolean> {
+    try {
+      const entry = await lstat(this.path(id));
+      return entry.isDirectory() && !entry.isSymbolicLink();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
+  async delete(id: string): Promise<void> {
+    identifier.parse(id);
+    await this.queue(id, async () => {
+      const directory = await this.recordingDirectory(id);
+      const tombstone = join(this.root, `.deleted-${id}-${randomUUID()}`);
+      await rename(directory, tombstone);
+      await this.syncDirectory(this.root);
+      await rm(tombstone, { recursive: true });
+      await this.syncDirectory(this.root);
+    });
   }
   async updateMetadata(
     id: string,

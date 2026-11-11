@@ -59,6 +59,11 @@ import { createInteractionRecorder } from "./features/browser-recording/interact
 import { browserRecordingPopupOptions } from "./features/browser-recording/popup-options.js";
 import { BrowserRecordingStore } from "./features/browser-recording/store.js";
 import { createVideoCaptureManager } from "./features/browser-recording/video-capture.js";
+import { createRecordingBridge } from "./features/browser-recording/ipc.js";
+import {
+  isTrustedRecordingUrl,
+  registerRecordingIpc,
+} from "./features/browser-recording/register-ipc.js";
 import { createBrowserCaptureService } from "./features/browser-capture.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { registerFileDragHandlers } from "./features/file-drag/ipc.js";
@@ -229,9 +234,15 @@ function showBrowserWebviewContextMenu(
 }
 
 let browserInteractionRecorder: ReturnType<typeof createInteractionRecorder> | undefined;
+let browserRecordingBridge: ReturnType<typeof createRecordingBridge> | undefined;
+const trustedRecordingHosts = new Set<number>();
 const browserRecordingLifecycle = createBrowserRecordingLifecycle({
   registry: getPaseoBrowserWebviewRegistry(),
-  onCdpEvent: (...args) => browserInteractionRecorder?.onCdpEvent(...args),
+  onCdpEvent: (...args) => {
+    browserInteractionRecorder?.onCdpEvent(...args);
+    const [contents, method, params, sessionId] = args;
+    browserRecordingBridge?.onCdpEvent(contents.id, method, params, sessionId);
+  },
   popupOptions: (mainWindow) =>
     browserRecordingPopupOptions(mainWindow, getBrowserKeyboardPreloadPath()),
   onError: (error) => log.error("[browser-recording] lifecycle error", error),
@@ -306,6 +317,87 @@ export const browserVideoCaptureManager = createVideoCaptureManager({
   store: browserRecordingStore,
   onError: (error) => log.error("[browser-recording] video error", error),
 });
+function recordingResponseBody(result: unknown): { body: string; base64Encoded: boolean } {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    typeof (result as { body?: unknown }).body !== "string" ||
+    typeof (result as { base64Encoded?: unknown }).base64Encoded !== "boolean"
+  )
+    throw new Error("Invalid response body result");
+  return result as { body: string; base64Encoded: boolean };
+}
+function recordingRequestBody(result: unknown): { postData: string } {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    typeof (result as { postData?: unknown }).postData !== "string"
+  )
+    throw new Error("Invalid request body result");
+  return result as { postData: string };
+}
+browserRecordingBridge = createRecordingBridge({
+  registry: getPaseoBrowserWebviewRegistry(),
+  coordinator: browserRecordingLifecycle.coordinator,
+  store: browserRecordingStore,
+  video: browserVideoCaptureManager,
+  ensureInteractionReady: async (id) => {
+    await browserRecordingLifecycle.ready(id);
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      if (browserInteractionRecorder?.getFrameCount(id)) return true;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  },
+  isTrustedHost: (id, url) =>
+    trustedRecordingHosts.has(id) &&
+    isTrustedRecordingUrl(url ?? "", app.isPackaged, DEV_SERVER_URL),
+  notify: (id, value) => {
+    const target = webContents.fromId(id);
+    if (
+      !target ||
+      target.isDestroyed() ||
+      !isTrustedRecordingUrl(target.getURL(), app.isPackaged, DEV_SERVER_URL)
+    )
+      return;
+    try {
+      target.send("paseo:recording:state", value);
+    } catch (error) {
+      log.warn("[browser-recording] state notification failed", error);
+    }
+  },
+  onError: (error) => log.error("[browser-recording] bridge error", error),
+  createBodyReader: (id) => {
+    const reader = browserRecordingLifecycle.retainNetwork(id);
+    return {
+      ready: reader.ready,
+      getResponseBody: async (requestId, sessionId) =>
+        recordingResponseBody(await reader.getResponseBody(requestId, sessionId)),
+      getRequestPostData: async (requestId, sessionId) =>
+        recordingRequestBody(await reader.getRequestPostData(requestId, sessionId)),
+      release: () => reader.release(),
+    };
+  },
+  getResponseBody: async (id, requestId, sessionId) => {
+    const result = await browserRecordingLifecycle.backgroundCommand(
+      id,
+      "Network.getResponseBody",
+      { requestId },
+      sessionId ?? undefined,
+    );
+    return recordingResponseBody(result);
+  },
+  getRequestPostData: async (id, requestId, sessionId) => {
+    const result = await browserRecordingLifecycle.backgroundCommand(
+      id,
+      "Network.getRequestPostData",
+      { requestId },
+      sessionId ?? undefined,
+    );
+    return recordingRequestBody(result);
+  },
+});
 
 // Allow users to pass Chromium flags via PASEO_ELECTRON_FLAGS for debugging
 // rendering issues (e.g. "--disable-gpu --ozone-platform=x11").
@@ -362,6 +454,8 @@ ipcMain.handle("paseo:get-pending-open-project", (event) => {
 ipcMain.handle("paseo:agent-navigation:ready", (event) => {
   return agentNavigationInbox.windowReady(event.sender.id);
 });
+
+registerRecordingIpc(ipcMain, browserRecordingBridge);
 
 ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => {
   const input = readAttachedBrowserInput(rawInput);
@@ -690,18 +784,25 @@ async function createWindow(
   applyDesktopWindowChromeMode({ win: mainWindow, mode: DESKTOP_WINDOW_CHROME_MODE });
 
   const webContentsId = mainWindow.webContents.id;
+  trustedRecordingHosts.add(webContentsId);
   options.onCreated?.(webContentsId);
-  mainWindow.webContents.on("did-start-navigation", (_event, _url, isSameDocument, isMainFrame) => {
+  mainWindow.webContents.on("did-start-navigation", (_event, url, isSameDocument, isMainFrame) => {
     if (isMainFrame && !isSameDocument) {
       agentNavigationInbox.windowLoading(webContentsId);
+      if (!isTrustedRecordingUrl(url, app.isPackaged, DEV_SERVER_URL))
+        void browserRecordingBridge!
+          .hostClosed(webContentsId)
+          .catch((error) => log.error("[browser-recording] navigation cleanup failed", error));
     }
   });
   mainWindow.on("closed", () => {
     options.onClosed?.(webContentsId);
     agentNavigationInbox.removeWindow(webContentsId);
-    void browserRecordingLifecycle.coordinator
-      .handleHostClosed(webContentsId)
-      .catch((error) => log.error("[browser-recording] host cleanup failed", error));
+    void browserRecordingBridge!
+      .hostClosed(webContentsId)
+      .finally(() => browserRecordingLifecycle.coordinator.handleHostClosed(webContentsId))
+      .catch((error) => log.error("[browser-recording] host cleanup failed", error))
+      .finally(() => trustedRecordingHosts.delete(webContentsId));
     unregisterPaseoBrowserHost(webContentsId);
     browserKeyboard.detachHost(webContentsId);
   });
@@ -1018,13 +1119,27 @@ function showDaemonShutdownDialog(): void {
 const quitLifecycle = createQuitLifecycle({
   app,
   closeTransportSessions: closeAllTransportSessions,
-  stopDesktopManagedDaemonIfNeeded: () =>
-    stopDesktopManagedDaemonOnQuitIfNeeded({
+  stopDesktopManagedDaemonIfNeeded: async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        browserRecordingBridge!.shutdown(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Recording shutdown timed out")), 12_000);
+        }),
+      ]);
+    } catch (error) {
+      log.error("[browser-recording] shutdown failed", error);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return stopDesktopManagedDaemonOnQuitIfNeeded({
       settingsStore: getDesktopSettingsStore(),
       isDesktopManagedDaemonRunning: isDesktopManagedDaemonRunningSync,
       stopDaemon: () => stopDesktopDaemonViaCli("quit"),
       showShutdownFeedback: showDaemonShutdownDialog,
-    }),
+    });
+  },
   installAppUpdateOnQuit: async (signal) => {
     const settings = await getDesktopSettingsStore().get();
     return installAppUpdateOnQuit({

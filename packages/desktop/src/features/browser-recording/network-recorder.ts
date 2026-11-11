@@ -1,3 +1,5 @@
+import type { CaptureBudget } from "./capture-budget.js";
+
 export type NetworkBody =
   | { state: "complete" | "truncated"; data: string; encoding: "utf8" | "base64" }
   | { state: "unavailable" | "unsupported" | "none"; reason?: string };
@@ -21,6 +23,7 @@ interface ExtraWait {
 }
 interface BodyJob {
   transaction: NetworkTransaction;
+  kind: "request" | "response";
   resolve: (body: NetworkBody) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -64,6 +67,11 @@ interface Options {
     requestId: string,
     sessionId: string | null,
   ) => Promise<{ body: string; base64Encoded: boolean }>;
+  getRequestPostData?: (
+    requestId: string,
+    sessionId: string | null,
+  ) => Promise<{ postData: string }>;
+  budget?: CaptureBudget;
   maxBodyBytes?: number;
   maxActiveRequests?: number;
   maxBodyReads?: number;
@@ -85,6 +93,10 @@ export class NetworkRecorder {
   private readonly responseExtras = new WeakMap<NetworkTransaction, Record<string, string>>();
   private readonly servedFromCache = new WeakSet<NetworkTransaction>();
   private readonly bodySizes = new WeakMap<NetworkBody, number>();
+  private readonly requestBodies = new WeakMap<NetworkTransaction, Promise<NetworkBody>>();
+  private readonly settledRequestBodies = new WeakMap<NetworkTransaction, NetworkBody>();
+  private readonly ambiguousRequestBodies = new WeakSet<NetworkTransaction>();
+  private readonly budgetReleases = new WeakMap<NetworkTransaction, Array<() => void>>();
   private readonly extraStates = new WeakMap<NetworkTransaction, ExtraState>();
   private readonly earlyExtras = new Map<
     string,
@@ -94,6 +106,7 @@ export class NetworkRecorder {
       ambiguous?: Set<ExtraKind>;
       fromActive?: boolean;
       expiresAt: number;
+      releases?: Array<() => void>;
     }
   >();
   private readonly extraWaiters = new Map<string, ExtraWait[]>();
@@ -144,12 +157,36 @@ export class NetworkRecorder {
     transaction.limitations = [
       ...new Set([...(transaction.limitations ?? []), "metadata-truncated"]),
     ];
-    return value.slice(0, max);
+    // Copy the prefix so a short retained value cannot keep an arbitrarily
+    // large Chromium string alive through V8's sliced-string representation.
+    return Buffer.from(value.slice(0, max), "utf8").toString("utf8");
   }
   private markLimitation(transaction: NetworkTransaction, reason: string): void {
     transaction.limitations = [...new Set([...(transaction.limitations ?? []), reason])];
   }
-  private headers(value: unknown, transaction: NetworkTransaction): Record<string, string> {
+  private reserveBudget(transaction: NetworkTransaction, bytes: number): boolean {
+    if (!this.options.budget) return true;
+    const reservations = this.budgetReleases.get(transaction);
+    if (!reservations) return true;
+    const release = this.options.budget.reserve(bytes);
+    if (!release) {
+      this.markLimitation(transaction, "capture-memory-limit");
+      this.gap("capture-memory-limit");
+      return false;
+    }
+    reservations.push(release);
+    return true;
+  }
+  private releaseBudget(transaction: NetworkTransaction): void {
+    const reservations = this.budgetReleases.get(transaction);
+    this.budgetReleases.delete(transaction);
+    for (const release of reservations ?? []) release();
+  }
+  private captureHeaders(
+    value: unknown,
+    transaction: NetworkTransaction,
+    reserve = true,
+  ): Record<string, string> | null {
     const out = Object.create(null) as Record<string, string>;
     let remaining = 64 * 1024;
     const source = object(value);
@@ -169,7 +206,19 @@ export class NetworkRecorder {
         this.markLimitation(transaction, "metadata-header-name-collision");
       else out[name] = content;
     }
+    if (reserve && !this.reserveBudget(transaction, (64 * 1024 - remaining) * 4 + 4096))
+      return null;
     return out;
+  }
+  private headers(
+    value: unknown,
+    transaction: NetworkTransaction,
+    reserve = true,
+  ): Record<string, string> {
+    return (
+      this.captureHeaders(value, transaction, reserve) ??
+      (Object.create(null) as Record<string, string>)
+    );
   }
   private bounded(data: string, encoding: "utf8" | "base64"): NetworkBody {
     const length = Buffer.byteLength(data, encoding);
@@ -244,6 +293,7 @@ export class NetworkRecorder {
     for (const [key, entry] of this.earlyExtras) {
       if (entry.expiresAt > now) break;
       this.earlyExtras.delete(key);
+      for (const release of entry.releases ?? []) release();
       this.gap(
         entry.fromActive ? "extra-info-duplicate-or-future-hop" : "extra-info-without-request",
       );
@@ -251,14 +301,15 @@ export class NetworkRecorder {
   }
   private applyExtra(transaction: NetworkTransaction, kind: ExtraKind, value: unknown): void {
     const state = this.extraStates.get(transaction)!;
-    const captured = this.headers(value, transaction);
+    if (kind === "request") state.requestSeen = true;
+    else state.responseSeen = true;
+    const captured = this.captureHeaders(value, transaction);
+    if (!captured) return;
     if (kind === "request") {
-      state.requestSeen = true;
       state.requestExtra = captured;
       if (transaction.outcome !== "redirected" && transaction.redirectIndex === 0)
         this.requestExtra(transaction, captured);
     } else {
-      state.responseSeen = true;
       state.responseExtra = captured;
       if (transaction.outcome !== "redirected" && transaction.redirectIndex === 0)
         this.responseExtra(transaction, captured);
@@ -284,15 +335,29 @@ export class NetworkRecorder {
       this.applyExtra(current, kind, value);
       return;
     }
+    this.bufferEarlyExtra(key, kind, value, Boolean(current && state));
+  }
+  private bufferEarlyExtra(
+    key: string,
+    kind: ExtraKind,
+    value: unknown,
+    fromActive: boolean,
+  ): void {
     let early = this.earlyExtras.get(key);
     if (!early) {
       if (this.earlyExtras.size >= this.maxActiveRequests) {
         this.gap("extra-info-buffer-limit");
         return;
       }
+      const release = this.options.budget?.reserve(4096);
+      if (this.options.budget && !release) {
+        this.gap("capture-memory-limit");
+        return;
+      }
       early = {
         expiresAt: Date.now() + this.extraInfoTimeoutMs,
-        fromActive: Boolean(current && state),
+        fromActive,
+        ...(release ? { releases: [release] } : {}),
       };
       this.earlyExtras.set(key, early);
     }
@@ -303,7 +368,16 @@ export class NetworkRecorder {
       return;
     }
     const scratch = { limitations: [] } as unknown as NetworkTransaction;
-    early[kind] = this.headers(value, scratch);
+    const captured = this.headers(value, scratch);
+    const release = this.options.budget?.reserve(
+      Buffer.byteLength(JSON.stringify(captured)) * 4 + 4096,
+    );
+    if (this.options.budget && !release) {
+      this.gap("capture-memory-limit");
+      return;
+    }
+    if (release) (early.releases ??= []).push(release);
+    early[kind] = captured;
     if (scratch.limitations?.length) this.gap("extra-info-metadata-truncated");
   }
   private extraGate(key: string, transaction: NetworkTransaction): Promise<void> {
@@ -351,10 +425,22 @@ export class NetworkRecorder {
   ): Promise<void> {
     if (this.pendingWrites >= this.maxPendingWrites) {
       this.gap("write-backlog-limit");
+      void Promise.allSettled([this.requestBodies.get(transaction) ?? Promise.resolve()]).then(
+        () => {
+          this.releaseBudget(transaction);
+          return undefined;
+        },
+      );
       return Promise.resolve();
     }
     this.pendingWrites += 1;
-    const ready = Promise.all([body ?? Promise.resolve(null), extraGate]).then(([value]) => {
+    const ready = Promise.all([
+      body ?? Promise.resolve(null),
+      extraGate,
+      this.requestBodies.get(transaction) ?? Promise.resolve(null),
+    ]).then(([value, , requestBody]) => {
+      if (requestBody && !this.ambiguousRequestBodies.has(transaction))
+        transaction.request.body = requestBody;
       if (value && transaction.response) {
         transaction.response.body = value;
         const size = this.bodySizes.get(value);
@@ -373,16 +459,11 @@ export class NetworkRecorder {
       })
       .finally(() => {
         this.pendingWrites -= 1;
+        this.releaseBudget(transaction);
       });
     return this.writes;
   }
-  private create(
-    event: NetworkEvent,
-    requestId: string,
-    redirectIndex: number,
-  ): NetworkTransaction {
-    const p = event.params;
-    const request = object(p.request);
+  private initialRequestBody(request: JsonObject): NetworkBody {
     let body: NetworkBody = { state: "none" };
     if (typeof request.postData === "string") {
       body = this.bounded(request.postData, "utf8");
@@ -398,6 +479,16 @@ export class NetworkRecorder {
       body = this.requestEntries(request.postDataEntries);
     else if (request.hasPostData === true)
       body = { state: "unavailable", reason: "request-body-not-provided" };
+    return body;
+  }
+  private create(
+    event: NetworkEvent,
+    requestId: string,
+    redirectIndex: number,
+  ): NetworkTransaction | null {
+    const p = event.params;
+    const request = object(p.request);
+    const body = this.initialRequestBody(request);
     const transaction: NetworkTransaction = {
       requestId,
       sessionId: event.sessionId ?? null,
@@ -421,6 +512,19 @@ export class NetworkRecorder {
         ? { limitations: ["request-body-completeness-unverified"] }
         : {}),
     };
+    if (this.options.budget) {
+      const release = this.options.budget.reserve(64 * 1024);
+      if (!release) {
+        this.gap("capture-memory-limit");
+        return null;
+      }
+      this.budgetReleases.set(transaction, [release]);
+      if (
+        (body.state === "complete" || body.state === "truncated") &&
+        !this.reserveBudget(transaction, Buffer.byteLength(body.data) * 4 + 4096)
+      )
+        transaction.request.body = { state: "unavailable", reason: "capture-memory-limit" };
+    }
     transaction.request.url = this.limitText(transaction.request.url, 16 * 1024, transaction);
     transaction.request.method = this.limitText(transaction.request.method, 128, transaction);
     transaction.request.headers = this.headers(request.headers, transaction);
@@ -471,17 +575,27 @@ export class NetworkRecorder {
     if (previous) {
       this.active.delete(key);
       redirectIndex = previous.redirectIndex + 1;
+      const settledBody = this.settledRequestBodies.get(previous);
+      if (this.requestBodies.has(previous) && !settledBody) {
+        this.ambiguousRequestBodies.add(previous);
+        previous.request.body = { state: "unavailable", reason: "request-body-redirect-ambiguous" };
+        this.markLimitation(previous, "request-body-redirect-ambiguous");
+      }
       if (event.params.redirectResponse) {
         const state = this.extraStates.get(previous)!;
         state.expected = event.params.redirectHasExtraInfo === true;
         previous.request.headers = state.baseRequestHeaders;
-        previous.request.body = state.baseRequestBody;
+        if (settledBody) previous.request.body = settledBody;
+        else if (!this.ambiguousRequestBodies.has(previous))
+          previous.request.body = state.baseRequestBody;
         previous.limitations = [
           ...new Set([
             ...state.baseLimitations,
             ...(previous.limitations?.filter(
               (value) =>
-                value === "metadata-truncated" || value === "metadata-header-name-collision",
+                value === "metadata-truncated" ||
+                value === "metadata-header-name-collision" ||
+                value.startsWith("request-body-"),
             ) ?? []),
           ]),
         ];
@@ -505,6 +619,8 @@ export class NetworkRecorder {
         previous.outcome = "incomplete";
         previous.error = "request-id-reused";
       }
+      if (this.ambiguousRequestBodies.has(previous))
+        this.markLimitation(previous, "request-body-redirect-ambiguous");
       previous.completedAt = num(event.params.timestamp);
       void this.output(previous, null, this.extraGate(key, previous));
     } else if (this.active.size >= this.maxActiveRequests) {
@@ -518,21 +634,50 @@ export class NetworkRecorder {
         this.markLimitation(oldest, "extra-info-missing");
       void this.output(oldest);
     }
-    const next = this.create(event, id, redirectIndex);
-    if (redirectIndex)
-      next.limitations = [...(next.limitations ?? []), "redirect-extra-info-ambiguous"];
-    this.active.set(key, next);
+    this.admitTransaction(event, id, key, redirectIndex);
+  }
+  private admitTransaction(
+    event: NetworkEvent,
+    id: string,
+    key: string,
+    redirectIndex: number,
+  ): void {
     const early = this.earlyExtras.get(key);
     if (early) {
       this.earlyExtras.delete(key);
+      for (const release of early.releases ?? []) release();
+    }
+    const next = this.create(event, id, redirectIndex);
+    if (!next) return;
+    if (
+      next.request.body.state === "unavailable" &&
+      next.request.body.reason !== "capture-memory-limit" &&
+      (object(event.params.request).hasPostData === true ||
+        Array.isArray(object(event.params.request).postDataEntries)) &&
+      this.options.getRequestPostData
+    ) {
+      this.markLimitation(next, "request-body-completeness-unverified");
+      this.markLimitation(next, "request-body-file-bytes-may-be-omitted");
+      this.requestBodies.set(next, this.readRequestBody(next));
+    }
+    if (redirectIndex)
+      next.limitations = [...(next.limitations ?? []), "redirect-extra-info-ambiguous"];
+    this.active.set(key, next);
+    if (early) {
       if (early.request) this.applyExtra(next, "request", early.request);
       if (early.response) this.applyExtra(next, "response", early.response);
     }
   }
+  private async readRequestBody(transaction: NetworkTransaction): Promise<NetworkBody> {
+    const body = await this.readBody(transaction, "request");
+    this.settledRequestBodies.set(transaction, body);
+    return body;
+  }
   private requestExtra(current: NetworkTransaction, value: unknown): void {
     current.request.headers = this.headers(
-      { ...current.request.headers, ...this.headers(value, current) },
+      { ...current.request.headers, ...object(value) },
       current,
+      false,
     );
     const lengthEntry = Object.entries(current.request.headers).find(
       ([name]) => name.toLowerCase() === "content-length",
@@ -549,23 +694,34 @@ export class NetworkRecorder {
     }
   }
   private responseExtra(current: NetworkTransaction, value: unknown): void {
-    const extra = this.headers(value, current);
+    const extra = object(value) as Record<string, string>;
     if (current.response)
-      current.response.headers = this.headers({ ...current.response.headers, ...extra }, current);
+      current.response.headers = this.headers(
+        { ...current.response.headers, ...extra },
+        current,
+        false,
+      );
     else this.responseExtras.set(current, extra);
   }
   private applyResponse(current: NetworkTransaction, value: unknown): void {
     this.setResponse(current, value);
     const extra = this.responseExtras.get(current);
     if (current.response && extra)
-      current.response.headers = this.headers({ ...current.response.headers, ...extra }, current);
+      current.response.headers = this.headers(
+        { ...current.response.headers, ...extra },
+        current,
+        false,
+      );
     this.responseExtras.delete(current);
   }
   private markCached(current: NetworkTransaction): void {
     this.servedFromCache.add(current);
     if (current.response) current.response.fromCache = true;
   }
-  private readBody(transaction: NetworkTransaction): Promise<NetworkBody> {
+  private readBody(
+    transaction: NetworkTransaction,
+    kind: "request" | "response" = "response",
+  ): Promise<NetworkBody> {
     if (
       this.bodyQueue.length >= this.maxBodyQueue ||
       (this.bodyReads >= this.maxBodyReads && this.bodyReads === this.timedOutBodyReads)
@@ -575,6 +731,7 @@ export class NetworkRecorder {
     return new Promise((resolve) => {
       const job: BodyJob = {
         transaction,
+        kind,
         resolve,
         timer: setTimeout(() => {
           const index = this.bodyQueue.indexOf(job);
@@ -609,16 +766,37 @@ export class NetworkRecorder {
       }, this.bodyReadTimeoutMs);
       timer.unref();
       void Promise.resolve()
-        .then(() =>
-          this.options.getResponseBody(job.transaction.requestId, job.transaction.sessionId),
-        )
+        .then(async () => {
+          if (job.kind === "request") {
+            const body = await this.options.getRequestPostData!(
+              job.transaction.requestId,
+              job.transaction.sessionId,
+            );
+            return { body: body.postData, base64Encoded: false };
+          }
+          return this.options.getResponseBody(job.transaction.requestId, job.transaction.sessionId);
+        })
         .then((body) => {
+          if (timedOut) return { state: "unavailable", reason: "body-read-timeout" } as NetworkBody;
           const encoding = body.base64Encoded ? "base64" : "utf8";
           const captured = this.bounded(body.body, encoding);
+          if (
+            (captured.state === "complete" || captured.state === "truncated") &&
+            !this.reserveBudget(job.transaction, Buffer.byteLength(captured.data) * 4 + 4096)
+          )
+            return { state: "unavailable", reason: "capture-memory-limit" } as NetworkBody;
           this.bodySizes.set(captured, Buffer.byteLength(body.body, encoding));
           return captured;
         })
-        .catch((): NetworkBody => ({ state: "unavailable", reason: "body-not-available" }))
+        .catch((error: unknown): NetworkBody => {
+          const reason =
+            error instanceof Error &&
+            job.kind === "request" &&
+            ["request-body-too-large", "request-body-size-unknown"].includes(error.message)
+              ? error.message
+              : "body-not-available";
+          return { state: "unavailable", reason };
+        })
         .then((body) => {
           clearTimeout(timer);
           this.bodyReads -= 1;
@@ -790,10 +968,12 @@ export class NetworkRecorder {
     this.closed = true;
     for (const entries of Array.from(this.extraWaiters.values()))
       for (const entry of entries) entry.done();
-    for (const entry of this.earlyExtras.values())
+    for (const entry of this.earlyExtras.values()) {
       this.gap(
         entry.fromActive ? "extra-info-duplicate-or-future-hop" : "extra-info-without-request",
       );
+      for (const release of entry.releases ?? []) release();
+    }
     this.earlyExtras.clear();
     for (const transaction of this.active.values()) {
       transaction.outcome = "incomplete";

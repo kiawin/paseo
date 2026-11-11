@@ -4,6 +4,7 @@ import type { CdpConsumer } from "../browser-automation/cdp-session-queue.js";
 import { decideBrowserWindowOpenRequest } from "../browser-webviews/window-open.js";
 import type { PaseoBrowserWebviewRegistry } from "../browser-webviews/registry.js";
 import { BrowserRecordingCoordinator, type RecordingMembership } from "./coordinator.js";
+import { RequestBodyPolicy } from "./request-body-policy.js";
 
 interface LifecycleOptions {
   registry: PaseoBrowserWebviewRegistry;
@@ -26,6 +27,11 @@ interface LifecycleOptions {
 }
 
 export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
+  const networkLimits = {
+    maxTotalBufferSize: 4 * 1024 * 1024,
+    maxResourceBufferSize: 512 * 1024,
+    maxPostDataSize: 256 * 1024,
+  };
   // The one-use proof is minted in Electron's createWindow callback, where
   // Chromium has just supplied the child for this particular opener.
   const proof = new Map<number, number>();
@@ -34,7 +40,10 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
     string,
     { token: string; parent: RecordingMembership; timer: ReturnType<typeof setTimeout> }
   >();
-  const consumers = new Map<number, { consumer: CdpConsumer; contents: WebContents }>();
+  const consumers = new Map<
+    number,
+    { consumer: CdpConsumer; contents: WebContents; bodyPolicy: RequestBodyPolicy }
+  >();
   const readiness = new Map<number, Promise<void>>();
   const reservationTtlMs = options.tabReservationTtlMs ?? 30_000;
   const coordinator = new BrowserRecordingCoordinator(
@@ -68,6 +77,7 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
   function instrument(contents: WebContents, member: RecordingMembership, early: boolean): void {
     if (consumers.has(contents.id)) return;
     const shared = getSharedCdpSession(contents);
+    const bodyPolicy = new RequestBodyPolicy();
     const frameVersions = new Map<string, number>();
     const snapshot = async (consumer: CdpConsumer, sessionId?: string): Promise<void> => {
       const before = new Map(frameVersions);
@@ -105,6 +115,7 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
       });
     const consumer = shared.createConsumer({
       onMessage: ({ method, params, sessionId }) => {
+        bodyPolicy.observe(method, params, sessionId);
         if (method === "Target.attachedToTarget" && typeof params.sessionId === "string") {
           const childSession = params.sessionId;
           const info = params.targetInfo as { type?: unknown } | undefined;
@@ -114,7 +125,7 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
             return;
           }
           void Promise.all([
-            consumer.enableDomain("Network", childSession),
+            consumer.enableDomain("Network", childSession, networkLimits),
             consumer.enableDomain("Page", childSession),
             enableRuntime(childSession),
             consumer.enableAutoAttach(childSession),
@@ -157,10 +168,12 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
       },
       onDetach: () => gap(member, "debugger-detached"),
     });
-    consumers.set(contents.id, { consumer, contents });
+    consumers.set(contents.id, { consumer, contents, bodyPolicy });
     let network: Promise<void>;
     try {
-      network = early ? shared.primeDomain(consumer, "Network") : consumer.enableDomain("Network");
+      network = early
+        ? shared.primeDomain(consumer, "Network", networkLimits)
+        : consumer.enableDomain("Network", undefined, networkLimits);
       if (!early) gap(member, "capture-setup-pending");
     } catch (error) {
       release(contents.id);
@@ -341,5 +354,44 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
     // The Electron harness waits for setup before asserting later navigation.
     ready: (id: number) =>
       readiness.get(id) ?? Promise.reject(new Error("Guest is not instrumented")),
+    backgroundCommand: async (
+      id: number,
+      command: string,
+      params: Record<string, unknown>,
+      sessionId?: string,
+    ) => {
+      const entry = consumers.get(id);
+      if (!entry) throw new Error("Guest is not instrumented");
+      if (command === "Network.getRequestPostData") {
+        if (typeof params.requestId !== "string") throw new Error("Invalid request identifier");
+        await entry.bodyPolicy.assertAllowed(params.requestId, sessionId ?? null);
+      }
+      return entry.consumer.sendBackgroundCommand(command, params, sessionId);
+    },
+    retainNetwork: (id: number) => {
+      const entry = consumers.get(id);
+      if (!entry) throw new Error("Guest is not instrumented");
+      const consumer = getSharedCdpSession(entry.contents).createConsumer({});
+      const ready = consumer.enableDomain("Network", undefined, networkLimits);
+      void ready.catch(() => {});
+      const send = async (command: string, requestId: string, sessionId: string | null) => {
+        await ready;
+        if (command === "Network.getRequestPostData")
+          await entry.bodyPolicy.assertAllowed(requestId, sessionId);
+        if (sessionId) await consumer.enableDomain("Network", sessionId, networkLimits);
+        return consumer.sendBackgroundCommand(command, { requestId }, sessionId ?? undefined);
+      };
+      return {
+        ready,
+        getResponseBody: (requestId: string, sessionId: string | null) =>
+          send("Network.getResponseBody", requestId, sessionId),
+        getRequestPostData: (requestId: string, sessionId: string | null) =>
+          send("Network.getRequestPostData", requestId, sessionId),
+        async release() {
+          await ready.catch(() => {});
+          await consumer.release();
+        },
+      };
+    },
   };
 }

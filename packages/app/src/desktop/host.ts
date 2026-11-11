@@ -180,6 +180,42 @@ export interface DesktopInvokeBridge {
   invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 }
 
+export interface DesktopRecordingMetadata {
+  recordingId: string;
+  workspaceId: string;
+  startedAt: number;
+  endedAt?: number;
+  status: "recording" | "complete" | "interrupted";
+  title?: string;
+  captureErrors?: string[];
+}
+export interface DesktopRecordingState {
+  recordingId: string;
+  browserId: string;
+  status: "starting" | "recording" | "complete" | "interrupted";
+}
+export interface DesktopRecordingBridge {
+  start(input: { browserId: string }): Promise<{ recordingId: string; status: string }>;
+  stop(input: { recordingId: string }): Promise<void>;
+  list(input: {
+    workspaceId: string;
+  }): Promise<{ recordings: DesktopRecordingMetadata[]; incomplete: string[] }>;
+  readEvents(input: {
+    recordingId: string;
+    cursor: number;
+    maxBytes: number;
+  }): Promise<{ events: unknown[]; nextCursor: number | null; incompleteTail: boolean }>;
+  readMedia(input: {
+    recordingId: string;
+    streamId: string;
+    segmentId: string;
+    offset: number;
+    length: number;
+  }): Promise<{ bytes: Uint8Array; totalBytes: number; sha256: string }>;
+  delete(input: { recordingId: string }): Promise<void>;
+  onState(handler: (state: DesktopRecordingState) => void): () => void;
+}
+
 export interface DesktopHostBridge {
   platform?: string;
   windowChromeMode?: string;
@@ -196,6 +232,7 @@ export interface DesktopHostBridge {
   fileDrag?: DesktopFileDragBridge;
   menu?: DesktopMenuBridge;
   browser?: DesktopBrowserBridge;
+  recording?: DesktopRecordingBridge;
 }
 
 declare global {

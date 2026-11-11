@@ -6,26 +6,37 @@ export type CdpCommandSender = (
 ) => Promise<unknown>;
 
 export class CdpSessionQueue {
-  private queue: Promise<void> = Promise.resolve();
+  private readonly interactive: Array<() => void> = [];
+  private readonly background: Array<() => void> = [];
+  private running = false;
 
-  public async run<T>(task: () => Promise<T>): Promise<T> {
-    const previous = this.queue;
-    let releaseCurrent = () => {};
-    const current = new Promise<void>((resolve) => {
-      releaseCurrent = resolve;
+  public run<T>(
+    task: () => Promise<T>,
+    priority: "interactive" | "background" = "interactive",
+  ): Promise<T> {
+    if (priority === "background" && this.background.length >= 64)
+      return Promise.reject(new Error("CDP background queue limit reached"));
+    return new Promise<T>((resolve, reject) => {
+      const start = () => {
+        void Promise.resolve()
+          .then(task)
+          .then(resolve, reject)
+          .finally(() => {
+            this.running = false;
+            this.pump();
+          });
+      };
+      (priority === "background" ? this.background : this.interactive).push(start);
+      this.pump();
     });
-    const tail = previous.catch(() => {}).then(() => current);
-    this.queue = tail;
+  }
 
-    await previous.catch(() => {});
-    try {
-      return await task();
-    } finally {
-      releaseCurrent();
-      if (this.queue === tail) {
-        this.queue = Promise.resolve();
-      }
-    }
+  private pump(): void {
+    if (this.running) return;
+    const next = this.interactive.shift() ?? this.background.shift();
+    if (!next) return;
+    this.running = true;
+    next();
   }
 }
 
@@ -125,6 +136,17 @@ export class CdpConsumer {
       );
     }
     return this.session.sendConsumerCommand(this, command, params, sessionId);
+  }
+
+  public sendBackgroundCommand(
+    command: string,
+    params?: Record<string, unknown>,
+    sessionId?: string,
+  ): Promise<unknown> {
+    if (this.closed) return Promise.reject(new Error("CDP consumer is closed"));
+    if (!/^Network\.(getResponseBody|getRequestPostData)$/.test(command))
+      return Promise.reject(new Error("Unsupported background CDP command"));
+    return this.session.sendConsumerBackgroundCommand(this, command, params, sessionId);
   }
 
   public release(): Promise<void> {
@@ -267,7 +289,11 @@ export class SharedCdpSession {
 
   // A newly created popup has not navigated yet. Start its first domain before
   // returning the WebContents to Chromium, while retaining normal ownership.
-  public primeDomain(consumer: CdpConsumer, domain: string): Promise<void> {
+  public primeDomain(
+    consumer: CdpConsumer,
+    domain: string,
+    params: Record<string, unknown> = {},
+  ): Promise<void> {
     if (this.disposed || consumer.closed || !this.consumers.has(consumer)) {
       throw new Error("CDP consumer is closed");
     }
@@ -279,7 +305,7 @@ export class SharedCdpSession {
     const state: DomainState = {
       kind: "domain",
       domain,
-      params: {},
+      params,
       owners: new Set([consumer]),
       enabled: false,
     };
@@ -288,7 +314,7 @@ export class SharedCdpSession {
     const generation = this.generation;
     let pending: Promise<unknown>;
     try {
-      pending = this.debuggerClient.sendCommand(`${domain}.enable`, {});
+      pending = this.debuggerClient.sendCommand(`${domain}.enable`, params);
     } catch (error) {
       this.domains.delete(key);
       consumer.domains.delete(key);
@@ -332,6 +358,21 @@ export class SharedCdpSession {
       await this.recoverConsumer(consumer);
       return this.debuggerClient.sendCommand(command, params ?? {}, sessionId);
     });
+  }
+
+  public async sendConsumerBackgroundCommand(
+    consumer: CdpConsumer,
+    command: string,
+    params?: Record<string, unknown>,
+    sessionId?: string,
+  ): Promise<unknown> {
+    let commandPromise: Promise<unknown> | undefined;
+    await this.queue.run(async () => {
+      await this.recoverConsumer(consumer);
+      commandPromise = this.debuggerClient.sendCommand(command, params ?? {}, sessionId);
+      void commandPromise.catch(() => {});
+    }, "background");
+    return commandPromise;
   }
 
   public async sendImmediate(command: string, params?: Record<string, unknown>): Promise<unknown> {

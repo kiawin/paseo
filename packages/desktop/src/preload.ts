@@ -28,6 +28,20 @@ interface AttachedBrowserRegistration {
   workspaceId: string;
   webContentsId: number;
 }
+interface RecordingMetadata {
+  recordingId: string;
+  workspaceId: string;
+  startedAt: number;
+  endedAt?: number;
+  status: "recording" | "complete" | "interrupted";
+  title?: string;
+  captureErrors?: string[];
+}
+interface RecordingState {
+  recordingId: string;
+  browserId: string;
+  status: "starting" | "recording" | "complete" | "interrupted";
+}
 
 contextBridge.exposeInMainWorld("paseoDesktop", {
   platform: process.platform,
@@ -142,5 +156,36 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     ) => ipcRenderer.invoke("paseo:browser:capture-element", browserId, rect),
     copyElement: (payload: { text?: string; imageDataUrl?: string }) =>
       ipcRenderer.invoke("paseo:browser:copy-element", payload),
+  },
+  recording: {
+    start: (input: { browserId: string }): Promise<{ recordingId: string; status: string }> =>
+      ipcRenderer.invoke("paseo:recording:start", input),
+    stop: (input: { recordingId: string }): Promise<void> =>
+      ipcRenderer.invoke("paseo:recording:stop", input),
+    list: (input: {
+      workspaceId: string;
+    }): Promise<{ recordings: RecordingMetadata[]; incomplete: string[] }> =>
+      ipcRenderer.invoke("paseo:recording:list", input),
+    readEvents: (input: {
+      recordingId: string;
+      cursor: number;
+      maxBytes: number;
+    }): Promise<{ events: unknown[]; nextCursor: number | null; incompleteTail: boolean }> =>
+      ipcRenderer.invoke("paseo:recording:read-events", input),
+    readMedia: (input: {
+      recordingId: string;
+      streamId: string;
+      segmentId: string;
+      offset: number;
+      length: number;
+    }): Promise<{ bytes: Uint8Array; totalBytes: number; sha256: string }> =>
+      ipcRenderer.invoke("paseo:recording:read-media", input),
+    delete: (input: { recordingId: string }): Promise<void> =>
+      ipcRenderer.invoke("paseo:recording:delete", input),
+    onState: (handler: (state: RecordingState) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: RecordingState) => handler(state);
+      ipcRenderer.on("paseo:recording:state", listener);
+      return () => ipcRenderer.removeListener("paseo:recording:state", listener);
+    },
   },
 });
