@@ -14,6 +14,7 @@ interface View {
   member: RecordingMembership;
   target: WebContents;
   stop: () => Promise<void>;
+  done: () => Promise<void>;
 }
 interface Active {
   baseOffset: number;
@@ -128,34 +129,37 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
     let failureReported = false;
     let generationStart = 0;
     let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const pendingWrites = new Set<Promise<void>>();
+    const failedWrites: unknown[] = [];
     const armWatchdog = () => {
       if (stopping) return;
       if (watchdog) clearTimeout(watchdog);
       watchdog = setTimeout(() => {
         report(member, "video-stalled");
-        if (state.views.get(member.memberId) === view) state.views.delete(member.memberId);
         track(
           state,
-          stop(true)
-            .then(() => run)
-            .then(() => {
-              if (
-                !state.stopped &&
-                coordinator.getMembership(target.id)?.memberId === member.memberId
-              )
-                begin(member);
-              return undefined;
-            }),
+          Promise.allSettled([stop(true), run]).then(([, outcome]) => {
+            if (
+              outcome.status === "fulfilled" &&
+              !state.stopped &&
+              coordinator.getMembership(target.id)?.memberId === member.memberId
+            )
+              begin(member);
+            return undefined;
+          }),
         );
       }, 10_000);
     };
     const stop = async (recover = false) => {
       if (stopping) return completed;
       stopping = true;
+      if (watchdog) clearTimeout(watchdog);
       if (initialized && win && !win.isDestroyed()) win.webContents.send("paseo-video-stop");
       else finish();
       const timer = setTimeout(() => {
         if (!recover) {
+          // Explicit stop or navigation surfaces the timeout as an error.
+          // Watchdog recovery records a gap before forcing teardown.
           reject(new Error("Video recorder stop timed out"));
           return;
         }
@@ -173,7 +177,7 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
         clearTimeout(timer);
       }
     };
-    const view: View = { member, target, stop };
+    const view: View = { member, target, stop, done: () => run };
     state.views.set(member.memberId, view);
     const navigation = (
       _event: Electron.Event,
@@ -189,8 +193,17 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
       const resume = () => {
         target.removeListener("did-stop-loading", resume);
         state.resumes.delete(member.memberId);
-        if (!state.stopped && coordinator.getMembership(target.id)?.memberId === member.memberId)
-          begin(member);
+        track(
+          state,
+          run.then(() => {
+            if (
+              !state.stopped &&
+              coordinator.getMembership(target.id)?.memberId === member.memberId
+            )
+              begin(member);
+            return undefined;
+          }),
+        );
       };
       state.resumes.set(member.memberId, () => target.removeListener("did-stop-loading", resume));
       target.once("did-stop-loading", resume);
@@ -235,24 +248,29 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
       }
       if (!isVideoChunk(item, expectedSequence)) throw new Error("Invalid video chunk");
       armWatchdog();
+      const write = store.writeMediaSegment(member.recordingId, {
+        streamId: member.memberId,
+        segmentId: randomUUID(),
+        generationId,
+        sequence: item.sequence as number,
+        startMs: Math.max(0, generationStart + item.start),
+        durationMs: item.end - item.start,
+        mimeType: item.mimeType,
+        track: "video",
+        bytes: new Uint8Array(item.bytes),
+      });
+      pendingWrites.add(write);
       try {
-        await store.writeMediaSegment(member.recordingId, {
-          streamId: member.memberId,
-          segmentId: randomUUID(),
-          generationId,
-          sequence: item.sequence as number,
-          startMs: Math.max(0, generationStart + item.start),
-          durationMs: item.end - item.start,
-          mimeType: item.mimeType,
-          track: "video",
-          bytes: new Uint8Array(item.bytes),
-        });
+        await write;
         expectedSequence++;
       } catch (error) {
+        failedWrites.push(error);
         report(member, "video-storage-failed");
         failureReported = true;
         reject(error);
         throw error;
+      } finally {
+        pendingWrites.delete(write);
       }
     });
     const run = (async () => {
@@ -272,10 +290,13 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
         win.webContents.on("will-navigate", (event) => event.preventDefault());
         win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
         sources.set(win, target);
-        await win.loadFile(join(__dirname, "recorder.html"));
+        armWatchdog();
+        await Promise.race([win.loadFile(join(__dirname, "recorder.html")), completed]);
+        if (stopping) return;
         win.webContents.send("paseo-video-config", { channel });
         await Promise.race([
           ready,
+          completed,
           new Promise<never>((_, rejectTimeout) =>
             setTimeout(() => rejectTimeout(new Error("Video renderer did not initialize")), 5000),
           ),
@@ -283,15 +304,19 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
         if (stopping) return;
         initialized = true;
         armWatchdog();
-        await win.webContents.executeJavaScript(
-          "window.dispatchEvent(new Event('paseo-video-start'))",
-          true,
-        );
+        await Promise.race([
+          win.webContents.executeJavaScript(
+            "window.dispatchEvent(new Event('paseo-video-start'))",
+            true,
+          ),
+          completed,
+        ]);
         await completed;
       } catch (error) {
-        if (forcedRecovery) return;
-        if (!stopping && !failureReported) report(member, "video-capture-unavailable");
-        throw error;
+        if (!forcedRecovery) {
+          if (!stopping && !failureReported) report(member, "video-capture-unavailable");
+          throw error;
+        }
       } finally {
         if (watchdog) clearTimeout(watchdog);
         releaseFrames();
@@ -299,11 +324,14 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
         ipcMain.removeHandler(channel);
         if (win) sources.delete(win);
         if (win && !win.isDestroyed()) win.destroy();
+        await Promise.allSettled(pendingWrites);
         state.workers--;
         workers--;
         if (state.views.get(member.memberId) === view) state.views.delete(member.memberId);
         finish();
       }
+      if (forcedRecovery && failedWrites.length)
+        throw new AggregateError(failedWrites, "Video writes failed during recovery");
     })();
     track(state, run);
   };
@@ -317,7 +345,21 @@ export function createVideoCaptureManager({ coordinator, store, onError }: Optio
       const old = state.views.get(change.member.memberId);
       if (old) {
         state.views.delete(change.member.memberId);
-        track(state, old.stop());
+        track(
+          state,
+          Promise.allSettled([old.stop(), old.done()]).then(([, outcome]) => {
+            if (
+              change.type === "replaced" &&
+              outcome.status === "fulfilled" &&
+              !state.stopped &&
+              coordinator.getMembership(change.member.webContentsId)?.memberId ===
+                change.member.memberId
+            )
+              begin(change.member);
+            return undefined;
+          }),
+        );
+        return;
       }
     }
     if (change.type !== "removed") begin(change.member);
