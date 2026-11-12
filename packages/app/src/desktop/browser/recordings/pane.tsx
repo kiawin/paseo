@@ -11,6 +11,7 @@ import { RecordingPlayer, type RecordingSeek } from "./player";
 import { RecordingShare } from "./share";
 import { createPlayback } from "./playback";
 import { classifyStorageError } from "./storage-errors";
+import { AUTOMATIC_MEDIA_PAGE_LIMIT } from "./pagination-limit";
 
 function networkSummary(payload: Record<string, unknown>): string {
   const request = payload.request as
@@ -219,7 +220,7 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
       !snapshot.loading &&
       !snapshot.error &&
       snapshot.media.length < 100_000 &&
-      automaticMediaPages.current.count < 1000
+      automaticMediaPages.current.count < AUTOMATIC_MEDIA_PAGE_LIMIT
     ) {
       automaticMediaPages.current.count++;
       void model.loadMoreMedia();
@@ -269,7 +270,10 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
     setSelectedEvent(null);
     setShowFull(false);
     setPlaybackSeek(null);
-    if (snapshot?.selectedId) void model?.open(snapshot.selectedId);
+    if (snapshot?.selectedId) {
+      automaticMediaPages.current = { recordingId: snapshot.selectedId, count: 0 };
+      void model?.open(snapshot.selectedId);
+    }
   }, [model, snapshot?.selectedId]);
   const deleteSelected = useCallback(() => {
     if (snapshot?.selectedId) void remove(snapshot.selectedId);
@@ -278,6 +282,7 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
     (id: string) => {
       setSelectedEvent(null);
       setPlaybackSeek(null);
+      automaticMediaPages.current = { recordingId: id, count: 0 };
       void model?.open(id);
     },
     [model],

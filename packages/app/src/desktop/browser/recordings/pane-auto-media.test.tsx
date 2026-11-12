@@ -38,6 +38,7 @@ vi.mock("@/components/ui/press-highlight", () => ({
 }));
 vi.mock("@/utils/confirm-dialog", () => ({ confirmDialog: async () => true }));
 vi.mock("./share", () => ({ RecordingShare: () => null }));
+vi.mock("./pagination-limit", () => ({ AUTOMATIC_MEDIA_PAGE_LIMIT: 2 }));
 vi.mock("./player", () => ({
   RecordingPlayer: ({ hasMore }: { hasMore: boolean }) => (
     <span>{hasMore ? "loading video" : "video ready"}</span>
@@ -81,4 +82,19 @@ it("automatically loads subsequent media pages so playback becomes available", a
   fireEvent.click(await screen.findByText("Fixture"));
   await waitFor(() => expect(listMedia).toHaveBeenCalledTimes(2));
   expect(await screen.findByText("video ready")).toBeTruthy();
+});
+
+it("resets the automatic paging limit when the same recording is refreshed", async () => {
+  listMedia.mockImplementation(async ({ cursor }: { cursor: string | null }) => ({
+    segments: [],
+    incomplete: [],
+    nextCursor: String(Number(cursor ?? 0) + 1),
+    pending: false,
+  }));
+  const { RecordingsPane } = await import("./pane");
+  render(<RecordingsPane workspaceId="w" />);
+  fireEvent.click(await screen.findByText("Fixture"));
+  await waitFor(() => expect(listMedia).toHaveBeenCalledTimes(3));
+  fireEvent.click(screen.getByText("panels.recordings.refresh"));
+  await waitFor(() => expect(listMedia.mock.calls.length).toBeGreaterThan(4));
 });
