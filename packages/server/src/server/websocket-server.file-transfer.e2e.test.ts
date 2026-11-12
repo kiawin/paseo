@@ -195,6 +195,15 @@ test("an awaited timeline framing overflow closes the actual daemon socket", asy
   });
   await client.connect();
   const api = createPaseoApi(client);
+  const originalSend = WebSocket.prototype.send;
+  let firstSendReleased = false;
+  let pendingSendCompletion: (() => void) | undefined;
+  const releaseFirstSend = () => {
+    firstSendReleased = true;
+    pendingSendCompletion?.();
+    pendingSendCompletion = undefined;
+  };
+  let heldFirstSend = false;
   try {
     const workspace = await api.workspaces.create({
       source: { kind: "directory", path: daemon.staticDir },
@@ -213,6 +222,34 @@ test("an awaited timeline framing overflow closes the actual daemon socket", asy
           text,
         });
     }
+    // Hold the first chunk's drain callback so socket buffering differences do
+    // not decide whether the second logical message overlaps the first.
+    WebSocket.prototype.send = function (
+      this: WebSocket,
+      data: unknown,
+      optionsOrCallback?: unknown,
+      callback?: unknown,
+    ) {
+      const completion = typeof optionsOrCallback === "function" ? optionsOrCallback : callback;
+      if (
+        !heldFirstSend &&
+        data instanceof Uint8Array &&
+        data[0] === 0x31 &&
+        typeof completion === "function"
+      ) {
+        heldFirstSend = true;
+        const gatedCallback = (error?: Error) => {
+          if (firstSendReleased) completion(error);
+          else pendingSendCompletion = () => completion(error);
+        };
+        const args =
+          typeof optionsOrCallback === "function"
+            ? [data, gatedCallback]
+            : [data, optionsOrCallback, gatedCallback];
+        return Reflect.apply(originalSend, this, args);
+      }
+      return Reflect.apply(originalSend, this, arguments);
+    } as typeof WebSocket.prototype.send;
     const source = await connectSocket(daemon.port, "framing-overflow", {
       binary_chunking_v1: true,
     });
@@ -243,6 +280,7 @@ test("an awaited timeline framing overflow closes the actual daemon socket", asy
       );
     fetch(agents[0]!, "first");
     await firstChunk;
+    expect(heldFirstSend).toBe(true);
     fetch(agents[1]!, "overflow");
     await expect
       .poll(() => messages.includes("Closing physical WebSocket after outbound framing failure"), {
@@ -251,8 +289,11 @@ test("an awaited timeline framing overflow closes the actual daemon socket", asy
       .toBe(true);
     expect(messages).not.toContain("Closing physical WebSocket at outbound high-water mark");
     source.resume();
+    releaseFirstSend();
     await closed;
   } finally {
+    releaseFirstSend();
+    WebSocket.prototype.send = originalSend;
     await api.dispose();
     await client.close();
   }
