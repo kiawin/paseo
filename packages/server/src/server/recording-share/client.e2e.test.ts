@@ -52,7 +52,7 @@ test("client streams a bounded recording share and removes completed and pending
     });
     expect(Math.max(...reads)).toBeLessThanOrEqual(256 * 1024);
     const path = await client.completeRecordingShare(shareId);
-    expect(await readFile(join(dirname(path), "part-0.bin"))).toEqual(bytes);
+    expect(Buffer.compare(await readFile(join(dirname(path), "part-0.bin")), bytes)).toBe(0);
     await client.deleteRecordingShare(shareId, recipient.id);
     await client.deleteRecordingShare(shareId, recipient.id);
     await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
@@ -136,7 +136,7 @@ test("client streams a recording through the selected remote host", async () => 
     const path = await routed.completeRecordingShare(shareId);
     expect(path).toContain(destination.paseoHome);
     expect(path).not.toContain(source.paseoHome);
-    expect(await readFile(join(dirname(path), "part-0.bin"))).toEqual(bytes);
+    expect(Buffer.compare(await readFile(join(dirname(path), "part-0.bin")), bytes)).toBe(0);
     await routed.deleteRecordingShare(shareId, recipient.id);
   } finally {
     await routed?.close();
