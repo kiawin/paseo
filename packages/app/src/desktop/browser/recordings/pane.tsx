@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { PressHighlight } from "@/components/ui/press-highlight";
 import { StyleSheet } from "react-native-unistyles";
@@ -43,6 +43,8 @@ function EventRow({
       if (payload.status === "unavailable") return t("workspace.browser.controls.audioUnavailable");
       if (payload.status === "disabled") return t("workspace.browser.controls.audioOff");
     }
+    if (event.kind === "navigation" && typeof payload?.url === "string")
+      return payload.url.slice(0, 2048);
     if (event.kind === "gap" && typeof payload?.reason === "string")
       return payload.reason.slice(0, 2048);
     if (event.kind !== "network" || !payload || typeof payload !== "object") return event.kind;
@@ -188,6 +190,7 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
   const [showFull, setShowFull] = useState(false);
   const [playbackSeek, setPlaybackSeek] = useState<RecordingSeek | null>(null);
   const [model, setModel] = useState<ReturnType<typeof createRecordingsModel> | null>(null);
+  const automaticMediaPages = useRef({ recordingId: "", count: 0 });
   const viewNumbers = useMemo(
     () =>
       new Map(
@@ -206,6 +209,22 @@ export function RecordingsPane({ workspaceId }: { workspaceId: string }) {
     void instance.refresh();
     return () => instance.dispose();
   }, [workspaceId]);
+  useEffect(() => {
+    if (automaticMediaPages.current.recordingId !== snapshot?.selectedId)
+      automaticMediaPages.current = { recordingId: snapshot?.selectedId ?? "", count: 0 };
+    if (
+      model &&
+      snapshot?.selectedId &&
+      snapshot.mediaCursor !== null &&
+      !snapshot.loading &&
+      !snapshot.error &&
+      snapshot.media.length < 100_000 &&
+      automaticMediaPages.current.count < 1000
+    ) {
+      automaticMediaPages.current.count++;
+      void model.loadMoreMedia();
+    }
+  }, [model, snapshot]);
   const remove = useCallback(
     async (id: string) => {
       if (!model) return;

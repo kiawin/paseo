@@ -172,7 +172,7 @@ export function RecordingShare({ recording }: { recording: DesktopRecordingMetad
             if (!agent || agent.archivedAt) throw new Error("recording-share-agent-unavailable");
             const { agentComposer } = await import("@/composer/agent-composer");
             agentComposer(host, recipient).insertText(
-              `\nBrowser recording shared at ${manifestPath}. Read the manifest and recording.bin in the same directory. recording.bin describes files and ordered part IDs; each part is stored as <part ID>.bin. Verify the hashes and sizes in the manifest before using the data. Capture ${completeness.complete ? "reported no gaps" : `is incomplete: ${shortReasons(completeness.reasons)}. See recording.bin for all capture issues`}.\n`,
+              `\nBrowser recording shared at ${manifestPath}. Read the manifest and recording.bin in the same directory. recording.bin describes files as ordered ranges with part ID, byte offset, and length; each part is stored as <part ID>.bin. Reconstruct each file by concatenating those ranges in order. Verify the hashes and sizes in the manifest before using the data. Capture ${completeness.complete ? "reported no gaps" : `is incomplete: ${shortReasons(completeness.reasons)}. See recording.bin for all capture issues`}.\n`,
             );
           },
           now: Date.now,
@@ -201,8 +201,8 @@ export function RecordingShare({ recording }: { recording: DesktopRecordingMetad
       const confirmed = await confirmDialog({
         title: t("panels.recordings.removeCopy"),
         message: t("panels.recordings.removeCopyMessage", {
-          agent: entry.agentId,
-          host: entry.serverId,
+          agent: sessions[entry.serverId]?.agents.get(entry.agentId)?.title || entry.agentId,
+          host: sessions[entry.serverId]?.serverInfo?.hostname || entry.serverId,
         }),
         confirmLabel: t("panels.recordings.remove"),
         destructive: true,
@@ -221,7 +221,7 @@ export function RecordingShare({ recording }: { recording: DesktopRecordingMetad
         setBusy(false);
       }
     },
-    [busy, refresh, showFailure, t],
+    [busy, refresh, sessions, showFailure, t],
   );
   const forget = useCallback(
     async (entry: RecordingShareAudit) => {
@@ -230,8 +230,8 @@ export function RecordingShare({ recording }: { recording: DesktopRecordingMetad
       const confirmed = await confirmDialog({
         title: t("panels.recordings.forgetCopy"),
         message: t("panels.recordings.forgetCopyMessage", {
-          agent: entry.agentId,
-          host: entry.serverId,
+          agent: sessions[entry.serverId]?.agents.get(entry.agentId)?.title || entry.agentId,
+          host: sessions[entry.serverId]?.serverInfo?.hostname || entry.serverId,
         }),
         confirmLabel: t("panels.recordings.forgetCopy"),
         destructive: true,
@@ -251,7 +251,7 @@ export function RecordingShare({ recording }: { recording: DesktopRecordingMetad
         setBusy(false);
       }
     },
-    [busy, refresh, showFailure, t],
+    [busy, refresh, sessions, showFailure, t],
   );
   const forgetCorrupt = useCallback(async () => {
     const bridge = getDesktopHost()?.recording;

@@ -220,9 +220,14 @@ export function RecordingPlayer({
           segment,
           async (chunk) => {
             if (abort.signal.aborted) return;
-            const trim = async () => {
-              const keepAfter = Math.max(0, (desired.current - generation.startMs) / 1000 - 15);
-              if (!buffer.buffered.length || keepAfter <= buffer.buffered.start(0)) return false;
+            const trim = async (underPressure = false) => {
+              if (!buffer.buffered.length || (pendingSeek.current && !underPressure)) return false;
+              const targetMargin = Math.max(0, (desired.current - generation.startMs) / 1000 - 15);
+              const bufferedMargin = buffer.buffered.end(buffer.buffered.length - 1) - 15;
+              const keepAfter = underPressure
+                ? Math.min(targetMargin, bufferedMargin)
+                : targetMargin;
+              if (keepAfter <= buffer.buffered.start(0)) return false;
               buffer.remove(0, keepAfter);
               await waitForUpdate(buffer);
               return true;
@@ -234,7 +239,7 @@ export function RecordingPlayer({
               if (
                 !(cause instanceof DOMException) ||
                 cause.name !== "QuotaExceededError" ||
-                !(await trim())
+                !(await trim(true))
               )
                 throw cause;
               buffer.appendBuffer(new Uint8Array(chunk));
@@ -250,6 +255,7 @@ export function RecordingPlayer({
         const desiredSeconds = relativeSeconds < 0.1 ? 0 : relativeSeconds;
         if (
           buffer.buffered.length &&
+          !pendingSeek.current &&
           desiredSeconds > 30 &&
           buffer.buffered.start(0) < desiredSeconds - 15
         ) {

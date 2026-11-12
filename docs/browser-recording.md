@@ -10,7 +10,7 @@ Open **Recordings** from the Explorer sidebar's + menu to inspect saved recordin
 
 The recorder stores available URLs, headers, request and response bodies, interactions and video. It may contain cookies, access tokens and private data. Large bodies, streams, late debugger attachment, unavailable browser data, storage limits and other failures can leave gaps. The recording reports these limits; it does not promise every byte. Service-worker target traffic is not verified. Early extra network headers may be rejected when they cannot be attributed safely.
 
-Clicks must come from a trusted browser event. Scripted clicks are excluded. Paseo cannot reliably distinguish a person from browser automation that produces trusted input, so their origin is marked unknown. A debugger detach or a click from a replaced document is recorded as a gap.
+Clicks must come from a trusted browser event. Scripted clicks are excluded. Paseo cannot reliably distinguish a person from browser automation that produces trusted input, so their origin is marked unknown. A debugger detach or a click from a replaced document is recorded as a gap. After a debugger detach, Paseo attempts to resume capture and records a recovery marker. If recovery fails, the recording is marked interrupted.
 
 ## Audio
 
@@ -30,7 +30,7 @@ Operating system permissions and audio-track behavior must be verified on each p
 
 Recordings live in the desktop app's `userData/browser-recordings` directory until you delete them. An active recording recovered after a crash or interrupted shutdown is marked **Interrupted**. The desktop store has a 4 GiB logical quota; it reports a limit or disk error rather than evicting a recording.
 
-Select **Share with agent**, choose the destination agent and host, and confirm the warning before a copy is sent. The copy contains captured events, metadata and media, and reports known capture gaps. Paseo adds a manifest reference to the chosen agent's draft; review and send the draft yourself. Sharing supports up to 1 GiB per recording, 1,024 parts and 16 MiB per part. It reports a limit or transfer failure instead of truncating the copy.
+Select **Share with agent**, choose the destination agent and host, and confirm the warning before a copy is sent. The copy contains captured events, metadata and media, and reports known capture gaps. Paseo adds a manifest reference to the chosen agent's draft; review and send the draft yourself. Sharing supports up to 1 GiB per recording, 1,024 parts and 16 MiB per part. The file index is limited to 16 MiB and 100,000 media files. It reports a limit or transfer failure instead of truncating the copy.
 
 Each completed or uncertain transfer has a local history entry. **Remove shared copy** removes the destination copy first. If the destination is unavailable, **Forget shared copy** removes the local history only after a warning; the remote copy can remain accessible. Remove or explicitly forget all copies before deleting the original recording. If the local share history is damaged, the separate confirmed recovery action preserves the damaged bytes until the recording is deleted and warns that remote copies can remain.
 
@@ -51,6 +51,6 @@ The following checks used Electron 44.2.0 on Linux under Xvfb and synthetic data
 | Sharing              | An explicit action showed the recipient, secret warning and capture gaps. The copied parts matched their manifest and the agent draft received its path. The native confirmation response was stubbed.              |
 | Playback             | A saved video played across a refresh boundary. A combined audio/video segment played with a decoded synthetic tone. Frame-accurate synchronization and real audio-to-video generation switching were not measured. |
 | Crash recovery       | Killing and reopening an isolated desktop preserved completed recordings and marked the active one interrupted. This did not test a packaged app, graceful quit or power-loss durability.                           |
-| Automation and trust | The Electron harness checked concurrent browser automation, opening DevTools and a forced-detach gap. A renderer test checks that captured markup displays as inert text.                                           |
+| Automation and trust | The Electron harness checked concurrent browser automation, opening DevTools, a forced-detach gap and a request captured after recovery. A renderer test checks that captured markup displays as inert text.        |
 
 The recording harness uses production capture modules but does not launch the full desktop UI. Its cases and commands are in [Browser Capture Harness](browser-capture-harness.md).

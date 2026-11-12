@@ -508,7 +508,11 @@ export function createInteractionRecorder(options: Options) {
     sessionId?: string,
   ): void {
     if (disposed || !coordinator.getMembership(contents.id)) return;
-    if (method === "Runtime.executionContextCreated") registerContext(contents, params, sessionId);
+    if (method === "Paseo.debuggerDetached") {
+      for (const [key, context] of contexts)
+        if (context.contents.id === contents.id) contexts.delete(key);
+    } else if (method === "Runtime.executionContextCreated")
+      registerContext(contents, params, sessionId);
     else if (
       method === "Runtime.executionContextDestroyed" &&
       typeof params.executionContextId === "number"

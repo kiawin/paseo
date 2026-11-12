@@ -5,16 +5,22 @@ import type {
   DesktopRecordingMediaSegment,
   DesktopRecordingMetadata,
 } from "@/desktop/host";
-import type { PreparedRecordingShare, RecordingShareSegment } from "./recording-share";
+import type { PreparedRecordingShare } from "./recording-share";
+import {
+  createRecordingPacker,
+  type RecordingFilePart,
+  type RecordingFileReader,
+} from "./recording-share-pack";
 
-const CHUNK = 1024 * 1024;
 const PART = 16 * 1024 * 1024;
 const LIMIT = 1024 * 1024 * 1024;
-type Read = (offset: number, length: number) => Promise<Uint8Array>;
+type Read = RecordingFileReader;
 function inspectEvent(event: unknown, reasons: Set<string>): void {
   if (!event || typeof event !== "object") return;
   const item = event as { kind?: string; payload?: Record<string, unknown> };
   if (item.kind === "gap") reasons.add("The recording contains capture gaps");
+  if (item.kind === "navigation" && item.payload?.urlTruncated === true)
+    reasons.add("A navigation URL was truncated");
   if (item.kind !== "network") return;
   for (const field of ["request", "response"]) {
     const value = item.payload?.[field] as { body?: { state?: string } } | null | undefined;
@@ -64,17 +70,16 @@ export async function prepareRecordingShare(
     if (page.nextCursor && page.nextCursor === mediaCursor)
       throw new Error("Media cursor did not advance");
     mediaCursor = page.nextCursor;
-    if (media.length > 1024) throw new Error("Recording has too many media segments to share");
+    if (media.length > 100_000) throw new Error("Recording has too many media files to share");
   } while (mediaCursor !== null);
-  const segments: RecordingShareSegment[] = [];
+  const packer = createRecordingPacker();
   const files: Array<{
     name: string;
-    parts: string[];
+    parts: RecordingFilePart[];
     media?: DesktopRecordingMediaSegment;
     size: number;
     sha256?: string;
   }> = [];
-  let total = 0;
   const addFile = async (
     name: string,
     size: number,
@@ -82,35 +87,7 @@ export async function prepareRecordingShare(
     info?: DesktopRecordingMediaSegment,
     expectedHash?: string,
   ) => {
-    if (!Number.isSafeInteger(size) || size < 0 || total + size > LIMIT)
-      throw new Error("Recording exceeds the 1 GiB sharing limit");
-    total += size;
-    const whole = sha256.create();
-    const parts: string[] = [];
-    for (let offset = 0; offset < size; offset += PART) {
-      if (segments.length >= 1023) throw new Error("Recording has too many segments to share");
-      const length = Math.min(PART, size - offset);
-      const id = `part-${segments.length}`;
-      const part = sha256.create();
-      for (let current = 0; current < length; ) {
-        const count = Math.min(CHUNK, length - current);
-        const bytes = await read(offset + current, count);
-        if (bytes.length !== count) throw new Error("Recording changed while preparing the share");
-        part.update(bytes);
-        whole.update(bytes);
-        current += count;
-      }
-      const digest = bytesToHex(part.digest());
-      segments.push({
-        id,
-        size: length,
-        sha256: digest,
-        read: (start, count) => read(offset + start, count),
-      });
-      parts.push(id);
-    }
-    if (expectedHash && bytesToHex(whole.digest()) !== expectedHash)
-      throw new Error("Media segment integrity check failed");
+    const parts = await packer.addFile(size, read, expectedHash);
     files.push({
       name,
       parts,
@@ -164,10 +141,11 @@ export async function prepareRecordingShare(
       : allReasons;
   const completeness = { complete: reasons.size === 0, reasons: disclosedReasons };
   const data = new TextEncoder().encode(
-    JSON.stringify({ format: "paseo-recording-share", version: 1, metadata, completeness, files }),
+    JSON.stringify({ format: "paseo-recording-share", version: 2, metadata, completeness, files }),
   );
-  if (data.byteLength > PART || total + data.byteLength > LIMIT)
+  if (data.byteLength > PART || packer.totalBytes() + data.byteLength > LIMIT)
     throw new Error("Recording manifest exceeds the sharing limit");
+  const segments = packer.finish();
   segments.unshift({
     id: "recording",
     size: data.byteLength,

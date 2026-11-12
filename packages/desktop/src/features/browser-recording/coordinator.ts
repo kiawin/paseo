@@ -336,6 +336,10 @@ export class BrowserRecordingCoordinator {
     if (frames?.size === 0) this.frames.delete(input.webContentsId);
   }
 
+  public clearFrames(webContentsId: number): void {
+    this.frames.delete(webContentsId);
+  }
+
   public getFrame(input: {
     webContentsId: number;
     frameId: string;

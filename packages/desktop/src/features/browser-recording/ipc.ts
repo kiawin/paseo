@@ -150,6 +150,10 @@ async function withDeadline<T>(work: Promise<T>, ms: number, label: string): Pro
   }
 }
 
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
 export function createRecordingBridge(options: Options) {
   const { registry, coordinator, store } = options;
   const active = new Map<string, ActiveRecording>();
@@ -158,7 +162,7 @@ export function createRecordingBridge(options: Options) {
   // all shared slots hang, later bodies are reported unavailable until restart.
   const bodyReads = new BodyReadGate(16, 64, 4000);
   const captureBudget = new CaptureBudget(64 * 1024 * 1024);
-  const starting = new Map<string, string>();
+  const starting = new Map<string, { recordingId: string; audioRequested: boolean }>();
   const notifyState = (recordingId: string, state: ActiveRecording, status: string) => {
     for (const browserId of state.browserIds)
       options.notify(state.owner, {
@@ -178,6 +182,17 @@ export function createRecordingBridge(options: Options) {
     const reason = storageFailureReason(error);
     if (!state || !reason || state.failureReason) return;
     state.failureReason = reason;
+    state.failureDescription = describeCaptureFailure(error);
+    state.interrupted = true;
+    notifyState(recordingId, state, "stopping");
+    queueMicrotask(() => {
+      if (active.get(recordingId) !== state || state.stopping) return;
+      void stopOwned(recordingId, state).catch((failure: unknown) => options.onError?.(failure));
+    });
+  };
+  const reportCaptureFailure = (recordingId: string, error: unknown) => {
+    const state = active.get(recordingId);
+    if (!state || state.interrupted) return;
     state.failureDescription = describeCaptureFailure(error);
     state.interrupted = true;
     notifyState(recordingId, state, "stopping");
@@ -417,6 +432,25 @@ export function createRecordingBridge(options: Options) {
     const state = active.get(change.member.recordingId);
     if (!state) return;
     const browserId = change.member.browserId;
+    track(
+      state,
+      store.appendEvent(change.member.recordingId, {
+        recordingId: change.member.recordingId,
+        memberId: change.member.memberId,
+        webContentsId: change.member.webContentsId,
+        frameAttribution: "unattributed",
+        timelineMs: Math.max(0, performance.now() - state.startedMonotonic),
+        kind: "membership",
+        payload: {
+          action: change.type,
+          browserId,
+          parentMemberId: change.member.parentMemberId,
+          ...(change.type === "replaced"
+            ? { previousWebContentsId: change.previousWebContentsId }
+            : {}),
+        },
+      }),
+    );
     if (browserId && change.type === "added") {
       state.browserIds.add(browserId);
       options.notify(state.owner, {
@@ -548,6 +582,42 @@ export function createRecordingBridge(options: Options) {
       state.verifiedDocuments.delete(state.verifiedDocuments.values().next().value!);
     state.verifiedDocuments.add(JSON.stringify([contentsId, params.frameId, params.loaderId]));
   };
+  const recordNavigation = (
+    state: ActiveRecording,
+    member: RecordingMembership,
+    contentsId: number,
+    method: string,
+    params: Record<string, unknown>,
+  ) => {
+    const frame = method === "Page.frameNavigated" ? asObject(params.frame) : params;
+    const rawFrameId = method === "Page.frameNavigated" ? frame.id : frame.frameId;
+    const frameId =
+      typeof rawFrameId === "string" && rawFrameId.length <= 256 ? rawFrameId : undefined;
+    const current = frameId ? coordinator.getFrame({ webContentsId: contentsId, frameId }) : null;
+    const rawDocumentId = method === "Page.frameNavigated" ? frame.loaderId : current?.documentId;
+    const documentId =
+      typeof rawDocumentId === "string" && rawDocumentId.length <= 256 ? rawDocumentId : undefined;
+    const identified = Boolean(frameId && documentId && current?.documentId === documentId);
+    if (!identified) recordGap(member, "navigation-frame-unattributed");
+    const rawUrl = typeof frame.url === "string" ? frame.url : "";
+    track(
+      state,
+      store.appendEvent(member.recordingId, {
+        recordingId: member.recordingId,
+        memberId: member.memberId,
+        webContentsId: contentsId,
+        ...(identified ? { frameId, documentId } : {}),
+        frameAttribution: identified ? "identified" : "unattributed",
+        timelineMs: Math.max(0, performance.now() - state.startedMonotonic),
+        kind: "navigation",
+        payload: {
+          type: method === "Page.frameNavigated" ? "document" : "same-document",
+          url: rawUrl.slice(0, 16_384),
+          ...(rawUrl.length > 16_384 ? { urlTruncated: true } : {}),
+        },
+      }),
+    );
+  };
   let disposePromise: Promise<void> | undefined;
   const dispose = (): Promise<void> => {
     disposePromise ??= (async () => {
@@ -570,6 +640,7 @@ export function createRecordingBridge(options: Options) {
   };
   return {
     reportStorageFailure,
+    reportCaptureFailure,
     reportAudioStatus,
     async active(caller: Caller, input: unknown) {
       assertCaller(caller);
@@ -581,8 +652,15 @@ export function createRecordingBridge(options: Options) {
           (id === member?.recordingId || state.browserIds.has(browserId)),
       );
       if (!entry) {
-        const recordingId = starting.get(`${caller.senderId}:${browserId}`);
-        return recordingId ? { recordingId, browserId, status: "starting" as const } : null;
+        const pending = starting.get(`${caller.senderId}:${browserId}`);
+        return pending
+          ? {
+              ...pending,
+              browserId,
+              status: "starting" as const,
+              audioStatus: pending.audioRequested ? ("starting" as const) : ("disabled" as const),
+            }
+          : null;
       }
       const [recordingId, state] = entry;
       return {
@@ -616,7 +694,7 @@ export function createRecordingBridge(options: Options) {
       const recordingId = randomUUID();
       const startedAt = Date.now();
       const startedMonotonic = performance.now();
-      starting.set(key, recordingId);
+      starting.set(key, { recordingId, audioRequested: audio === true });
       let created = false;
       try {
         await store.create({
@@ -832,6 +910,12 @@ export function createRecordingBridge(options: Options) {
       const member = coordinator.getMembership(contentsId);
       const state = member && active.get(member.recordingId);
       if (state?.stopping) return;
+      if (
+        state &&
+        member &&
+        (method === "Page.frameNavigated" || method === "Page.navigatedWithinDocument")
+      )
+        recordNavigation(state, member, contentsId, method, params);
       if (state && method === "Network.requestWillBeSent") rememberFrame(state, contentsId, params);
       let recorder = state?.recorders.get(contentsId)?.recorder;
       if (state && member && !recorder && method.startsWith("Network.")) {

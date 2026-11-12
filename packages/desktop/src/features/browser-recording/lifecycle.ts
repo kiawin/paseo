@@ -13,9 +13,11 @@ interface LifecycleOptions {
     mainWindow: BrowserWindow;
     url: string;
     browserId?: string;
+    sourceBrowserId?: string;
   }) => void;
   onPopup: (popup: BrowserWindow) => void;
   onError: (error: unknown) => void;
+  onCaptureFailure?: (recordingId: string, error: unknown) => void;
   onCdpEvent?: (
     contents: WebContents,
     method: string,
@@ -79,11 +81,15 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
     const shared = getSharedCdpSession(contents);
     const bodyPolicy = new RequestBodyPolicy();
     const frameVersions = new Map<string, number>();
+    let detachGeneration = 0;
     const snapshot = async (consumer: CdpConsumer, sessionId?: string): Promise<void> => {
       const before = new Map(frameVersions);
+      const generation = detachGeneration;
       const result = (await consumer.sendCommand("Page.getFrameTree", {}, sessionId)) as {
         frameTree?: unknown;
       };
+      if (generation !== detachGeneration || consumers.get(contents.id)?.consumer !== consumer)
+        return;
       const visit = (value: unknown): void => {
         if (!value || typeof value !== "object") return;
         const tree = value as { frame?: Record<string, unknown>; childFrames?: unknown[] };
@@ -166,7 +172,40 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
         }
         options.onCdpEvent?.(contents, method, params, sessionId);
       },
-      onDetach: () => gap(member, "debugger-detached"),
+      onDetach: () => {
+        if (consumers.get(contents.id)?.consumer !== consumer) return;
+        const generation = ++detachGeneration;
+        coordinator.clearFrames(contents.id);
+        frameVersions.clear();
+        options.onCdpEvent?.(contents, "Paseo.debuggerDetached", {});
+        gap(member, "debugger-detached");
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Debugger recovery timed out")), 8000);
+        });
+        void Promise.race([consumer.recover().then(() => snapshot(consumer)), timeout]).then(
+          () => {
+            if (timer) clearTimeout(timer);
+            if (
+              generation === detachGeneration &&
+              consumers.get(contents.id)?.consumer === consumer
+            )
+              gap(member, "debugger-recovered");
+            return undefined;
+          },
+          (error: unknown) => {
+            if (timer) clearTimeout(timer);
+            if (
+              generation !== detachGeneration ||
+              consumers.get(contents.id)?.consumer !== consumer
+            )
+              return;
+            gap(member, "debugger-recovery-failed");
+            options.onError(error);
+            options.onCaptureFailure?.(member.recordingId, error);
+          },
+        );
+      },
     });
     consumers.set(contents.id, { consumer, contents, bodyPolicy });
     let network: Promise<void>;
@@ -300,8 +339,22 @@ export function createBrowserRecordingLifecycle(options: LifecycleOptions) {
           options.onError(error);
         }
       }
+      let sourceBrowserId: string | undefined;
+      if (parent) {
+        const members = coordinator.listMemberships(parent.recordingId);
+        let ancestor: RecordingMembership | undefined = parent;
+        while (ancestor && !ancestor.browserId)
+          ancestor = members.find((member) => member.memberId === ancestor?.parentMemberId);
+        sourceBrowserId = ancestor?.browserId ?? undefined;
+      }
       try {
-        options.onTabOpen({ sourceContents, mainWindow, url: decision.url, browserId });
+        options.onTabOpen({
+          sourceContents,
+          mainWindow,
+          url: decision.url,
+          browserId,
+          sourceBrowserId,
+        });
       } catch (error) {
         if (browserId) {
           const reservation = pending.get(browserId);

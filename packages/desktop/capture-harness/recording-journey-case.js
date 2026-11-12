@@ -377,6 +377,23 @@ module.exports = {
           ),
         "debugger detach is disclosed",
       );
+      await eventually(
+        async () =>
+          (await store.readEvents(recording.recordingId)).events.some(
+            (event) => event.kind === "gap" && event.payload.reason === "debugger-recovered",
+          ),
+        "debugger capture recovers",
+      );
+      await root.executeJavaScript("fetch('/api?after-debugger-recovery=1').then(r=>r.text())");
+      await eventually(
+        async () =>
+          (await store.readEvents(recording.recordingId)).events.some(
+            (event) =>
+              event.kind === "network" &&
+              event.payload.request?.url?.includes("after-debugger-recovery=1"),
+          ),
+        "network capture continues after debugger recovery",
+      );
       const rootMember = lifecycle.coordinator.getMembership(root.id);
       await bridge.stop(caller, { recordingId: recording.recordingId });
       const rootTone = await measureTone(host, store, recording.recordingId, rootMember.memberId);

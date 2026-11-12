@@ -93,6 +93,8 @@ export function createRecordingsModel(
   const loadMedia = async (id: string, cursor: string | null, version: number) => {
     const page = await bridge.listMedia({ recordingId: id, cursor, limit: 100 });
     if (disposed || version !== generation) return;
+    if (page.nextCursor !== null && page.nextCursor === cursor)
+      throw new Error("Media cursor did not advance");
     update({
       media: [...state.media, ...page.segments].sort((a, b) => a.startMs - b.startMs),
       mediaIncomplete: [

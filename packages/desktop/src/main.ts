@@ -247,6 +247,8 @@ const browserRecordingLifecycle = createBrowserRecordingLifecycle({
   popupOptions: (mainWindow) =>
     browserRecordingPopupOptions(mainWindow, getBrowserKeyboardPreloadPath()),
   onError: (error) => log.error("[browser-recording] lifecycle error", error),
+  onCaptureFailure: (recordingId, error) =>
+    browserRecordingBridge?.reportCaptureFailure(recordingId, error),
   onPopup: (popupWindow) => {
     const popupContents = popupWindow.webContents;
     registerBrowserWebviewNavigationGuards(popupContents);
@@ -254,8 +256,14 @@ const browserRecordingLifecycle = createBrowserRecordingLifecycle({
       showBrowserWebviewContextMenu(popupWindow, popupContents, params);
     });
   },
-  onTabOpen: ({ sourceContents, mainWindow, url, browserId }) => {
-    const sourceBrowserId = getPaseoBrowserIdForWebContents(sourceContents);
+  onTabOpen: ({
+    sourceContents,
+    mainWindow,
+    url,
+    browserId,
+    sourceBrowserId: recordingSourceId,
+  }) => {
+    const sourceBrowserId = getPaseoBrowserIdForWebContents(sourceContents) ?? recordingSourceId;
     if (sourceBrowserId) {
       mainWindow.webContents.send(BROWSER_NEW_TAB_REQUEST_EVENT, {
         sourceBrowserId,
@@ -263,7 +271,7 @@ const browserRecordingLifecycle = createBrowserRecordingLifecycle({
         ...(browserId ? { browserId } : {}),
       });
     } else {
-      pendingBrowserWindowOpenRequests.add(sourceContents.id, url);
+      pendingBrowserWindowOpenRequests.add(sourceContents.id, url, browserId);
     }
   },
 });
@@ -488,10 +496,11 @@ ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => 
     webContentsId: input.webContentsId,
     registeredBrowserIds: listRegisteredPaseoBrowserIds(),
   });
-  for (const url of pendingBrowserWindowOpenRequests.take(input.webContentsId)) {
+  for (const request of pendingBrowserWindowOpenRequests.takeRequests(input.webContentsId)) {
     event.sender.send(BROWSER_NEW_TAB_REQUEST_EVENT, {
       sourceBrowserId: input.browserId,
-      url,
+      url: request.url,
+      ...(request.browserId ? { browserId: request.browserId } : {}),
     });
   }
 });

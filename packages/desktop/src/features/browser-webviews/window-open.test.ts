@@ -162,8 +162,11 @@ describe("pending browser window-open requests", () => {
     pending.add(101, "file:///etc/passwd");
     pending.add(101, "https://example.com/second");
 
-    expect(pending.take(101)).toEqual(["https://example.com/first", "https://example.com/second"]);
-    expect(pending.take(101)).toEqual([]);
+    expect(pending.takeRequests(101)).toEqual([
+      { url: "https://example.com/first" },
+      { url: "https://example.com/second" },
+    ]);
+    expect(pending.takeRequests(101)).toEqual([]);
   });
 
   it("drops pending workspace-tab requests when an unregistered guest is destroyed", () => {
@@ -171,6 +174,14 @@ describe("pending browser window-open requests", () => {
     pending.add(202, "https://example.com/target");
     pending.delete(202);
 
-    expect(pending.take(202)).toEqual([]);
+    expect(pending.takeRequests(202)).toEqual([]);
   });
+});
+
+it("retains a reserved recording browser id while an early tab open waits for registration", () => {
+  const pending = new PendingBrowserWindowOpenRequests();
+  pending.add(303, "https://example.com/child", "reserved-child");
+  expect(pending.takeRequests(303)).toEqual([
+    { url: "https://example.com/child", browserId: "reserved-child" },
+  ]);
 });

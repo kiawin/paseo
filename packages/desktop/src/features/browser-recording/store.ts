@@ -63,7 +63,7 @@ const eventSchema = z
     documentId: z.string().max(256).optional(),
     frameAttribution: z.enum(["identified", "unattributed"]),
     timelineMs: z.number().finite().nonnegative().optional(),
-    kind: z.enum(["interaction", "network", "media", "gap"]),
+    kind: z.enum(["interaction", "network", "media", "gap", "membership", "navigation"]),
     payload: z
       .unknown()
       .refine((value) => value !== undefined, "Recording event payload is required"),
