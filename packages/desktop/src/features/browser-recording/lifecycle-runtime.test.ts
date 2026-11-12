@@ -49,7 +49,11 @@ describe("interaction Runtime setup", () => {
       sink,
     });
     await lifecycle.ready(contents.id);
-    expect(fake.enable).toHaveBeenCalledWith("Network");
+    expect(fake.enable).toHaveBeenCalledWith("Network", undefined, {
+      maxTotalBufferSize: 4 * 1024 * 1024,
+      maxResourceBufferSize: 512 * 1024,
+      maxPostDataSize: 256 * 1024,
+    });
     expect(fake.enable).toHaveBeenCalledWith("Page");
     expect(fake.enable).toHaveBeenCalledWith("Runtime", undefined);
     expect(sink.write).toHaveBeenCalledWith(
