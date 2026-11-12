@@ -503,14 +503,20 @@ test("dedicated recording share reaches only the selected remote agent host", as
     peer.send({ type: "recording.share.complete.request", shareId, requestId: "remote-complete" });
     await expect
       .poll(() =>
-        peer.messages.some((message) => message.type === "recording.share.complete.response"),
+        peer.messages.some(
+          (message) =>
+            message.type === "recording.share.complete.response" &&
+            message.payload.requestId === "remote-complete",
+        ),
       )
       .toBe(true);
     const completed = peer.messages.find(
-      (message) => message.type === "recording.share.complete.response",
+      (message) =>
+        message.type === "recording.share.complete.response" &&
+        message.payload.requestId === "remote-complete",
     );
     if (completed?.type !== "recording.share.complete.response" || !completed.payload.manifestPath)
-      throw new Error("Remote recording complete failed");
+      throw new Error(`Remote recording complete failed: ${JSON.stringify(completed)}`);
     expect(completed.payload.manifestPath).toContain(destination.paseoHome);
     expect(completed.payload.manifestPath).not.toContain(source.paseoHome);
     for (const [index, bytes] of parts.entries())

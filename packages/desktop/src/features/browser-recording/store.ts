@@ -10,10 +10,12 @@ import {
   rename,
   rm,
   unlink,
+  type FileHandle,
 } from "node:fs/promises";
 import { isAbsolute, join, parse, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
+import { renameRecordingFile } from "./atomic-rename.js";
 
 const identifier = z
   .string()
@@ -165,12 +167,37 @@ async function measureTree(path: string): Promise<number> {
   return bytes;
 }
 const sharedQueuedBytes = new Map<string, number>();
+const blockedEventAppends = new Set<string>();
+const uncertainEventCharges = new Map<string, { previousSize: number; charge: number }>();
 const decodeUtf8 = (bytes: Uint8Array): string =>
   new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+async function writeEventAt(handle: FileHandle, bytes: Buffer, position: number): Promise<void> {
+  let written = 0;
+  while (written < bytes.length) {
+    const result = await handle.write(bytes, written, bytes.length - written, position + written);
+    if (!result.bytesWritten) throw new Error("Recording event write made no progress");
+    written += result.bytesWritten;
+  }
+}
 const appendRollbackFailure = (error: unknown, rollbackError: unknown): Error =>
-  new AggregateError([error, rollbackError], "Recording event append and rollback failed", {
-    cause: error,
-  });
+  Object.assign(
+    new AggregateError([error, rollbackError], "Recording event append and rollback failed", {
+      cause: error,
+    }),
+    { code: "RECORDING_EVENT_ROLLBACK_FAILED" },
+  );
+function appendCloseFailure(error: unknown, closeError: unknown): Error {
+  const combined = new AggregateError(
+    [error, closeError],
+    "Recording event write and close failed",
+    {
+      cause: error,
+    },
+  );
+  return (error as NodeJS.ErrnoException)?.code === "RECORDING_EVENT_ROLLBACK_FAILED"
+    ? Object.assign(combined, { code: "RECORDING_EVENT_ROLLBACK_FAILED" })
+    : combined;
+}
 function assertJsonValue(value: unknown, maxBytes: number): void {
   const ancestors = new Set<object>();
   let nodes = 0;
@@ -441,7 +468,7 @@ export class BrowserRecordingStore {
   private async writeAtomic(directory: string, name: string, bytes: Uint8Array): Promise<void> {
     const temporary = await this.writeTemporary(directory, bytes);
     try {
-      await rename(temporary, join(directory, name));
+      await renameRecordingFile(temporary, join(directory, name));
       await this.syncDirectory(directory);
     } finally {
       await unlink(temporary).catch(() => {});
@@ -780,12 +807,29 @@ export class BrowserRecordingStore {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
       const bytes = quota ? await measureTree(directory).catch(() => null) : null;
+      const appendKey = JSON.stringify([this.root, id]);
+      const uncertain = uncertainEventCharges.get(appendKey);
+      let excessCharge = 0;
+      if (bytes !== null && uncertain) {
+        const eventSize = await lstat(join(directory, "events.jsonl"))
+          .then((info) => info.size)
+          .catch(() => null);
+        if (eventSize !== null) {
+          const retained = Math.min(
+            uncertain.charge,
+            Math.max(0, eventSize - uncertain.previousSize),
+          );
+          excessCharge = uncertain.charge - retained;
+        }
+      }
       const tombstone = join(this.root, `.deleted-${id}-${randomUUID()}`);
       await rename(directory, tombstone);
       await this.syncDirectory(this.root);
       await rm(tombstone, { recursive: true });
       this.recoveryOverrides.delete(id);
-      if (quota && bytes !== null) quota.used = Math.max(0, quota.used - bytes);
+      blockedEventAppends.delete(appendKey);
+      uncertainEventCharges.delete(appendKey);
+      if (quota && bytes !== null) quota.used = Math.max(0, quota.used - bytes - excessCharge);
       await this.syncDirectory(this.root);
     });
   }
@@ -874,15 +918,20 @@ export class BrowserRecordingStore {
     const release = this.reserveBytes(bytes.length);
     try {
       await this.queue(id, async () => {
+        const appendKey = JSON.stringify([this.root, id]);
+        if (blockedEventAppends.has(appendKey))
+          throw new Error("Recording event appends blocked after failed rollback");
         const finish = await this.reserveStorage(bytes.length);
         let charge = 0;
         try {
           const path = await this.recordingDirectory(id);
           const handle = await open(
             join(path, "events.jsonl"),
-            fsConstants.O_CREAT | fsConstants.O_RDWR | fsConstants.O_APPEND | noFollow,
+            fsConstants.O_CREAT | fsConstants.O_RDWR | noFollow,
             0o600,
           );
+          let failure: unknown;
+          let failed = false;
           try {
             const info = await handle.stat();
             if (!info.isFile() || info.nlink !== 1)
@@ -896,7 +945,7 @@ export class BrowserRecordingStore {
             }
             try {
               charge = bytes.length;
-              await handle.writeFile(bytes);
+              await writeEventAt(handle, bytes, info.size);
               // Per-record sync preserves the completed prefix on a process crash;
               // queue limits are surfaced to the caller when storage cannot keep up.
               await handle.sync();
@@ -906,14 +955,24 @@ export class BrowserRecordingStore {
                 await handle.sync();
                 charge = 0;
               } catch (rollbackError) {
+                blockedEventAppends.add(appendKey);
+                uncertainEventCharges.set(appendKey, { previousSize: info.size, charge });
                 throw appendRollbackFailure(error, rollbackError);
               }
               throw error;
             }
             if (info.size === 0) await this.syncDirectory(path);
-          } finally {
-            await handle.close();
+          } catch (error) {
+            failed = true;
+            failure = error;
           }
+          try {
+            await handle.close();
+          } catch (error) {
+            if (failed) throw appendCloseFailure(failure, error);
+            throw error;
+          }
+          if (failed) throw failure;
         } finally {
           finish(charge);
         }

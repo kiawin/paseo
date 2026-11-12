@@ -180,7 +180,13 @@ export function createRecordingBridge(options: Options) {
   const reportStorageFailure = (recordingId: string, error: unknown) => {
     const state = active.get(recordingId);
     const reason = storageFailureReason(error);
-    if (!state || !reason || state.failureReason) return;
+    if (!state) return;
+    if (!reason) {
+      if ((error as NodeJS.ErrnoException)?.code === "RECORDING_EVENT_ROLLBACK_FAILED")
+        reportCaptureFailure(recordingId, error);
+      return;
+    }
+    if (state.failureReason) return;
     state.failureReason = reason;
     state.failureDescription = describeCaptureFailure(error);
     state.interrupted = true;

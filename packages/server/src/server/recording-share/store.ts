@@ -68,6 +68,11 @@ const rootInitializations = new Map<string, Promise<void>>();
 const rootLocks = new Map<string, Promise<void>>();
 const SHARE_QUOTA_BYTES = 4 * 1024 * 1024 * 1024;
 const MAX_SHARE_BYTES = 1024 * 1024 * 1024;
+function manifestWriteCloseFailure(writeError: unknown, closeError: unknown): AggregateError {
+  return new AggregateError([writeError, closeError], "Recording manifest write and close failed", {
+    cause: writeError,
+  });
+}
 export const RECORDING_UPLOAD_CHUNK_BYTES = 256 * 1024;
 export const RECORDING_UPLOAD_QUEUE_BYTES = TRANSFER_WINDOW_BYTES + RECORDING_UPLOAD_CHUNK_BYTES;
 
@@ -357,11 +362,23 @@ export class RecordingShareStore {
         this.pending.set(shareId, entry);
         this.armShareIdleTimer(shareId, entry);
         try {
-          await writeFile(
-            join(directory, "manifest.pending.json"),
-            JSON.stringify({ recipientAgentId, recordingId, manifest }),
-            { flag: "wx", mode: 0o600 },
-          );
+          const metadata = await open(join(directory, "manifest.pending.json"), "wx", 0o600);
+          let manifestFailure: unknown;
+          let manifestFailed = false;
+          try {
+            await metadata.writeFile(JSON.stringify({ recipientAgentId, recordingId, manifest }));
+            await metadata.sync();
+          } catch (error) {
+            manifestFailed = true;
+            manifestFailure = error;
+          }
+          try {
+            await metadata.close();
+          } catch (error) {
+            if (manifestFailed) throw manifestWriteCloseFailure(manifestFailure, error);
+            throw error;
+          }
+          if (manifestFailed) throw manifestFailure;
           signal.throwIfAborted();
           return shareId;
         } catch (error) {
@@ -622,12 +639,6 @@ export class RecordingShareStore {
     try {
       return await withRootLock(this.root, async () => {
         const destination = join(share.directory, "manifest.json");
-        const metadata = await open(join(share.directory, "manifest.pending.json"), "r");
-        try {
-          await metadata.sync();
-        } finally {
-          await metadata.close();
-        }
         if (share.cancelRequested) throw new Error("Recording share was cancelled");
         await rename(join(share.directory, "manifest.pending.json"), destination);
         this.pending.delete(shareId);

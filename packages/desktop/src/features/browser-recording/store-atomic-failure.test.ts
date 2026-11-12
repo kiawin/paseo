@@ -8,6 +8,11 @@ const failure = vi.hoisted(() => ({
   open: false,
   sync: false,
   partialAppend: false,
+  shortWrite: false,
+  zeroWrite: false,
+  rollbackFailure: false,
+  eventSyncFailure: false,
+  eventCloseFailure: false,
   directorySync: false,
   failSecondLink: false,
   linkCount: 0,
@@ -59,11 +64,50 @@ vi.mock("node:fs/promises", async (importOriginal) => {
       }
       if (failure.partialAppend && path.endsWith("events.jsonl")) {
         failure.partialAppend = false;
-        Object.defineProperty(handle, "writeFile", {
-          value: async (data: Uint8Array) => {
-            const partial = Buffer.from(data).subarray(0, 5);
-            await handle.write(partial, 0, partial.length, null);
+        const originalWrite = handle.write.bind(handle);
+        Object.defineProperty(handle, "write", {
+          value: async (data: Uint8Array, offset: number, _length: number, position: number) => {
+            const partial = Buffer.from(data).subarray(offset, offset + 5);
+            await originalWrite(partial, 0, partial.length, position);
             throw new Error("injected partial write");
+          },
+        });
+      }
+      if (failure.shortWrite && path.endsWith("events.jsonl")) {
+        failure.shortWrite = false;
+        const originalWrite = handle.write.bind(handle);
+        Object.defineProperty(handle, "write", {
+          value: (data: Uint8Array, offset: number, length: number, position: number) =>
+            originalWrite(data, offset, Math.min(5, length), position),
+        });
+      }
+      if (failure.zeroWrite && path.endsWith("events.jsonl")) {
+        failure.zeroWrite = false;
+        Object.defineProperty(handle, "write", { value: async () => ({ bytesWritten: 0 }) });
+      }
+      if (failure.rollbackFailure && path.endsWith("events.jsonl")) {
+        failure.rollbackFailure = false;
+        Object.defineProperty(handle, "truncate", {
+          value: async () => {
+            throw new Error("rollback denied");
+          },
+        });
+      }
+      if (failure.eventSyncFailure && path.endsWith("events.jsonl")) {
+        failure.eventSyncFailure = false;
+        Object.defineProperty(handle, "sync", {
+          value: async () => {
+            throw new Error("event sync denied");
+          },
+        });
+      }
+      if (failure.eventCloseFailure && path.endsWith("events.jsonl")) {
+        failure.eventCloseFailure = false;
+        const originalClose = handle.close.bind(handle);
+        Object.defineProperty(handle, "close", {
+          value: async () => {
+            await originalClose();
+            throw new Error("event close denied");
           },
         });
       }
@@ -89,6 +133,11 @@ beforeEach(async () => {
   failure.open = false;
   failure.sync = false;
   failure.partialAppend = false;
+  failure.shortWrite = false;
+  failure.zeroWrite = false;
+  failure.rollbackFailure = false;
+  failure.eventSyncFailure = false;
+  failure.eventCloseFailure = false;
   failure.directorySync = false;
   failure.failSecondLink = false;
   failure.linkCount = 0;
@@ -195,6 +244,119 @@ describe("recording metadata atomic replacement", () => {
       incompleteTail: false,
     });
   });
+  it("handles short writes and rejects a zero-progress write without corrupting the prefix", async () => {
+    const store = new BrowserRecordingStore(root);
+    await store.create({ recordingId: "r", workspaceId: "w", startedAt: 1, status: "recording" });
+    const event = {
+      recordingId: "r",
+      memberId: "m",
+      webContentsId: 1,
+      kind: "interaction" as const,
+      frameAttribution: "unattributed" as const,
+      payload: { value: 1 },
+    };
+    await store.appendEvent("r", event);
+    failure.shortWrite = true;
+    await store.appendEvent("r", event);
+    failure.zeroWrite = true;
+    await expect(store.appendEvent("r", event)).rejects.toThrow("no progress");
+    await store.appendEvent("r", event);
+    expect((await store.readEvents("r")).events).toEqual([event, event, event]);
+  });
+  it("blocks later appends when a failed write cannot be rolled back", async () => {
+    const store = new BrowserRecordingStore(root);
+    await store.create({ recordingId: "r", workspaceId: "w", startedAt: 1, status: "recording" });
+    const event = {
+      recordingId: "r",
+      memberId: "m",
+      webContentsId: 1,
+      kind: "interaction" as const,
+      frameAttribution: "unattributed" as const,
+      payload: { value: 1 },
+    };
+    await store.appendEvent("r", event);
+    failure.partialAppend = true;
+    failure.rollbackFailure = true;
+    await expect(store.appendEvent("r", event)).rejects.toMatchObject({
+      code: "RECORDING_EVENT_ROLLBACK_FAILED",
+    });
+    await expect(new BrowserRecordingStore(root).appendEvent("r", event)).rejects.toThrow(
+      "blocked after failed rollback",
+    );
+  });
+  it("preserves a fatal rollback failure even when closing the handle also fails", async () => {
+    const store = new BrowserRecordingStore(root);
+    await store.create({ recordingId: "r", workspaceId: "w", startedAt: 1, status: "recording" });
+    const event = {
+      recordingId: "r",
+      memberId: "m",
+      webContentsId: 1,
+      kind: "interaction" as const,
+      frameAttribution: "unattributed" as const,
+      payload: { value: 1 },
+    };
+    await store.appendEvent("r", event);
+    failure.partialAppend = true;
+    failure.rollbackFailure = true;
+    failure.eventCloseFailure = true;
+    await expect(store.appendEvent("r", event)).rejects.toMatchObject({
+      code: "RECORDING_EVENT_ROLLBACK_FAILED",
+      errors: [
+        expect.objectContaining({ code: "RECORDING_EVENT_ROLLBACK_FAILED" }),
+        expect.objectContaining({ message: "event close denied" }),
+      ],
+    });
+  });
+  it("blocks appends even when an uncertain full record ends with a newline", async () => {
+    const store = new BrowserRecordingStore(root);
+    await store.create({ recordingId: "r", workspaceId: "w", startedAt: 1, status: "recording" });
+    const event = {
+      recordingId: "r",
+      memberId: "m",
+      webContentsId: 1,
+      kind: "interaction" as const,
+      frameAttribution: "unattributed" as const,
+      payload: { value: 1 },
+    };
+    await store.appendEvent("r", event);
+    failure.eventSyncFailure = true;
+    failure.rollbackFailure = true;
+    await expect(store.appendEvent("r", event)).rejects.toMatchObject({
+      code: "RECORDING_EVENT_ROLLBACK_FAILED",
+    });
+    expect((await store.readEvents("r")).incompleteTail).toBe(false);
+    await expect(store.appendEvent("r", event)).rejects.toThrow("blocked after failed rollback");
+  });
+  it.each(["truncate", "sync"] as const)(
+    "releases conservative event quota after a rollback %s failure and deletion",
+    async (stage) => {
+      const store = new BrowserRecordingStore(root, { maxStorageBytes: 1000 });
+      await store.create({ recordingId: "r", workspaceId: "w", startedAt: 1, status: "recording" });
+      const event = {
+        recordingId: "r",
+        memberId: "m",
+        webContentsId: 1,
+        kind: "interaction" as const,
+        frameAttribution: "unattributed" as const,
+        payload: { value: "x".repeat(150) },
+      };
+      await store.appendEvent("r", event);
+      if (stage === "truncate") {
+        failure.partialAppend = true;
+        failure.rollbackFailure = true;
+      } else {
+        failure.eventSyncFailure = true;
+      }
+      await expect(store.appendEvent("r", event)).rejects.toMatchObject({
+        code: "RECORDING_EVENT_ROLLBACK_FAILED",
+      });
+      await store.delete("r");
+      await store.create({ recordingId: "s", workspaceId: "w", startedAt: 1, status: "recording" });
+      await expect(
+        store.appendEvent("s", { ...event, recordingId: "s", payload: { value: "y".repeat(650) } }),
+      ).resolves.toBeUndefined();
+    },
+  );
   it("keeps the previous document and removes its temporary file on rename failure", async () => {
     const store = new BrowserRecordingStore(root);
     await store.create({

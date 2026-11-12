@@ -25,7 +25,7 @@ vi.mock("node:fs/promises", async (load) => {
         return handle;
       return new Proxy(handle, {
         get(target, property) {
-          if (property === "writeFile")
+          if (property === (path.endsWith("events.jsonl") ? "write" : "writeFile"))
             return async () => {
               throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
             };

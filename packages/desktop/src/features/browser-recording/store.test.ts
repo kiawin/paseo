@@ -452,14 +452,14 @@ describe("desktop recording store", () => {
         await new Promise((resolve) => setImmediate(resolve));
       }
     })();
+    const updates = Array.from({ length: 30 }, (_, index) =>
+      store.updateMetadata(metadata.recordingId, { title: `version-${index}` }),
+    );
     try {
-      await Promise.all(
-        Array.from({ length: 30 }, (_, index) =>
-          store.updateMetadata(metadata.recordingId, { title: `version-${index}` }),
-        ),
-      );
+      await Promise.all(updates);
     } finally {
       running = false;
+      await Promise.allSettled(updates);
       await reader;
     }
     expect((await store.readMetadata(metadata.recordingId)).title).toBe("version-29");
