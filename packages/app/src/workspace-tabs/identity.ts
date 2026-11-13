@@ -66,6 +66,7 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
     case "pull_request":
     case "artifacts":
     case "notes":
+    case "recordings":
       return { kind: value.kind };
     case "artifact": {
       const artifactId = trimNonEmpty(value.artifactId);
@@ -162,6 +163,7 @@ const SINGLETON_TARGET_KINDS: ReadonlySet<WorkspaceTabTarget["kind"]> = new Set(
   "pull_request",
   "artifacts",
   "notes",
+  "recordings",
 ]);
 
 function secondaryWorkspaceTabTargetsEqual(
@@ -243,6 +245,7 @@ function recordsShallowEqual(
   return true;
 }
 
+// eslint-disable-next-line complexity
 export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): string {
   if (target.kind === "new_tab") {
     throw new Error("New tabs do not have deterministic target identities");
@@ -276,6 +279,7 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
     target.kind === "files" ||
     target.kind === "pull_request" ||
     target.kind === "artifacts" ||
+    target.kind === "recordings" ||
     target.kind === "notes"
   ) {
     return target.kind;

@@ -68,15 +68,26 @@ With one host that can open tabs, omit `browserHostId`. With several, pass an ID
 | ------------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `browser_evaluate` | `browserId, function, ref?` | Run a JavaScript function in the page. With `ref`, the resolved element is passed as the first argument. Results return as bounded JSON. |
 
+## Recording
+
+| Tool                   | Arguments           | Purpose                                                                                                                            |
+| ---------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_record_start` | `browserId, audio?` | Start recording the tab, and the tabs and popups it opens: video, network traffic, navigations and interactions.                   |
+| `browser_record_stop`  | `browserId`         | Stop the recording and start copying it to the agent's host. Paseo then messages the agent with the manifest path, or the failure. |
+
+Agents record QA evidence with these tools. The desktop app records, so the browser host must be Paseo Desktop. A recording can contain cookies, access tokens and private data, and enabling browser tools lets agents record without asking each time. The toolbar shows when a recording is active.
+
+An agent can stop only a recording it started. Stop any recording yourself from the browser toolbar. Each copy appears under the recording in **Recordings**, where you can remove it. Agents without MCP use the same commands through `paseo browser tabs` and `paseo browser record start|stop <browserId>`.
+
 ## Errors
 
 Tools return structured errors rather than failing silently. The ones agents see most:
 
-| Code                     | Meaning                                                                         |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| `browser_disabled`       | Browser tools are turned off on this host.                                      |
-| `browser_no_host`        | There is no connected browser host, or the selected host disconnected.          |
-| `browser_host_ambiguous` | Several hosts can open tabs. Choose one from the error and retry with its ID.   |
-| `browser_stale_ref`      | The ref no longer matches the page — take a new snapshot.                       |
-| `browser_timeout`        | The element never became actionable, or the wait condition never held.          |
-| `browser_denied`         | The action isn't allowed — e.g. a non-`http(s)` URL, or no history to navigate. |
+| Code                     | Meaning                                                                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `browser_disabled`       | Browser tools are turned off on this host.                                                                                    |
+| `browser_no_host`        | There is no connected browser host, or the selected host disconnected.                                                        |
+| `browser_host_ambiguous` | Several hosts can open tabs. Choose one from the error and retry with its ID.                                                 |
+| `browser_stale_ref`      | The ref no longer matches the page — take a new snapshot.                                                                     |
+| `browser_timeout`        | The element never became actionable, or the wait condition never held.                                                        |
+| `browser_denied`         | The action isn't allowed — e.g. a non-`http(s)` URL, no history to navigate, or stopping a recording this agent didn't start. |
