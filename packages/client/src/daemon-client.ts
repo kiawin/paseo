@@ -6622,6 +6622,121 @@ export class DaemonClient {
     return payload.artifact;
   }
 
+  async beginRecordingShare(input: {
+    recordingId: string;
+    recipientAgentId: string;
+    manifest: { version: 1; segments: Array<{ id: string; size: number; sha256: string }> };
+  }): Promise<string> {
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: { type: "recording.share.begin.request", ...input },
+      responseType: "recording.share.begin.response",
+    });
+    if (!payload.success || !payload.shareId)
+      throw new Error(payload.error ?? "Could not start recording share");
+    return payload.shareId;
+  }
+
+  async uploadRecordingShareSegment(input: {
+    shareId: string;
+    segmentId: string;
+    size: number;
+    read: (offset: number, length: number) => Promise<Uint8Array>;
+  }): Promise<void> {
+    const requestId = this.createRequestId();
+    const flow = new TransferFlowControl();
+    this.activeUploadFlows.set(requestId, flow);
+    try {
+      const response = this.sendCorrelatedRequest({
+        requestId,
+        message: {
+          type: "recording.share.upload.request",
+          shareId: input.shareId,
+          segmentId: input.segmentId,
+          requestId,
+        },
+        responseType: "recording.share.upload.response",
+        options: { skipQueue: true },
+        timeout: Math.max(
+          DEFAULT_SESSION_RPC_TIMEOUT_MS,
+          Math.ceil(input.size / (256 * 1024)) * 1000,
+        ),
+      });
+      let earlyFailure: Error | null = null;
+      void response
+        .then((payload) => {
+          if (!payload.success) {
+            earlyFailure = new Error(payload.error ?? "Recording upload failed");
+            flow.cancel();
+          }
+          return payload;
+        })
+        .catch((error: unknown) => {
+          earlyFailure = error instanceof Error ? error : new Error(String(error));
+          flow.cancel();
+        });
+      await this.sendBinaryFrame(
+        encodeFileTransferFrame({
+          opcode: FileTransferOpcode.FileBegin,
+          requestId,
+          metadata: {
+            mime: "application/octet-stream",
+            size: input.size,
+            encoding: "binary",
+            modifiedAt: new Date().toISOString(),
+          },
+        }),
+      );
+      for (let offset = 0; offset < input.size; ) {
+        await flow.awaitWindow();
+        if (flow.isCancelled) throw earlyFailure ?? new Error("Recording upload cancelled");
+        const length = Math.min(256 * 1024, input.size - offset);
+        const bytes = await input.read(offset, length);
+        if (bytes.byteLength !== length) throw new Error("Recording segment changed while sharing");
+        await this.sendBinaryFrame(
+          encodeFileTransferFrame({
+            opcode: FileTransferOpcode.FileChunk,
+            requestId,
+            payload: bytes,
+          }),
+        );
+        flow.recordSent(bytes.byteLength);
+        offset += bytes.byteLength;
+      }
+      await this.sendBinaryFrame(
+        encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }),
+      );
+      const payload = await response;
+      if (!payload.success) throw new Error(payload.error ?? "Recording upload failed");
+    } catch (error) {
+      try {
+        this.sendSessionMessage({ type: "fs.transfer.cancel", requestId });
+      } catch {
+        /* The connection may already be closed. */
+      }
+      throw error;
+    } finally {
+      this.activeUploadFlows.delete(requestId);
+    }
+  }
+
+  async completeRecordingShare(shareId: string): Promise<string> {
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: { type: "recording.share.complete.request", shareId },
+      responseType: "recording.share.complete.response",
+    });
+    if (!payload.success || !payload.manifestPath)
+      throw new Error(payload.error ?? "Could not complete recording share");
+    return payload.manifestPath;
+  }
+
+  async deleteRecordingShare(shareId: string, recipientAgentId: string): Promise<void> {
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: { type: "recording.share.delete.request", shareId, recipientAgentId },
+      responseType: "recording.share.delete.response",
+    });
+    if (!payload.success) throw new Error(payload.error ?? "Could not delete recording share");
+  }
+
   /**
    * Uploads bytes into the workspace tree over the binary channel.
    *

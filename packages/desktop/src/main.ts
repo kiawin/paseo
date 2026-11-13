@@ -54,6 +54,17 @@ import {
   ensureNotificationCenterRegistration,
 } from "./features/notifications.js";
 import { createExternalUrlOpener } from "./features/opener.js";
+import { createBrowserRecordingLifecycle } from "./features/browser-recording/lifecycle.js";
+import { createInteractionRecorder } from "./features/browser-recording/interaction-recorder.js";
+import { browserRecordingPopupOptions } from "./features/browser-recording/popup-options.js";
+import { BrowserRecordingStore } from "./features/browser-recording/store.js";
+import { recoverBrowserRecordingsOnStartup } from "./features/browser-recording/startup-recovery.js";
+import { createVideoCaptureManager } from "./features/browser-recording/video-capture.js";
+import { createRecordingBridge } from "./features/browser-recording/ipc.js";
+import {
+  isTrustedRecordingUrl,
+  registerRecordingIpc,
+} from "./features/browser-recording/register-ipc.js";
 import { createBrowserCaptureService } from "./features/browser-capture.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { registerFileDragHandlers } from "./features/file-drag/ipc.js";
@@ -61,7 +72,6 @@ import { resolveAppIconPath } from "./features/stamped-icon.js";
 import { setupApplicationMenu } from "./features/menu.js";
 import {
   BROWSER_NEW_TAB_REQUEST_EVENT,
-  decideBrowserWindowOpenRequest,
   getPaseoBrowserIdForWebContents,
   getPaseoBrowserWebContentsForHostWindow,
   getPaseoBrowserWebviewRegistry,
@@ -78,7 +88,6 @@ import {
 import {
   clearPaseoBrowserProfile,
   getLegacyPaseoBrowserProfileSession,
-  PASEO_BROWSER_PROFILE_PARTITION,
   getPaseoBrowserProfileSession,
   getPaseoBrowserProfileSessions,
   listPaseoBrowserProfileGuests,
@@ -225,78 +234,52 @@ function showBrowserWebviewContextMenu(
   menu.popup({ window: win });
 }
 
-function getBrowserPopupWindowOptions(
-  mainWindow: BrowserWindow,
-): Electron.BrowserWindowConstructorOptions {
-  return {
-    parent: mainWindow,
-    show: true,
-    autoHideMenuBar: true,
-    webPreferences: {
-      partition: PASEO_BROWSER_PROFILE_PARTITION,
-      nodeIntegration: false,
-      nodeIntegrationInSubFrames: false,
-      nodeIntegrationInWorker: false,
-      contextIsolation: true,
-      sandbox: true,
-      webSecurity: true,
-      webviewTag: false,
-      allowRunningInsecureContent: false,
-    },
-  };
-}
-
-function installBrowserWindowOpenHandler(input: {
-  contents: Electron.WebContents;
-  sourceContents: Electron.WebContents;
-  mainWindow: BrowserWindow;
-}): void {
-  const { contents, sourceContents, mainWindow } = input;
-
-  contents.setWindowOpenHandler(({ url, disposition, frameName, features, postBody }) => {
-    const decision = decideBrowserWindowOpenRequest({
-      url,
-      disposition,
-      frameName,
-      features,
-      hasPostBody: postBody !== undefined && postBody !== null,
-    });
-
-    if (decision.kind === "deny") {
-      return { action: "deny" };
-    }
-    if (decision.kind === "popup") {
-      return {
-        action: "allow",
-        overrideBrowserWindowOptions: getBrowserPopupWindowOptions(mainWindow),
-      };
-    }
-
-    const sourceBrowserId = getPaseoBrowserIdForWebContents(sourceContents);
-    if (sourceBrowserId) {
-      mainWindow.webContents.send(BROWSER_NEW_TAB_REQUEST_EVENT, {
-        sourceBrowserId,
-        url: decision.url,
-      });
-    } else {
-      pendingBrowserWindowOpenRequests.add(sourceContents.id, decision.url);
-    }
-    return { action: "deny" };
-  });
-
-  contents.on("did-create-window", (popupWindow) => {
+let browserInteractionRecorder: ReturnType<typeof createInteractionRecorder> | undefined;
+let browserRecordingBridge: ReturnType<typeof createRecordingBridge> | undefined;
+const trustedRecordingHosts = new Set<number>();
+const browserRecordingLifecycle = createBrowserRecordingLifecycle({
+  registry: getPaseoBrowserWebviewRegistry(),
+  onCdpEvent: (...args) => {
+    browserInteractionRecorder?.onCdpEvent(...args);
+    const [contents, method, params, sessionId] = args;
+    browserRecordingBridge?.onCdpEvent(contents.id, method, params, sessionId);
+  },
+  popupOptions: (mainWindow) =>
+    browserRecordingPopupOptions(mainWindow, getBrowserKeyboardPreloadPath()),
+  onError: (error) => log.error("[browser-recording] lifecycle error", error),
+  onCaptureFailure: (recordingId, error) =>
+    browserRecordingBridge?.reportCaptureFailure(recordingId, error),
+  onPopup: (popupWindow) => {
     const popupContents = popupWindow.webContents;
     registerBrowserWebviewNavigationGuards(popupContents);
     popupContents.on("context-menu", (_event, params) => {
       showBrowserWebviewContextMenu(popupWindow, popupContents, params);
     });
-    installBrowserWindowOpenHandler({
-      contents: popupContents,
-      sourceContents,
-      mainWindow,
-    });
-  });
-}
+  },
+  onTabOpen: ({
+    sourceContents,
+    mainWindow,
+    url,
+    browserId,
+    sourceBrowserId: recordingSourceId,
+  }) => {
+    const sourceBrowserId = getPaseoBrowserIdForWebContents(sourceContents) ?? recordingSourceId;
+    if (sourceBrowserId) {
+      mainWindow.webContents.send(BROWSER_NEW_TAB_REQUEST_EVENT, {
+        sourceBrowserId,
+        url,
+        ...(browserId ? { browserId } : {}),
+      });
+    } else {
+      pendingBrowserWindowOpenRequests.add(sourceContents.id, url, browserId);
+    }
+  },
+});
+browserInteractionRecorder = createInteractionRecorder({
+  coordinator: browserRecordingLifecycle.coordinator,
+  onError: (error) => log.error("[browser-recording] interaction error", error),
+});
+browserInteractionRecorder.registerIpc();
 
 // In dev mode, detect git worktrees and isolate each instance so multiple
 // Electron windows can run side-by-side (separate userData = separate lock).
@@ -334,6 +317,101 @@ if (forcedUserDataDir) {
     devWorktreeName = null;
   }
 }
+
+export const browserRecordingStore = new BrowserRecordingStore(
+  path.join(app.getPath("userData"), "browser-recordings"),
+);
+let browserRecordingRecoveryError: string | null = null;
+export const browserVideoCaptureManager = createVideoCaptureManager({
+  coordinator: browserRecordingLifecycle.coordinator,
+  store: browserRecordingStore,
+  onError: (error) => log.error("[browser-recording] video error", error),
+  onStorageError: (recordingId, error) =>
+    browserRecordingBridge?.reportStorageFailure(recordingId, error),
+  onAudioStatus: (value) => browserRecordingBridge?.reportAudioStatus(value),
+});
+function recordingResponseBody(result: unknown): { body: string; base64Encoded: boolean } {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    typeof (result as { body?: unknown }).body !== "string" ||
+    typeof (result as { base64Encoded?: unknown }).base64Encoded !== "boolean"
+  )
+    throw new Error("Invalid response body result");
+  return result as { body: string; base64Encoded: boolean };
+}
+function recordingRequestBody(result: unknown): { postData: string } {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    typeof (result as { postData?: unknown }).postData !== "string"
+  )
+    throw new Error("Invalid request body result");
+  return result as { postData: string };
+}
+browserRecordingBridge = createRecordingBridge({
+  registry: getPaseoBrowserWebviewRegistry(),
+  coordinator: browserRecordingLifecycle.coordinator,
+  store: browserRecordingStore,
+  getRecoveryError: () => browserRecordingRecoveryError,
+  video: browserVideoCaptureManager,
+  ensureInteractionReady: async (id) => {
+    await browserRecordingLifecycle.ready(id);
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      if (browserInteractionRecorder?.getFrameCount(id)) return true;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  },
+  isTrustedHost: (id, url) =>
+    trustedRecordingHosts.has(id) &&
+    isTrustedRecordingUrl(url ?? "", app.isPackaged, DEV_SERVER_URL),
+  notify: (id, value) => {
+    const target = webContents.fromId(id);
+    if (
+      !target ||
+      target.isDestroyed() ||
+      !isTrustedRecordingUrl(target.getURL(), app.isPackaged, DEV_SERVER_URL)
+    )
+      return;
+    try {
+      target.send("paseo:recording:state", value);
+    } catch (error) {
+      log.warn("[browser-recording] state notification failed", error);
+    }
+  },
+  onError: (error) => log.error("[browser-recording] bridge error", error),
+  createBodyReader: (id) => {
+    const reader = browserRecordingLifecycle.retainNetwork(id);
+    return {
+      ready: reader.ready,
+      getResponseBody: async (requestId, sessionId) =>
+        recordingResponseBody(await reader.getResponseBody(requestId, sessionId)),
+      getRequestPostData: async (requestId, sessionId) =>
+        recordingRequestBody(await reader.getRequestPostData(requestId, sessionId)),
+      release: () => reader.release(),
+    };
+  },
+  getResponseBody: async (id, requestId, sessionId) => {
+    const result = await browserRecordingLifecycle.backgroundCommand(
+      id,
+      "Network.getResponseBody",
+      { requestId },
+      sessionId ?? undefined,
+    );
+    return recordingResponseBody(result);
+  },
+  getRequestPostData: async (id, requestId, sessionId) => {
+    const result = await browserRecordingLifecycle.backgroundCommand(
+      id,
+      "Network.getRequestPostData",
+      { requestId },
+      sessionId ?? undefined,
+    );
+    return recordingRequestBody(result);
+  },
+});
 
 // Allow users to pass Chromium flags via PASEO_ELECTRON_FLAGS for debugging
 // rendering issues (e.g. "--disable-gpu --ozone-platform=x11").
@@ -391,6 +469,8 @@ ipcMain.handle("paseo:agent-navigation:ready", (event) => {
   return agentNavigationInbox.windowReady(event.sender.id);
 });
 
+registerRecordingIpc(ipcMain, browserRecordingBridge);
+
 ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => {
   const input = readAttachedBrowserInput(rawInput);
   if (!input) {
@@ -405,6 +485,7 @@ ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => 
   if (!registered) {
     throw new Error("Attached browser registration was rejected");
   }
+  browserRecordingLifecycle.attached(event.sender.id, input.browserId);
   const guest = webContents.fromId(input.webContentsId);
   if (!guest) {
     throw new Error("Attached browser guest disappeared after registration");
@@ -415,10 +496,11 @@ ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => 
     webContentsId: input.webContentsId,
     registeredBrowserIds: listRegisteredPaseoBrowserIds(),
   });
-  for (const url of pendingBrowserWindowOpenRequests.take(input.webContentsId)) {
+  for (const request of pendingBrowserWindowOpenRequests.takeRequests(input.webContentsId)) {
     event.sender.send(BROWSER_NEW_TAB_REQUEST_EVENT, {
       sourceBrowserId: input.browserId,
-      url,
+      url: request.url,
+      ...(request.browserId ? { browserId: request.browserId } : {}),
     });
   }
 });
@@ -430,6 +512,10 @@ ipcMain.handle("paseo:browser:unregister-workspace-browser", async (event, brows
       event.sender.id,
       normalizedBrowserId,
     );
+    await browserRecordingLifecycle.coordinator.handleBrowserUnregistered({
+      hostWebContentsId: event.sender.id,
+      browserId: normalizedBrowserId,
+    });
     unregisterPaseoBrowserFromHost(event.sender.id, normalizedBrowserId);
     // COMPAT(browserProfile): added in v0.1.108; remove after 2027-01-15.
     const legacyProfile = hasOtherHost
@@ -713,15 +799,25 @@ async function createWindow(
   applyDesktopWindowChromeMode({ win: mainWindow, mode: DESKTOP_WINDOW_CHROME_MODE });
 
   const webContentsId = mainWindow.webContents.id;
+  trustedRecordingHosts.add(webContentsId);
   options.onCreated?.(webContentsId);
-  mainWindow.webContents.on("did-start-navigation", (_event, _url, isSameDocument, isMainFrame) => {
+  mainWindow.webContents.on("did-start-navigation", (_event, url, isSameDocument, isMainFrame) => {
     if (isMainFrame && !isSameDocument) {
       agentNavigationInbox.windowLoading(webContentsId);
+      if (!isTrustedRecordingUrl(url, app.isPackaged, DEV_SERVER_URL))
+        void browserRecordingBridge!
+          .hostClosed(webContentsId)
+          .catch((error) => log.error("[browser-recording] navigation cleanup failed", error));
     }
   });
   mainWindow.on("closed", () => {
     options.onClosed?.(webContentsId);
     agentNavigationInbox.removeWindow(webContentsId);
+    void browserRecordingBridge!
+      .hostClosed(webContentsId)
+      .finally(() => browserRecordingLifecycle.coordinator.handleHostClosed(webContentsId))
+      .catch((error) => log.error("[browser-recording] host cleanup failed", error))
+      .finally(() => trustedRecordingHosts.delete(webContentsId));
     unregisterPaseoBrowserHost(webContentsId);
     browserKeyboard.detachHost(webContentsId);
   });
@@ -767,7 +863,7 @@ async function createWindow(
     contents.once("destroyed", () => {
       pendingBrowserWindowOpenRequests.delete(contents.id);
     });
-    installBrowserWindowOpenHandler({
+    browserRecordingLifecycle.installWindowOpenHandler({
       contents,
       sourceContents: contents,
       mainWindow,
@@ -929,6 +1025,15 @@ async function bootstrap(): Promise<void> {
   }
 
   await app.whenReady();
+  browserRecordingRecoveryError = await recoverBrowserRecordingsOnStartup(
+    browserRecordingStore,
+    !DISABLE_SINGLE_INSTANCE_LOCK,
+  );
+  if (browserRecordingRecoveryError === "single-instance-lock-disabled") {
+    log.warn("[browser-recording] recovery skipped because single-instance locking is disabled");
+  } else if (browserRecordingRecoveryError) {
+    log.error("[browser-recording] recovery failed", browserRecordingRecoveryError);
+  }
 
   const appDistDir = getAppDistDir();
   protocol.handle(APP_SCHEME, (request) => {
@@ -1038,13 +1143,27 @@ function showDaemonShutdownDialog(): void {
 const quitLifecycle = createQuitLifecycle({
   app,
   closeTransportSessions: closeAllTransportSessions,
-  stopDesktopManagedDaemonIfNeeded: () =>
-    stopDesktopManagedDaemonOnQuitIfNeeded({
+  stopDesktopManagedDaemonIfNeeded: async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        browserRecordingBridge!.shutdown(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Recording shutdown timed out")), 12_000);
+        }),
+      ]);
+    } catch (error) {
+      log.error("[browser-recording] shutdown failed", error);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return stopDesktopManagedDaemonOnQuitIfNeeded({
       settingsStore: getDesktopSettingsStore(),
       isDesktopManagedDaemonRunning: isDesktopManagedDaemonRunningSync,
       stopDaemon: () => stopDesktopDaemonViaCli("quit"),
       showShutdownFeedback: showDaemonShutdownDialog,
-    }),
+    });
+  },
   installAppUpdateOnQuit: async (signal) => {
     const settings = await getDesktopSettingsStore().get();
     return installAppUpdateOnQuit({
