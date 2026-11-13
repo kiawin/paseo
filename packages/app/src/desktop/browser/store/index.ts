@@ -26,11 +26,13 @@ export {
 } from "./state";
 
 interface BrowserStoreState extends BrowserIndexState {
-  createBrowser: (input?: { initialUrl?: string }) => string;
+  createBrowser: (input?: { initialUrl?: string; browserId?: string }) => string;
   updateBrowser: (browserId: string, patch: BrowserRecordPatch) => void;
   setBrowserViewport: (browserId: string, viewport: BrowserViewport) => void;
   removeBrowser: (browserId: string) => void;
 }
+
+export class BrowserIdAlreadyExistsError extends Error {}
 
 function createBrowserId(): string {
   let browserId: string;
@@ -48,7 +50,12 @@ export const useBrowserStore = create<BrowserStoreState>()(
     (set) => ({
       browsersById: {},
       createBrowser: (input) => {
-        const browserId = createBrowserId();
+        const browserId = input?.browserId
+          ? BrowserAutomationBrowserIdSchema.parse(input.browserId)
+          : createBrowserId();
+        if (useBrowserStore.getState().browsersById[browserId]) {
+          throw new BrowserIdAlreadyExistsError("Browser ID already exists");
+        }
         const record = createBrowserRecord({
           browserId,
           initialUrl: input?.initialUrl,
@@ -94,7 +101,7 @@ export function getBrowserRecord(browserId: string): BrowserRecord | null {
   return useBrowserStore.getState().browsersById[normalizedBrowserId] ?? null;
 }
 
-export function createWorkspaceBrowser(input?: { initialUrl?: string }): {
+export function createWorkspaceBrowser(input?: { initialUrl?: string; browserId?: string }): {
   browserId: string;
   url: string;
 } {
