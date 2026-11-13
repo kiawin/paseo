@@ -321,6 +321,69 @@ const SourceSchema = z.object({
     expect(result.success).toBe(true);
   });
 
+  // Outbound schemas use a plain union for this shape; see BrowserToolsResponsePayloadSchema.
+  it("miscompiles a discriminated union on a boolean key", async () => {
+    const schema = await compileInlineSchema(
+      [
+        'const SourceSchema = z.discriminatedUnion("ok", [',
+        "  z.object({ ok: z.literal(true), value: z.string() }),",
+        "  z.object({ ok: z.literal(false), error: z.string() }),",
+        "]);",
+      ].join("\n"),
+    );
+    expect(schema.safeParse({ ok: true, value: "x" }).success).toBe(false);
+  });
+
+  it("accepts browser.tools.execute.response envelopes", () => {
+    const envelope = (response: unknown) => ({
+      type: "session",
+      message: {
+        type: "browser.tools.execute.response",
+        payload: { requestId: "browser-tools-1", response },
+      },
+    });
+    const browserHost = { browserHostId: "host-a", label: "Desktop", canOpenTabs: true };
+
+    expect(
+      validateWSOutboundMessage(
+        envelope({
+          requestId: "req-1",
+          ok: true,
+          result: {
+            command: "list_tabs",
+            tabs: [
+              {
+                browserId: "11111111-1111-4111-8111-111111111111",
+                url: "https://example.com",
+                title: "Example",
+                isActive: true,
+                isLoading: false,
+                browserHost,
+              },
+            ],
+          },
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      validateWSOutboundMessage(
+        envelope({
+          requestId: "req-2",
+          ok: false,
+          error: {
+            code: "browser_host_ambiguous",
+            message: "Choose a browser host",
+            retryable: false,
+            browserHosts: [browserHost],
+          },
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      validateWSOutboundMessage(envelope({ requestId: "req-3", ok: "yes", result: {} })).success,
+    ).toBe(false);
+  });
+
   it("accepts a legacy github_search_response envelope", () => {
     const result = validateWSOutboundMessage({
       type: "session",

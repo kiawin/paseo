@@ -397,6 +397,7 @@ async function resolvePromptSource(
     !source ||
     source.kind === "change-request-update" ||
     source.kind === "forge-event" ||
+    source.kind === "browser-recording" ||
     source.title
   )
     return source;

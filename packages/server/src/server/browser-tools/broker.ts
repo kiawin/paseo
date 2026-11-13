@@ -56,6 +56,8 @@ export interface BrowserToolsBrokerOptions {
 }
 
 const DEFAULT_BROWSER_TOOLS_TIMEOUT_MS = 15_000;
+// Stopping finalizes media and prepares the copy; the upload continues afterwards.
+const RECORD_STOP_TIMEOUT_MS = 2 * 60_000;
 
 export class BrowserToolsBroker {
   private readonly defaultTimeoutMs: number;
@@ -129,7 +131,6 @@ export class BrowserToolsBroker {
 
   public async execute(input: BrowserToolsExecuteInput): Promise<BrowserToolsResponsePayload> {
     const requestId = input.requestId ?? this.createRequestId();
-
     const request = BrowserAutomationExecuteRequestSchema.safeParse({
       type: "browser.automation.execute.request",
       requestId,
@@ -175,7 +176,9 @@ export class BrowserToolsBroker {
     return this.sendRequest({
       host: host.value,
       request: request.data,
-      timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
+      timeoutMs:
+        input.timeoutMs ??
+        (command.command === "record_stop" ? RECORD_STOP_TIMEOUT_MS : this.defaultTimeoutMs),
     });
   }
 

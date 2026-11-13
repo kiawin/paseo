@@ -524,6 +524,10 @@ const commandHandlers: Record<BrowserAutomationCommand["command"], CommandHandle
     fail(requestId, "browser_unsupported", "browser_resize is handled by the app runtime."),
   close_tab: ({ requestId }) =>
     fail(requestId, "browser_unsupported", "browser_close_tab is handled by the app runtime."),
+  record_start: ({ requestId }) =>
+    fail(requestId, "browser_unsupported", "browser_record_start is handled by the app runtime."),
+  record_stop: ({ requestId }) =>
+    fail(requestId, "browser_unsupported", "browser_record_stop is handled by the app runtime."),
 };
 
 interface ResolvedTabTarget {
