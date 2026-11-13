@@ -28,6 +28,28 @@ interface AttachedBrowserRegistration {
   workspaceId: string;
   webContentsId: number;
 }
+interface RecordingMetadata {
+  recordingId: string;
+  workspaceId: string;
+  startedAt: number;
+  endedAt?: number;
+  status: "recording" | "complete" | "interrupted";
+  title?: string;
+  captureErrors?: string[];
+  recoveryWarnings?: string[];
+  audioRequested?: boolean;
+  audioStatus?: "starting" | "captured" | "unavailable" | "disabled";
+  audioReason?: string;
+}
+interface RecordingState {
+  recordingId: string;
+  browserId: string;
+  status: "starting" | "recording" | "stopping" | "complete" | "interrupted";
+  reason?: "quota" | "disk-full";
+  audioRequested?: boolean;
+  audioStatus?: "starting" | "captured" | "unavailable" | "disabled";
+  audioReason?: string;
+}
 
 contextBridge.exposeInMainWorld("paseoDesktop", {
   platform: process.platform,
@@ -142,5 +164,54 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     ) => ipcRenderer.invoke("paseo:browser:capture-element", browserId, rect),
     copyElement: (payload: { text?: string; imageDataUrl?: string }) =>
       ipcRenderer.invoke("paseo:browser:copy-element", payload),
+  },
+  recording: {
+    active: (input: { browserId: string }): Promise<RecordingState | null> =>
+      ipcRenderer.invoke("paseo:recording:active", input),
+    start: (input: {
+      browserId: string;
+      audio?: boolean;
+    }): Promise<{ recordingId: string; status: string }> =>
+      ipcRenderer.invoke("paseo:recording:start", input),
+    stop: (input: { recordingId: string }): Promise<void> =>
+      ipcRenderer.invoke("paseo:recording:stop", input),
+    list: (input: {
+      workspaceId: string;
+    }): Promise<{
+      recordings: RecordingMetadata[];
+      incomplete: string[];
+      recoveryError?: string | null;
+    }> => ipcRenderer.invoke("paseo:recording:list", input),
+    listMedia: (input: { recordingId: string; cursor: string | null; limit: number }) =>
+      ipcRenderer.invoke("paseo:recording:list-media", input),
+    readEvents: (input: {
+      recordingId: string;
+      cursor: number;
+      maxBytes: number;
+    }): Promise<{ events: unknown[]; nextCursor: number | null; incompleteTail: boolean }> =>
+      ipcRenderer.invoke("paseo:recording:read-events", input),
+    readMedia: (input: {
+      recordingId: string;
+      streamId: string;
+      segmentId: string;
+      offset: number;
+      length: number;
+    }): Promise<{ bytes: Uint8Array; totalBytes: number; sha256: string }> =>
+      ipcRenderer.invoke("paseo:recording:read-media", input),
+    readExportEvents: (input: { recordingId: string; offset: number; length: number }) =>
+      ipcRenderer.invoke("paseo:recording:read-export-events", input),
+    listShareAudit: (input: { recordingId: string }) =>
+      ipcRenderer.invoke("paseo:recording:list-share-audit", input),
+    forgetCorruptShareAudit: (input: { recordingId: string }): Promise<void> =>
+      ipcRenderer.invoke("paseo:recording:forget-corrupt-audit", input),
+    changeShareAudit: (input: { recordingId: string; entry?: unknown; removeShareId?: string }) =>
+      ipcRenderer.invoke("paseo:recording:change-share-audit", input),
+    delete: (input: { recordingId: string }): Promise<void> =>
+      ipcRenderer.invoke("paseo:recording:delete", input),
+    onState: (handler: (state: RecordingState) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: RecordingState) => handler(state);
+      ipcRenderer.on("paseo:recording:state", listener);
+      return () => ipcRenderer.removeListener("paseo:recording:state", listener);
+    },
   },
 });

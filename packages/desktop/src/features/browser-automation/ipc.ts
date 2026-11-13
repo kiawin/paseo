@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { hasConcurrentFrameConsumers, holdFrameProduction } from "./frame-production.js";
 import { BrowserAutomationExecuteRequestSchema } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import type {
   BrowserAutomationConsoleLogEntry,
@@ -6,7 +7,7 @@ import type {
 } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import type { TabContents, BrowserRegistry, TabImage } from "./service.js";
 import type { IsolatedKeyboardInputEvent } from "./trusted-input.js";
-import { CdpSessionQueue } from "./cdp-session-queue.js";
+import { SharedCdpSession, type CdpConsumer, type CdpDebugger } from "./cdp-session-queue.js";
 import {
   dialogAcceptValue,
   handledDialogEvent,
@@ -27,7 +28,7 @@ import {
 
 const MAX_CONSOLE_MESSAGES_PER_TAB = 200;
 const consoleMessagesByContentsId = new Map<number, BrowserAutomationConsoleLogEntry[]>();
-const cdpQueuesByContentsId = new Map<number, CdpSessionQueue>();
+const cdpSessionsByContentsId = new Map<number, SharedCdpSession>();
 const dialogMonitorsByContentsId = new Map<number, DialogMonitor>();
 const observedContentsIds = new Set<number>();
 
@@ -65,17 +66,6 @@ export class HostSnapshotEngineRegistry {
 
 const hostSnapshotEngines = new HostSnapshotEngineRegistry();
 
-interface WebContentsDebugger {
-  isAttached(): boolean;
-  attach(protocolVersion?: string): void;
-  sendCommand(command: string, params?: Record<string, unknown>): Promise<unknown>;
-  on?(
-    event: "message",
-    listener: (event: unknown, method: string, params?: Record<string, unknown>) => void,
-  ): void;
-  on?(event: "detach", listener: () => void): void;
-}
-
 interface ConsoleMessageEmitter {
   on(
     event: "console-message",
@@ -93,7 +83,7 @@ interface ConsoleMessageEmitter {
 interface BrowserAutomationWebContents extends ConsoleMessageEmitter {
   removeListener(event: "destroyed", listener: () => void): void;
   readonly id: number;
-  readonly debugger: WebContentsDebugger;
+  readonly debugger: CdpDebugger;
   getURL(): string;
   getTitle(): string;
   canGoBack(): boolean;
@@ -106,6 +96,7 @@ interface BrowserAutomationWebContents extends ConsoleMessageEmitter {
   goForward(): void;
   reload(): void;
   beginFrameSubscription(onlyDirty: boolean, callback: (image: TabImage) => void): void;
+  capturePage?(): Promise<TabImage>;
   endFrameSubscription(): void;
   invalidate(): void;
   getBackgroundThrottling(): boolean;
@@ -117,8 +108,8 @@ interface BrowserAutomationWebContents extends ConsoleMessageEmitter {
 export function adaptWebContents(contents: BrowserAutomationWebContents): TabContents {
   const contentsId = contents.id;
   observeConsoleMessages(contents, contentsId);
-  const cdpQueue = getCdpQueue(contentsId);
-  const dialogMonitor = getDialogMonitor(contents, contentsId, cdpQueue);
+  const cdpSession = getSharedCdpSession(contents);
+  const dialogMonitor = getDialogMonitor(contents, contentsId, cdpSession);
   return {
     id: contentsId,
     getURL: () => contents.getURL(),
@@ -135,27 +126,25 @@ export function adaptWebContents(contents: BrowserAutomationWebContents): TabCon
     captureFrame: (signal) => captureViewportFrame(contents, signal),
     invalidate: () => contents.invalidate(),
     withFrameProduction: async (capture) => {
-      const previous = contents.getBackgroundThrottling();
-      contents.setBackgroundThrottling(false);
+      const release = holdFrameProduction(contents);
       try {
         return await capture();
       } finally {
-        if (!contents.isDestroyed()) contents.setBackgroundThrottling(previous);
+        release();
       }
     },
     sendInputEvent: (event) => contents.sendInputEvent(event),
     insertText: (text) => contents.insertText(text),
     getConsoleMessages: () => consoleMessagesByContentsId.get(contentsId) ?? [],
     captureDialogs: (task) => dialogMonitor.capture(task),
+    // Automation sends ordinary commands here; domain and auto-attach toggles
+    // belong to a shared CDP consumer so their ownership stays coordinated.
     sendDebugCommand: (command: string, params?: Record<string, unknown>) =>
-      cdpQueue.run(async () => {
-        if (!contents.debugger.isAttached()) {
-          contents.debugger.attach("1.3");
-        }
-        return contents.debugger.sendCommand(command, params ?? {});
-      }),
+      cdpSession.sendCommand(command, params),
   };
 }
+
+const pendingConcurrentCopies = new WeakSet<BrowserAutomationWebContents>();
 
 function captureViewportFrame(
   contents: BrowserAutomationWebContents,
@@ -163,16 +152,21 @@ function captureViewportFrame(
 ): Promise<TabImage> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let copyTimer: ReturnType<typeof setTimeout> | undefined;
     const stop = () => {
+      if (copyTimer) clearTimeout(copyTimer);
       signal.removeEventListener("abort", abort);
       contents.removeListener("destroyed", destroyed);
       if (!contents.isDestroyed()) contents.endFrameSubscription();
     };
     const abort = () => {
+      settled = true;
       stop();
       reject(signal.reason);
     };
     const destroyed = () => {
+      settled = true;
       stop();
       reject(new BrowserTabClosedError());
     };
@@ -182,9 +176,36 @@ function captureViewportFrame(
       // A resized resident guest can paint while capturePage's surface-copy
       // request remains pending. Subscribe to its rendered frames instead.
       contents.beginFrameSubscription(false, (image) => {
+        if (settled) return;
+        settled = true;
         stop();
         resolve(image);
       });
+      // A display-media consumer can prevent a parked guest's frame subscription
+      // from delivering a fresh frame. Try one bounded-in-flight surface copy;
+      // some Chromium surfaces never complete capturePage, so never queue more.
+      if (
+        hasConcurrentFrameConsumers(contents) &&
+        contents.capturePage &&
+        !pendingConcurrentCopies.has(contents)
+      ) {
+        copyTimer = setTimeout(() => {
+          if (settled || contents.isDestroyed() || !contents.capturePage) return;
+          pendingConcurrentCopies.add(contents);
+          void Promise.resolve()
+            .then(() => contents.capturePage?.())
+            .then((image) => {
+              if (!image || settled || image.getSize().width === 0 || image.getSize().height === 0)
+                return undefined;
+              settled = true;
+              stop();
+              resolve(image);
+              return undefined;
+            })
+            .catch(() => {})
+            .finally(() => pendingConcurrentCopies.delete(contents));
+        }, 1000);
+      }
     } catch (error) {
       stop();
       reject(error);
@@ -192,14 +213,17 @@ function captureViewportFrame(
   });
 }
 
-function getCdpQueue(contentsId: number): CdpSessionQueue {
-  const existing = cdpQueuesByContentsId.get(contentsId);
+export function getSharedCdpSession(contents: BrowserAutomationWebContents): SharedCdpSession {
+  if (contents.isDestroyed()) throw new BrowserTabClosedError();
+  const contentsId = contents.id;
+  observeConsoleMessages(contents, contentsId);
+  const existing = cdpSessionsByContentsId.get(contentsId);
   if (existing) {
     return existing;
   }
-  const queue = new CdpSessionQueue();
-  cdpQueuesByContentsId.set(contentsId, queue);
-  return queue;
+  const session = new SharedCdpSession(contents.debugger);
+  cdpSessionsByContentsId.set(contentsId, session);
+  return session;
 }
 
 function observeConsoleMessages(contents: BrowserAutomationWebContents, contentsId: number): void {
@@ -216,7 +240,8 @@ function observeConsoleMessages(contents: BrowserAutomationWebContents, contents
   contents.once("destroyed", () => {
     observedContentsIds.delete(contentsId);
     consoleMessagesByContentsId.delete(contentsId);
-    cdpQueuesByContentsId.delete(contentsId);
+    cdpSessionsByContentsId.get(contentsId)?.dispose();
+    cdpSessionsByContentsId.delete(contentsId);
     dialogMonitorsByContentsId.delete(contentsId);
   });
 }
@@ -224,27 +249,27 @@ function observeConsoleMessages(contents: BrowserAutomationWebContents, contents
 function getDialogMonitor(
   contents: BrowserAutomationWebContents,
   contentsId: number,
-  cdpQueue: CdpSessionQueue,
+  cdpSession: SharedCdpSession,
 ): DialogMonitor {
   const existing = dialogMonitorsByContentsId.get(contentsId);
   if (existing) {
     return existing;
   }
-  const monitor = new DialogMonitor(contents, contentsId, cdpQueue);
+  const monitor = new DialogMonitor(contents, contentsId, cdpSession);
   dialogMonitorsByContentsId.set(contentsId, monitor);
   return monitor;
 }
 
 class DialogMonitor {
   private enabled = false;
-  private listenerRegistered = false;
+  private consumer: CdpConsumer | null = null;
   private detachGeneration = 0;
   private readonly activeCollectors: DialogCollector[] = [];
 
   public constructor(
     private readonly contents: BrowserAutomationWebContents,
     private readonly contentsId: number,
-    private readonly cdpQueue: CdpSessionQueue,
+    private readonly cdpSession: SharedCdpSession,
   ) {}
 
   public async capture<T>(
@@ -288,23 +313,24 @@ class DialogMonitor {
     if (!this.contents.debugger.on) {
       return;
     }
-    if (!this.listenerRegistered) {
-      this.listenerRegistered = true;
-      this.contents.debugger.on("message", (_event, method, params) => {
-        if (method !== "Page.javascriptDialogOpening") {
-          return;
-        }
-        if (this.activeCollectors.length === 0) {
-          return;
-        }
-        void this.handleOpening(params ?? {});
-      });
-      this.contents.debugger.on("detach", () => {
-        this.enabled = false;
-        this.detachGeneration += 1;
+    if (!this.consumer) {
+      this.consumer = this.cdpSession.createConsumer({
+        onMessage: ({ method, params, sessionId }) => {
+          if (sessionId || method !== "Page.javascriptDialogOpening") {
+            return;
+          }
+          if (this.activeCollectors.length === 0) {
+            return;
+          }
+          void this.handleOpening(params);
+        },
+        onDetach: () => {
+          this.enabled = false;
+          this.detachGeneration += 1;
+        },
       });
     }
-    await this.sendDebugCommand("Page.enable");
+    await this.consumer.enableDomain("Page");
     this.enabled = true;
   }
 
@@ -367,12 +393,7 @@ class DialogMonitor {
     command: string,
     params?: Record<string, unknown>,
   ): Promise<unknown> {
-    return this.cdpQueue.run(async () => {
-      if (!this.contents.debugger.isAttached()) {
-        this.contents.debugger.attach("1.3");
-      }
-      return this.contents.debugger.sendCommand(command, params ?? {});
-    });
+    return this.cdpSession.sendCommand(command, params);
   }
 
   private async sendDialogResponseCommand(
@@ -381,10 +402,7 @@ class DialogMonitor {
   ): Promise<unknown> {
     // Dialogs can block the CDP command that opened them, so the unblocker must not wait behind
     // the per-tab command queue.
-    if (!this.contents.debugger.isAttached()) {
-      this.contents.debugger.attach("1.3");
-    }
-    return this.contents.debugger.sendCommand(command, params ?? {});
+    return this.cdpSession.sendImmediate(command, params);
   }
 }
 

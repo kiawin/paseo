@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { executeAutomationCommand, type BrowserRegistry, type TabImage } from "./service.js";
 import { adaptWebContents, HostSnapshotEngineRegistry } from "./ipc.js";
+import * as browserAutomationIpc from "./ipc.js";
 import type { IsolatedKeyboardInputEvent } from "./trusted-input.js";
 
 class FakeImage implements TabImage {
@@ -15,18 +16,20 @@ class FakeImage implements TabImage {
 
 class FakeDebugger {
   public attachedProtocolVersions: string[] = [];
-  public commands: Array<{ command: string; params: Record<string, unknown> }> = [];
+  public commands: Array<{ command: string; params: Record<string, unknown>; sessionId?: string }> =
+    [];
   public blockCommands = false;
+  public failAttach = false;
   public readonly blockedCommandNames = new Set<string>();
   public readonly failedCommandNames = new Set<string>();
   public readonly failedCommandErrors = new Map<string, Error>();
   public readonly promptDialogs: unknown[] = [];
   public failPromptDrain = false;
   public beforeCommand: ((command: string) => void) | null = null;
-  private messageListener:
-    | ((event: unknown, method: string, params?: Record<string, unknown>) => void)
-    | null = null;
-  private detachListener: (() => void) | null = null;
+  private readonly messageListeners = new Set<
+    (event: unknown, method: string, params?: Record<string, unknown>, sessionId?: string) => void
+  >();
+  private readonly detachListeners = new Set<(event?: unknown, reason?: string) => void>();
   private readonly blockedCommands: Array<() => void> = [];
 
   public isAttached(): boolean {
@@ -34,11 +37,16 @@ class FakeDebugger {
   }
 
   public attach(protocolVersion?: string): void {
+    if (this.failAttach) throw new Error("debugger unavailable");
     this.attachedProtocolVersions.push(protocolVersion ?? "");
   }
 
-  public async sendCommand(command: string, params?: Record<string, unknown>): Promise<unknown> {
-    this.commands.push({ command, params: params ?? {} });
+  public async sendCommand(
+    command: string,
+    params?: Record<string, unknown>,
+    sessionId?: string,
+  ): Promise<unknown> {
+    this.commands.push({ command, params: params ?? {}, ...(sessionId ? { sessionId } : {}) });
     this.beforeCommand?.(command);
     const commandError = this.failedCommandErrors.get(command);
     if (commandError) {
@@ -67,26 +75,63 @@ class FakeDebugger {
   public on(
     event: "message" | "detach",
     listener:
-      | ((event: unknown, method: string, params?: Record<string, unknown>) => void)
+      | ((
+          event: unknown,
+          method: string,
+          params?: Record<string, unknown>,
+          sessionId?: string,
+        ) => void)
       | (() => void),
   ): void {
     if (event === "detach") {
-      this.detachListener = listener;
+      this.detachListeners.add(listener as (event?: unknown, reason?: string) => void);
       return;
     }
-    this.messageListener = listener;
+    this.messageListeners.add(
+      listener as (
+        event: unknown,
+        method: string,
+        params?: Record<string, unknown>,
+        sessionId?: string,
+      ) => void,
+    );
   }
 
-  public emitMessage(method: string, params?: Record<string, unknown>): void {
-    if (!this.messageListener) {
+  public removeListener(
+    event: "message" | "detach",
+    listener:
+      | ((
+          event: unknown,
+          method: string,
+          params?: Record<string, unknown>,
+          sessionId?: string,
+        ) => void)
+      | ((event?: unknown, reason?: string) => void),
+  ): void {
+    if (event === "detach") {
+      this.detachListeners.delete(listener as (event?: unknown, reason?: string) => void);
+      return;
+    }
+    this.messageListeners.delete(
+      listener as (
+        event: unknown,
+        method: string,
+        params?: Record<string, unknown>,
+        sessionId?: string,
+      ) => void,
+    );
+  }
+
+  public emitMessage(method: string, params?: Record<string, unknown>, sessionId?: string): void {
+    if (this.messageListeners.size === 0) {
       throw new Error("Debugger message listener was not registered");
     }
-    this.messageListener({}, method, params);
+    for (const listener of this.messageListeners) listener({}, method, params, sessionId);
   }
 
-  public emitDetach(): void {
+  public emitDetach(reason?: string): void {
     this.attachedProtocolVersions.length = 0;
-    this.detachListener?.();
+    for (const listener of this.detachListeners) listener({}, reason);
   }
 
   public finishNextCommand(): void {
@@ -231,6 +276,320 @@ class FakeWebContents {
 }
 
 describe("browser automation IPC adapter", () => {
+  test("shares debugger domains and child-session events between independent consumers", async () => {
+    const contents = new FakeWebContents(801);
+    const tab = adaptWebContents(contents);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const firstEvents: unknown[] = [];
+    const secondEvents: unknown[] = [];
+    const first = shared.createConsumer({ onMessage: (message) => firstEvents.push(message) });
+    const second = shared.createConsumer({ onMessage: (message) => secondEvents.push(message) });
+
+    await Promise.all([first.enableDomain("Network"), second.enableDomain("Network")]);
+    expect(
+      contents.debugger.commands.filter((item) => item.command === "Network.enable"),
+    ).toHaveLength(1);
+    contents.debugger.emitMessage("Network.requestWillBeSent", { requestId: "one" }, "child-1");
+    expect(firstEvents).toEqual([
+      { method: "Network.requestWillBeSent", params: { requestId: "one" }, sessionId: "child-1" },
+    ]);
+    expect(secondEvents).toEqual(firstEvents);
+    await first.sendCommand("Runtime.evaluate", { expression: "1" }, "child-1");
+    expect(contents.debugger.commands.at(-1)).toEqual({
+      command: "Runtime.evaluate",
+      params: { expression: "1" },
+      sessionId: "child-1",
+    });
+
+    await first.release();
+    expect(contents.debugger.commands.some((item) => item.command === "Network.disable")).toBe(
+      false,
+    );
+    contents.debugger.emitMessage("Network.loadingFinished", { requestId: "one" }, "child-1");
+    expect(firstEvents).toHaveLength(1);
+    expect(secondEvents).toHaveLength(2);
+    await second.release();
+    expect(
+      contents.debugger.commands.filter((item) => item.command === "Network.disable"),
+    ).toHaveLength(1);
+    await expect(tab.sendDebugCommand?.("Runtime.evaluate", { expression: "2" })).resolves.toEqual({
+      result: { value: true },
+    });
+    expect(contents.debugger.attachedProtocolVersions).toEqual(["1.3"]);
+    contents.destroy();
+  });
+
+  test("reports a debugger detach once to each consumer and restores enabled domains on reattach", async () => {
+    const contents = new FakeWebContents(802);
+    adaptWebContents(contents);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const firstDetach = vi.fn();
+    const secondDetach = vi.fn();
+    const first = shared.createConsumer({ onDetach: firstDetach });
+    const second = shared.createConsumer({ onDetach: secondDetach });
+    await first.enableDomain("Network");
+    await second.enableDomain("Network");
+    await first.enableDomain("Page", "obsolete-child");
+
+    contents.debugger.emitDetach("devtools-opened");
+    expect(firstDetach).toHaveBeenCalledTimes(1);
+    expect(secondDetach).toHaveBeenCalledTimes(1);
+    expect(firstDetach).toHaveBeenCalledWith("devtools-opened");
+    await first.sendCommand("Runtime.evaluate", { expression: "3" });
+    expect(
+      contents.debugger.commands.filter((item) => item.command === "Network.enable"),
+    ).toHaveLength(2);
+    expect(
+      contents.debugger.commands.filter(
+        (item) => item.command === "Page.enable" && item.sessionId === "obsolete-child",
+      ),
+    ).toHaveLength(1);
+    await first.release();
+    await second.release();
+    contents.destroy();
+  });
+
+  test("continues dispatching when another consumer callback throws", async () => {
+    const contents = new FakeWebContents(804);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = shared.createConsumer({
+      onMessage: () => {
+        throw new Error("consumer failure");
+      },
+    });
+    const received = vi.fn();
+    const second = shared.createConsumer({ onMessage: received });
+    await first.enableDomain("Network");
+    contents.debugger.emitMessage("Network.loadingFinished", { requestId: "one" });
+    expect(received).toHaveBeenCalledOnce();
+    await first.release();
+    await second.release();
+    warn.mockRestore();
+    contents.destroy();
+  });
+
+  test("does not disable the dialog domain when a recording consumer stops", async () => {
+    const contents = new FakeWebContents(803);
+    const tab = adaptWebContents(contents);
+    await tab.captureDialogs?.(async () => undefined);
+    const recorder = browserAutomationIpc.getSharedCdpSession(contents).createConsumer({});
+    await recorder.enableDomain("Page");
+    await recorder.release();
+    expect(
+      contents.debugger.commands.filter((item) => item.command === "Page.enable"),
+    ).toHaveLength(1);
+    expect(contents.debugger.commands.some((item) => item.command === "Page.disable")).toBe(false);
+    await expect(tab.captureDialogs?.(async () => "still works")).resolves.toEqual({
+      result: "still works",
+      dialogs: [],
+    });
+    contents.destroy();
+  });
+
+  test("isolates a failed recorder recovery from automation and reports recovery failure", async () => {
+    const contents = new FakeWebContents(805);
+    const tab = adaptWebContents(contents);
+    const recorder = browserAutomationIpc.getSharedCdpSession(contents).createConsumer({});
+    await recorder.enableDomain("Network");
+    contents.debugger.emitDetach("devtools-opened");
+    contents.debugger.failAttach = true;
+    await expect(recorder.recover()).rejects.toThrow("debugger unavailable");
+    contents.debugger.failAttach = false;
+    contents.debugger.failedCommandNames.add("Network.enable");
+    await expect(tab.sendDebugCommand?.("Runtime.evaluate", { expression: "1" })).resolves.toEqual({
+      result: { value: true },
+    });
+    await expect(recorder.recover()).rejects.toThrow("Network.enable failed");
+    contents.debugger.failedCommandNames.clear();
+    await recorder.recover();
+    await recorder.release();
+    contents.destroy();
+  });
+
+  test("cleans every owned domain even if one disable command fails", async () => {
+    const contents = new FakeWebContents(806);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const recorder = shared.createConsumer({});
+    await recorder.enableDomain("Network");
+    await recorder.enableDomain("Page");
+    contents.debugger.failedCommandNames.add("Network.disable");
+    await expect(recorder.release()).rejects.toThrow("Network.disable failed");
+    expect(contents.debugger.commands.some((entry) => entry.command === "Page.disable")).toBe(true);
+    contents.debugger.failedCommandNames.clear();
+    const next = shared.createConsumer({});
+    await next.enableDomain("Page");
+    await next.release();
+    contents.destroy();
+  });
+
+  test("ignores child-session dialog events while handling a root dialog once", async () => {
+    const contents = new FakeWebContents(807);
+    const tab = adaptWebContents(contents);
+    const recorder = browserAutomationIpc.getSharedCdpSession(contents).createConsumer({});
+    await recorder.enableDomain("Page", "child");
+    const result = await tab.captureDialogs?.(async () => {
+      contents.debugger.emitMessage(
+        "Page.javascriptDialogOpening",
+        { type: "confirm", message: "child" },
+        "child",
+      );
+      contents.debugger.emitMessage("Page.javascriptDialogOpening", {
+        type: "confirm",
+        message: "root",
+      });
+      await flushMicrotasks();
+      return "done";
+    });
+    expect(result?.dialogs.map((entry) => entry.message)).toEqual(["root"]);
+    expect(
+      contents.debugger.commands.filter((entry) => entry.command === "Page.handleJavaScriptDialog"),
+    ).toHaveLength(1);
+    await recorder.release();
+    contents.destroy();
+  });
+
+  test("shares target auto-attach ownership and rejects raw domain toggles", async () => {
+    const contents = new FakeWebContents(808);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const first = shared.createConsumer({});
+    const second = shared.createConsumer({});
+    await first.enableAutoAttach();
+    await second.enableAutoAttach();
+    expect(
+      contents.debugger.commands.filter(
+        (entry) => entry.command === "Target.setAutoAttach" && entry.params.autoAttach === true,
+      ),
+    ).toHaveLength(1);
+    await expect(first.sendCommand("Network.disable")).rejects.toThrow("ownership");
+    await expect(first.sendCommand("Target.setAutoAttach", { autoAttach: false })).rejects.toThrow(
+      "ownership",
+    );
+    await first.release();
+    expect(
+      contents.debugger.commands.some(
+        (entry) => entry.command === "Target.setAutoAttach" && entry.params.autoAttach === false,
+      ),
+    ).toBe(false);
+    await second.release();
+    expect(
+      contents.debugger.commands.filter(
+        (entry) => entry.command === "Target.setAutoAttach" && entry.params.autoAttach === false,
+      ),
+    ).toHaveLength(1);
+    contents.destroy();
+  });
+
+  test("forgets detached child sessions without disabling or restoring their stale IDs", async () => {
+    const contents = new FakeWebContents(809);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const recorder = shared.createConsumer({});
+    await recorder.enableDomain("Network", "old-child");
+    contents.debugger.emitMessage("Target.detachedFromTarget", { sessionId: "old-child" });
+    await recorder.sendCommand("Runtime.evaluate", { expression: "1" });
+    await recorder.release();
+    expect(
+      contents.debugger.commands.filter(
+        (entry) => entry.command === "Network.enable" && entry.sessionId === "old-child",
+      ),
+    ).toHaveLength(1);
+    expect(
+      contents.debugger.commands.some(
+        (entry) => entry.command === "Network.disable" && entry.sessionId === "old-child",
+      ),
+    ).toBe(false);
+    contents.destroy();
+  });
+
+  test("serializes domain setup with commands and rejects use after destruction", async () => {
+    const contents = new FakeWebContents(810);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const recorder = shared.createConsumer({});
+    contents.debugger.blockedCommandNames.add("Network.enable");
+    const enabled = recorder.enableDomain("Network");
+    const command = recorder.sendCommand("Runtime.evaluate", { expression: "1" });
+    await flushMicrotasks();
+    expect(contents.debugger.commands.map((entry) => entry.command)).toEqual(["Network.enable"]);
+    contents.debugger.blockedCommandNames.clear();
+    contents.debugger.finishNextCommand();
+    await enabled;
+    await command;
+    expect(contents.debugger.commands.map((entry) => entry.command)).toEqual([
+      "Network.enable",
+      "Runtime.evaluate",
+    ]);
+    contents.destroy();
+    await expect(recorder.recover()).rejects.toThrow("closed");
+    expect(() => shared.createConsumer({})).toThrow("disposed");
+    expect(() => contents.debugger.emitMessage("Network.loadingFinished")).toThrow(
+      "listener was not registered",
+    );
+  });
+
+  test("shares identical domain settings and rejects conflicting consumer settings", async () => {
+    const contents = new FakeWebContents(811);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const first = shared.createConsumer({});
+    const second = shared.createConsumer({});
+    await first.enableDomain("Network", undefined, { maxTotalBufferSize: 4096 });
+    await second.enableDomain("Network", undefined, { maxTotalBufferSize: 4096 });
+    await expect(
+      second.enableDomain("Network", undefined, { maxTotalBufferSize: 1024 }),
+    ).rejects.toThrow("settings");
+    expect(
+      contents.debugger.commands.filter((entry) => entry.command === "Network.enable"),
+    ).toEqual([{ command: "Network.enable", params: { maxTotalBufferSize: 4096 } }]);
+    await first.release();
+    await second.release();
+    contents.destroy();
+  });
+
+  test("does not create a shared session for destroyed browser contents", () => {
+    const contents = new FakeWebContents(814);
+    contents.destroy();
+    expect(() => browserAutomationIpc.getSharedCdpSession(contents)).toThrow();
+    expect(() => contents.debugger.emitMessage("Network.loadingFinished")).toThrow(
+      "listener was not registered",
+    );
+  });
+
+  test("releases a detached consumer without restoring or disabling its domain", async () => {
+    const contents = new FakeWebContents(812);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const recorder = shared.createConsumer({});
+    await recorder.enableDomain("Network");
+    contents.debugger.emitDetach("devtools-opened");
+    await recorder.release();
+    expect(
+      contents.debugger.commands.filter((entry) => entry.command === "Network.enable"),
+    ).toHaveLength(1);
+    expect(contents.debugger.commands.some((entry) => entry.command === "Network.disable")).toBe(
+      false,
+    );
+    contents.destroy();
+  });
+
+  test("an immediate dialog response after detach leaves domain recovery explicit", async () => {
+    const contents = new FakeWebContents(813);
+    const shared = browserAutomationIpc.getSharedCdpSession(contents);
+    const recorder = shared.createConsumer({});
+    await recorder.enableDomain("Network");
+    contents.debugger.emitDetach("devtools-opened");
+    await shared.sendImmediate("Page.handleJavaScriptDialog", { accept: false });
+    expect(contents.debugger.commands.map((entry) => entry.command)).toEqual([
+      "Network.enable",
+      "Page.handleJavaScriptDialog",
+    ]);
+    await recorder.recover();
+    expect(contents.debugger.commands.map((entry) => entry.command)).toEqual([
+      "Network.enable",
+      "Page.handleJavaScriptDialog",
+      "Network.enable",
+    ]);
+    await recorder.release();
+    contents.destroy();
+  });
+
   test("isolates snapshot refs by host window and releases them on destruction", () => {
     const registry = new HostSnapshotEngineRegistry();
     const firstHost = new FakeHostWebContents(1);

@@ -1,6 +1,7 @@
 import { unarchiveWorkspaceAgents } from "./workspace-archive-service.js";
 import { createRestartRecovery } from "./agent/restart-recovery/index.js";
 import { sendPromptToAgent, unarchiveAgentState } from "./agent/agent-prompt.js";
+import { RecordingShareStore } from "./recording-share/store.js";
 import { createIdleRuntimeCleanup } from "./agent/idle-runtime-cleanup/index.js";
 import {
   createFinishSubscriptions,
@@ -526,6 +527,7 @@ export interface PaseoDaemonDependencies {
   hubRelationshipClock?: HubRelationshipClock;
   hubRelationshipRetryPolicy?: HubRelationshipRetryPolicy;
   createHubDaemonId?: () => string;
+  onWebSocketServerReady?: (server: VoiceAssistantWebSocketServer) => void;
   serverFeatureOverrides?: {
     daemonStatusRpc?: boolean;
     relayConfig?: boolean;
@@ -1138,6 +1140,9 @@ export async function createPaseoDaemon(
     logger,
   });
   await workspaceLabelService.initialize();
+  await new RecordingShareStore(config.paseoHome).recover().catch((error: unknown) => {
+    logger.error({ err: error }, "Recording share recovery failed");
+  });
   await artifactStore.initialize();
   subscribeArtifactCascade(projectRegistry, artifactStore);
   await noteStore.initialize();
@@ -2063,6 +2068,7 @@ export async function createPaseoDaemon(
             restartRecovery.resumePending();
             await finishSubscriptions.start();
             wsServer.beginAcceptingConnections();
+            dependencies.onWebSocketServerReady?.(wsServer);
             const relaySecurityLogger = logger.child({ module: "relay-security" });
             relayRuntime = createRelayRuntime({
               config: {
