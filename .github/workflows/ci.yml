@@ -31,7 +31,7 @@ jobs:
           $old = 'await new Promise((resolve) => setImmediate(resolve));'
           if (!$text.Contains($old)) { throw 'Reader statement not found' }
           $text = $text.Replace($old, 'await new Promise((resolve) => setTimeout(resolve, 25));')
-          Set-Content -NoNewline $test $text
+          [System.IO.File]::WriteAllText($test, $text)
           cd packages/desktop
           1..3 | ForEach-Object {
             Write-Host "Reader-gap attempt $_"
