@@ -18,11 +18,29 @@ jobs:
         shell: pwsh
         run: |
           cd packages/desktop
-          1..3 | ForEach-Object {
+          1..12 | ForEach-Object {
             Write-Host "Baseline attempt $_"
             npx vitest run src/features/browser-recording/store.test.ts -t 'serializes concurrent metadata updates' --bail=1
             Write-Host "BASELINE_RESULT=$_ exit=$LASTEXITCODE"
           }
+      - name: Exercise longer bounded retries
+        shell: pwsh
+        run: |
+          $source = 'packages/desktop/src/features/browser-recording/atomic-rename.ts'
+          $text = Get-Content -Raw $source
+          $old = '[10, 25, 50, 100, 200]'
+          if (!$text.Contains($old)) { throw 'Retry delays not found' }
+          $text = $text.Replace($old, '[10, 25, 50, 100, 200, 400, 800, 1000, 1000]')
+          [System.IO.File]::WriteAllText($source, $text)
+          cd packages/desktop
+          1..12 | ForEach-Object {
+            Write-Host "Retry attempt $_"
+            npx vitest run src/features/browser-recording/store.test.ts -t 'serializes concurrent metadata updates' --bail=1
+            Write-Host "RETRY_RESULT=$_ exit=$LASTEXITCODE"
+          }
+      - name: Restore retry policy
+        shell: pwsh
+        run: git checkout -- packages/desktop/src/features/browser-recording/atomic-rename.ts
       - name: Exercise reader with a gap
         shell: pwsh
         run: |
@@ -33,7 +51,7 @@ jobs:
           $text = $text.Replace($old, 'await new Promise((resolve) => setTimeout(resolve, 25));')
           [System.IO.File]::WriteAllText($test, $text)
           cd packages/desktop
-          1..3 | ForEach-Object {
+          1..12 | ForEach-Object {
             Write-Host "Reader-gap attempt $_"
             npx vitest run src/features/browser-recording/store.test.ts -t 'serializes concurrent metadata updates' --bail=1
             Write-Host "GAP_RESULT=$_ exit=$LASTEXITCODE"
