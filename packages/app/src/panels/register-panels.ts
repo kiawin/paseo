@@ -3,6 +3,7 @@ import { artifactPanelRegistration } from "@/panels/artifact-panel";
 import { artifactsPanelRegistration } from "@/panels/artifacts-panel";
 import { noteDraftPanelRegistration, notePanelRegistration } from "@/panels/note-panel";
 import { notesPanelRegistration } from "@/panels/notes-panel";
+import { recordingsPanelRegistration } from "@/panels/recordings-panel";
 import { browserPanelRegistration } from "@/desktop/browser/panel";
 import {
   changesTreePanelRegistration,
@@ -39,6 +40,7 @@ export function ensurePanelsRegistered(): void {
   registerPanel(artifactsPanelRegistration);
   registerPanel(artifactPanelRegistration);
   registerPanel(notesPanelRegistration);
+  registerPanel(recordingsPanelRegistration);
   registerPanel(noteDraftPanelRegistration);
   registerPanel(notePanelRegistration);
   registerPanel(commitDiffPanelRegistration);

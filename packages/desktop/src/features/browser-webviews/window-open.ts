@@ -43,28 +43,27 @@ const NON_POPUP_WINDOW_FEATURE_NAMES = new Set([
 ]);
 
 export class PendingBrowserWindowOpenRequests {
-  private readonly urlsByWebContentsId = new Map<number, string[]>();
+  private readonly requestsByWebContentsId = new Map<
+    number,
+    Array<{ url: string; browserId?: string }>
+  >();
 
-  public add(webContentsId: number, url: string): void {
-    if (!isAllowedBrowserWebviewUrl(url)) {
-      return;
-    }
-    const urls = this.urlsByWebContentsId.get(webContentsId) ?? [];
-    if (urls.length >= MAX_PENDING_WINDOW_OPEN_REQUESTS_PER_GUEST) {
-      return;
-    }
-    urls.push(url);
-    this.urlsByWebContentsId.set(webContentsId, urls);
+  public add(webContentsId: number, url: string, browserId?: string): void {
+    if (!isAllowedBrowserWebviewUrl(url)) return;
+    const requests = this.requestsByWebContentsId.get(webContentsId) ?? [];
+    if (requests.length >= MAX_PENDING_WINDOW_OPEN_REQUESTS_PER_GUEST) return;
+    requests.push({ url, ...(browserId ? { browserId } : {}) });
+    this.requestsByWebContentsId.set(webContentsId, requests);
   }
 
-  public take(webContentsId: number): string[] {
-    const urls = this.urlsByWebContentsId.get(webContentsId) ?? [];
-    this.urlsByWebContentsId.delete(webContentsId);
-    return urls;
+  public takeRequests(webContentsId: number): Array<{ url: string; browserId?: string }> {
+    const requests = this.requestsByWebContentsId.get(webContentsId) ?? [];
+    this.requestsByWebContentsId.delete(webContentsId);
+    return requests;
   }
 
   public delete(webContentsId: number): void {
-    this.urlsByWebContentsId.delete(webContentsId);
+    this.requestsByWebContentsId.delete(webContentsId);
   }
 }
 
