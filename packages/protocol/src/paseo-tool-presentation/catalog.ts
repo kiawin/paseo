@@ -483,6 +483,8 @@ export const PASEO_TOOL_CATALOG = {
   browser_resize: browser("Resize browser", "Resized browser", viewportContext()),
   browser_logs: browser("Read browser logs", "Read browser logs"),
   browser_evaluate: browser("Run JavaScript", "Ran JavaScript", field("function")),
+  browser_record_start: browser("Start recording", "Started recording", field("browserId")),
+  browser_record_stop: browser("Stop recording", "Stopped recording", field("browserId")),
 } satisfies Record<string, PaseoToolEntry>;
 
 export type PaseoToolName = keyof typeof PASEO_TOOL_CATALOG;

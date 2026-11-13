@@ -730,6 +730,54 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
       return browserToolResult({ payload, context: { ...context, browserId } });
     },
   );
+
+  options.registerTool(
+    "browser_record_start",
+    {
+      title: "Start browser recording",
+      description:
+        "Start recording a Paseo browser tab for QA evidence: video, network traffic, navigations and interactions, including tabs and popups it opens. The recording can contain cookies, tokens and other private data. Use browserId from browser_new_tab or browser_list_tabs, then call browser_record_stop with the same browserId.",
+      inputSchema: {
+        browserId: BrowserAutomationBrowserIdSchema,
+        audio: z.boolean().optional().describe("Also record tab audio. Off by default."),
+      },
+    },
+    async ({ browserId, audio }) => {
+      const context = resolveBrowserToolContext(options);
+      const payload = await options.broker.execute({
+        agentId: context.agentId,
+        cwd: context.cwd,
+        ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
+        command: {
+          command: "record_start",
+          args: { browserId, ...(audio ? { audio } : {}) },
+        },
+      });
+      return browserToolResult({ payload, context: { ...context, browserId } });
+    },
+  );
+
+  options.registerTool(
+    "browser_record_stop",
+    {
+      title: "Stop browser recording",
+      description:
+        "Stop a recording this agent started with browser_record_start and start copying it to this host. Returns once the copy has started; Paseo then sends you a message with the copy's manifest path, or the failure. Finish your turn and wait for that message instead of polling.",
+      inputSchema: {
+        browserId: BrowserAutomationBrowserIdSchema,
+      },
+    },
+    async ({ browserId }) => {
+      const context = resolveBrowserToolContext(options);
+      const payload = await options.broker.execute({
+        agentId: context.agentId,
+        cwd: context.cwd,
+        ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
+        command: { command: "record_stop", args: { browserId } },
+      });
+      return browserToolResult({ payload, context: { ...context, browserId } });
+    },
+  );
 }
 
 function resolveBrowserToolContext(options: RegisterBrowserToolsOptions): {
@@ -1055,6 +1103,20 @@ function summarizeBrowserControlSuccess(
 
   if (result.command === "close_tab") {
     return `Closed browser tab ${result.browserId}.`;
+  }
+
+  if (result.command === "record_start") {
+    return `Recording browser tab ${result.browserId} (recordingId=${result.recordingId}${result.audio ? ", with audio" : ""}). Call browser_record_stop with this browserId to finish.`;
+  }
+
+  if (result.command === "record_stop") {
+    return [
+      `Browser recording ${result.recordingId} ${result.status === "complete" ? "finished" : "was interrupted"}. Copying it to this host has started.`,
+      "Paseo will send you a message with the manifest path when the copy finishes, or if it fails. Finish your turn and wait for it.",
+      result.complete
+        ? "Capture reported no gaps."
+        : `Capture is incomplete: ${result.gaps.join("; ")}.`,
+    ].join("\n");
   }
 
   return null;

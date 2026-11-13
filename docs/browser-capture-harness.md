@@ -1,5 +1,7 @@
 # Browser Capture Harness
 
+For recording behavior and platform evidence, see [Browser recording](browser-recording.md).
+
 The desktop capture harness is the real-Electron verification path for browser screenshots.
 It validates the compositor behavior that unit tests cannot see:
 
@@ -36,6 +38,14 @@ preload is available:
 npm run build:main --workspace=@getpaseo/desktop
 PASEO_CAPTURE_HARNESS_GROUP=automation npm run capture-harness --workspace=@getpaseo/desktop
 ```
+
+Run the recording group with:
+
+```bash
+PASEO_CAPTURE_HARNESS_GROUP=recording npm run capture-harness --workspace=@getpaseo/desktop
+```
+
+The recording group uses separate Electron processes for restart recovery. Its integrated journey uses synthetic pages, separate root and popup tones, and a shared profile partition. It does not launch the full desktop UI.
 
 Run the shared browser profile fixture with:
 

@@ -1,36 +1,14 @@
 import type {
   BrowserAutomationErrorCode,
   BrowserAutomationExecuteResponse,
+  BrowserHostTarget,
+  BrowserToolsErrorPayload,
+  BrowserToolsResponsePayload,
 } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 
-export interface BrowserHostTarget {
-  readonly browserHostId: string;
-  readonly label: string;
-  readonly canOpenTabs: boolean;
-}
+export type { BrowserHostTarget, BrowserToolsErrorPayload, BrowserToolsResponsePayload };
 
-type BrowserHostResponse = BrowserAutomationExecuteResponse["payload"];
-type BrowserHostSuccess = Extract<BrowserHostResponse, { ok: true }>;
-type BrowserHostResult = BrowserHostSuccess["result"];
-type NewTabResult = Extract<BrowserHostResult, { command: "new_tab" }>;
-type ListTabsResult = Extract<BrowserHostResult, { command: "list_tabs" }>;
-type BrowserHostFailure = Extract<BrowserHostResponse, { ok: false }>;
-
-export type BrowserToolsErrorPayload = Omit<BrowserHostFailure["error"], "code"> & {
-  code: BrowserAutomationErrorCode | "browser_host_ambiguous";
-  browserHosts?: BrowserHostTarget[];
-};
-
-export type BrowserToolsResponsePayload =
-  | (Omit<BrowserHostSuccess, "result"> & {
-      result:
-        | Exclude<BrowserHostResult, NewTabResult | ListTabsResult>
-        | (NewTabResult & { browserHost: BrowserHostTarget })
-        | (Omit<ListTabsResult, "tabs"> & {
-            tabs: (ListTabsResult["tabs"][number] & { browserHost: BrowserHostTarget })[];
-          });
-    })
-  | (Omit<BrowserHostFailure, "error"> & { error: BrowserToolsErrorPayload });
+type BrowserHostFailure = Extract<BrowserAutomationExecuteResponse["payload"], { ok: false }>;
 
 export class BrowserToolsRequestError extends Error {
   public readonly code: BrowserAutomationErrorCode;
