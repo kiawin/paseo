@@ -1,6 +1,7 @@
 import { rename } from "node:fs/promises";
 
-const RETRY_DELAYS_MS = [10, 25, 50, 100, 200];
+// Windows readers or scanners can hold the destination across several retries.
+const RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400, 800, 1000, 1000];
 
 export async function renameRecordingFile(
   from: string,
