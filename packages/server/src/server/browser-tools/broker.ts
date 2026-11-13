@@ -51,13 +51,19 @@ type HostSelection =
   | { ok: false; payload: BrowserToolsResponsePayload };
 
 export interface BrowserToolsBrokerOptions {
+  // Read per command, so turning browser tools off also stops agents that
+  // already hold the tools in their catalog.
+  isEnabled: () => boolean;
   defaultTimeoutMs?: number;
   createRequestId?: () => string;
 }
 
 const DEFAULT_BROWSER_TOOLS_TIMEOUT_MS = 15_000;
+// Stopping finalizes media and prepares the copy; the upload continues afterwards.
+const RECORD_STOP_TIMEOUT_MS = 2 * 60_000;
 
 export class BrowserToolsBroker {
+  private readonly isEnabled: () => boolean;
   private readonly defaultTimeoutMs: number;
   private readonly createRequestId: () => string;
   private readonly clients = new Map<string, RegisteredBrowserHost>();
@@ -67,6 +73,7 @@ export class BrowserToolsBroker {
   private registrationSequence = 0;
 
   public constructor(options: BrowserToolsBrokerOptions) {
+    this.isEnabled = options.isEnabled;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_BROWSER_TOOLS_TIMEOUT_MS;
     this.createRequestId = options.createRequestId ?? (() => `browser_${randomUUID()}`);
   }
@@ -129,6 +136,13 @@ export class BrowserToolsBroker {
 
   public async execute(input: BrowserToolsExecuteInput): Promise<BrowserToolsResponsePayload> {
     const requestId = input.requestId ?? this.createRequestId();
+    if (!this.isEnabled()) {
+      return browserToolsFailure({
+        requestId,
+        code: "browser_disabled",
+        message: "Browser tools are disabled on this host.",
+      });
+    }
 
     const request = BrowserAutomationExecuteRequestSchema.safeParse({
       type: "browser.automation.execute.request",
@@ -175,7 +189,9 @@ export class BrowserToolsBroker {
     return this.sendRequest({
       host: host.value,
       request: request.data,
-      timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
+      timeoutMs:
+        input.timeoutMs ??
+        (command.command === "record_stop" ? RECORD_STOP_TIMEOUT_MS : this.defaultTimeoutMs),
     });
   }
 

@@ -473,6 +473,57 @@ const routedToolCases = [
     },
     content: [{ type: "text", text: `Closed browser tab ${BROWSER_ID}.` }],
   },
+  {
+    name: "record_start",
+    toolName: "browser_record_start",
+    input: { browserId: BROWSER_ID, audio: true },
+    command: {
+      command: "record_start",
+      args: { browserId: BROWSER_ID, audio: true },
+    },
+    payload: {
+      requestId: "req-record-start",
+      ok: true,
+      result: { command: "record_start", browserId: BROWSER_ID, recordingId: "rec-1", audio: true },
+    },
+    content: [
+      {
+        type: "text",
+        text: `Recording browser tab ${BROWSER_ID} (recordingId=rec-1, with audio). Call browser_record_stop with this browserId to finish.`,
+      },
+    ],
+  },
+  {
+    name: "record_stop",
+    toolName: "browser_record_stop",
+    input: { browserId: BROWSER_ID },
+    command: {
+      command: "record_stop",
+      args: { browserId: BROWSER_ID },
+    },
+    payload: {
+      requestId: "req-record-stop",
+      ok: true,
+      result: {
+        command: "record_stop",
+        browserId: BROWSER_ID,
+        recordingId: "rec-1",
+        status: "complete",
+        complete: false,
+        gaps: ["The recording contains capture gaps"],
+      },
+    },
+    content: [
+      {
+        type: "text",
+        text: [
+          "Browser recording rec-1 finished. Copying it to this host has started.",
+          "Paseo will send you a message with the manifest path when the copy finishes, or if it fails. Finish your turn and wait for it.",
+          "Capture is incomplete: The recording contains capture gaps.",
+        ].join("\n"),
+      },
+    ],
+  },
 ] satisfies Array<{
   name: string;
   toolName: string;
@@ -599,6 +650,8 @@ describe("registerBrowserTools", () => {
       "browser_scroll",
       "browser_resize",
       "browser_close_tab",
+      "browser_record_start",
+      "browser_record_stop",
     ]);
   });
 

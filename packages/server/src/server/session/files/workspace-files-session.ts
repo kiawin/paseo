@@ -833,7 +833,11 @@ export class WorkspaceFilesSession {
    * would pace both transfers and a cancel would kill both.
    */
   hasTransfer(requestId: string): boolean {
-    return this.activeDownloads.has(requestId) || this.activeUploads.has(requestId);
+    return (
+      this.activeDownloads.has(requestId) ||
+      this.activeUploads.has(requestId) ||
+      this.fileUploads.hasUpload(requestId)
+    );
   }
 
   cancelTransfersForSource(source: object): void {

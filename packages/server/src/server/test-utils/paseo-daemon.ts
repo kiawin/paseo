@@ -16,6 +16,9 @@ import type { PushNotificationSender } from "../push/index.js";
 import type { AgentProfile } from "@getpaseo/protocol/messages";
 
 interface TestPaseoDaemonOptions {
+  onWebSocketServerReady?: NonNullable<
+    import("../bootstrap.js").PaseoDaemonDependencies["onWebSocketServerReady"]
+  >;
   daemonVersion?: string;
   desktopManaged?: boolean;
   downloadTokenTtlMs?: number;
@@ -24,6 +27,7 @@ interface TestPaseoDaemonOptions {
   listenPort?: number;
   logger?: Parameters<typeof createPaseoDaemon>[1];
   mcpEnabled?: boolean;
+  browserToolsEnabled?: boolean;
   mcpDebug?: boolean;
   isDev?: boolean;
   relayEnabled?: boolean;
@@ -116,6 +120,7 @@ export async function createTestPaseoDaemon(
         daemonStatusRpc: options.daemonStatusRpcCapability,
         relayConfig: options.relayConfigCapability,
       },
+      onWebSocketServerReady: options.onWebSocketServerReady,
     });
     try {
       await startDaemonWithTimeout(daemon, TEST_DAEMON_START_TIMEOUT_MS);
@@ -197,6 +202,7 @@ async function prepareTestDaemonConfig(
     corsAllowedOrigins: options.corsAllowedOrigins ?? [],
     hostnames: true,
     mcpEnabled: options.mcpEnabled ?? true,
+    browserToolsEnabled: options.browserToolsEnabled ?? false,
     staticDir,
     mcpDebug: options.mcpDebug ?? false,
     isDev: options.isDev,

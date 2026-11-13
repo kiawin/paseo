@@ -27,6 +27,7 @@ import type { WorkspaceAutoName } from "./workspace-auto-name.js";
 
 interface BrowserToolsDaemonHarness {
   broker: BrowserToolsBroker;
+  connectClient(): Promise<DaemonClient>;
   connectBrowserHostClient(
     options?: ConnectBrowserHostClientOptions,
   ): Promise<BrowserHostClientHandle>;
@@ -53,6 +54,7 @@ interface QueuedBrowserRequests {
 
 const harnesses: BrowserToolsDaemonHarness[] = [];
 const BROWSER_ID = "11111111-1111-4111-8111-111111111111";
+const CALLER_AGENT = { id: "agent-1", cwd: "/repo", workspaceId: "wks_a" };
 
 afterEach(async () => {
   await Promise.all(harnesses.splice(0).map((harness) => harness.stop()));
@@ -106,6 +108,61 @@ describe("WebSocketServer browser tools wiring", () => {
       ok: true,
       result: { command: "list_tabs", tabs: [] },
     });
+  });
+
+  it("runs browser tools for a client in its caller agent's workspace", async () => {
+    const harness = await startBrowserToolsDaemonHarness();
+    const browserHost = await harness.connectBrowserHostClient();
+    const cli = await harness.connectClient();
+
+    expect(cli.getLastServerInfoMessage()?.features?.browserRecording).toBe(true);
+    const resultPromise = cli.executeBrowserTools({
+      command: { command: "list_tabs", args: {} },
+      agentId: CALLER_AGENT.id,
+    });
+    const request = await browserHost.nextBrowserRequest();
+    expect(request).toMatchObject({
+      agentId: "agent-1",
+      cwd: "/repo",
+      workspaceId: "wks_a",
+      command: { command: "list_tabs", args: {} },
+    });
+    browserHost.respondToBrowserRequest({
+      type: "browser.automation.execute.response",
+      payload: {
+        requestId: request.requestId,
+        ok: true,
+        result: {
+          command: "list_tabs",
+          tabs: [{ browserId: BROWSER_ID, url: "https://example.com", title: "Example" }],
+        },
+      },
+    });
+
+    await expect(resultPromise).resolves.toMatchObject({
+      ok: true,
+      result: {
+        command: "list_tabs",
+        tabs: [{ browserId: BROWSER_ID, browserHost: { label: "desktop app · Connection 1" } }],
+      },
+    });
+  });
+
+  it("refuses browser tools for a caller agent this host does not know", async () => {
+    const harness = await startBrowserToolsDaemonHarness();
+    await harness.connectBrowserHostClient();
+    const cli = await harness.connectClient();
+
+    await expect(
+      cli.executeBrowserTools({
+        command: { command: "record_stop", args: { browserId: BROWSER_ID } },
+        agentId: "agent-missing",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "browser_denied", message: "Agent agent-missing was not found on this host." },
+    });
+    expect(harness.broker.getPendingRequestCount()).toBe(0);
   });
 
   it("unregisters capable clients on disconnect and clears pending browser commands", async () => {
@@ -210,6 +267,17 @@ async function startBrowserToolsDaemonHarness(): Promise<BrowserToolsDaemonHarne
 
   const harness: BrowserToolsDaemonHarness = {
     broker,
+    async connectClient() {
+      const client = new DaemonClient({
+        url,
+        clientType: "cli",
+        connectTimeoutMs: 500,
+        reconnect: { enabled: false },
+      });
+      clients.add(client);
+      await client.connect();
+      return client;
+    },
     async connectBrowserHostClient(options = {}) {
       const clientId = options.clientId;
       const client = new DaemonClient({
@@ -262,6 +330,7 @@ async function startBrowserToolsDaemonHarness(): Promise<BrowserToolsDaemonHarne
 
 function createBroker(): BrowserToolsBroker {
   return new BrowserToolsBroker({
+    isEnabled: () => true,
     defaultTimeoutMs: 500,
     createRequestId: createRequestIdSequence(),
   });
@@ -281,6 +350,8 @@ function createVoiceAssistantWebSocketServer(params: {
 }): VoiceAssistantWebSocketServer {
   const { httpServer, broker } = params;
   const agentManager = {
+    getAgent: (agentId: string) =>
+      agentId === CALLER_AGENT.id ? { ...CALLER_AGENT, lifecycle: "idle" } : null,
     setAgentAttentionCallback() {},
     subscribe: () => () => {},
     onStop: () => () => {},
