@@ -1063,7 +1063,7 @@ test("status-shaped operation replies use actual source request provenance", asy
 });
 
 test("browser capability advertisement is passive and explicit hosts own command delivery", async () => {
-  const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+  const daemon = await createTestPaseoDaemon({ mcpEnabled: false, browserToolsEnabled: true });
   const peers: SubscriptionPeer[] = [];
   try {
     const capability = { hostKind: "QA browser", supportedCommands: ["list_tabs"] };

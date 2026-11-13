@@ -70,8 +70,11 @@ class FailingBrowserHostClient implements BrowserHostClient {
   }
 }
 
-function createBroker(options: { timeoutMs?: number } = {}): BrowserToolsBroker {
+function createBroker(
+  options: { timeoutMs?: number; isEnabled?: () => boolean } = {},
+): BrowserToolsBroker {
   return new BrowserToolsBroker({
+    isEnabled: options.isEnabled ?? (() => true),
     defaultTimeoutMs: options.timeoutMs ?? 100,
     createRequestId: () => "req-1",
   });
@@ -84,6 +87,32 @@ function snapshotCommand(): BrowserAutomationCommand {
 describe("BrowserToolsBroker", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  test("disabled browser tools refuse commands without contacting a host", async () => {
+    let enabled = true;
+    const broker = createBroker({ isEnabled: () => enabled });
+    const sent: BrowserAutomationExecuteRequest[] = [];
+    broker.registerClient({
+      id: "host-1",
+      hostKind: "desktop app",
+      supportedCommands: [...BROWSER_AUTOMATION_COMMAND_NAMES],
+      sendBrowserAutomationRequest: (request) => {
+        sent.push(request);
+      },
+    });
+    enabled = false;
+
+    await expect(broker.execute({ command: snapshotCommand() })).resolves.toEqual({
+      requestId: "req-1",
+      ok: false,
+      error: {
+        code: "browser_disabled",
+        message: "Browser tools are disabled on this host.",
+        retryable: false,
+      },
+    });
+    expect(sent).toEqual([]);
   });
 
   test("no connected browser host returns a retryable browser_no_host error", async () => {

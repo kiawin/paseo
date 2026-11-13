@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import pino from "pino";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os, { tmpdir, userInfo } from "node:os";
@@ -340,6 +341,251 @@ test("distinct origin sessions cannot collide through a caller-selected route sc
   await remote.dispose();
 });
 
+test("routed recording-sized segments arrive intact at the destination daemon", async () => {
+  const destination = await daemon();
+  const source = await daemon();
+  const { paseo, client } = await api(source);
+  await paseo.hosts.add({ connection: `127.0.0.1:${destination.port}` });
+  const serverId = (await online(paseo)).hosts[0]!.serverId!;
+  const routed = new DaemonClient({
+    url: "ws://recording-probe/ws",
+    clientId: "recording-probe",
+    transportFactory: createHostChannelTransport(client, serverId, "recording-probe", null),
+  });
+  cleanup.push(() => routed.close());
+  await routed.connect();
+
+  // Each synthetic segment is below the app's 50 MiB per-file limit, while the
+  // aggregate is larger. Bytes are checked at the destination, not inferred
+  // from a successful response.
+  const segmentBytes = 26 * 1024 * 1024;
+  const sourceUploadRoot = path.join(source.paseoHome, "uploads");
+  await mkdir(sourceUploadRoot, { recursive: true });
+  const sourceUploadsBefore = (await readdir(sourceUploadRoot)).sort();
+  let total = 0;
+  for (let index = 0; index < 2; index += 1) {
+    const bytes = Buffer.alloc(segmentBytes, index + 1);
+    const upload = await routed.uploadFile({
+      fileName: `recording-${index}.bin`,
+      mimeType: "application/octet-stream",
+      bytes,
+      chunkSize: 128 * 1024,
+    });
+    expect(upload.error).toBeNull();
+    expect(upload.file?.path).toContain(destination.paseoHome);
+    expect(upload.file?.path).not.toContain(source.paseoHome);
+    const saved = await readFile(upload.file!.path);
+    expect(saved.equals(bytes)).toBe(true);
+    total += saved.byteLength;
+  }
+  expect(total).toBeGreaterThan(50 * 1024 * 1024);
+  expect((await readdir(sourceUploadRoot)).sort()).toEqual(sourceUploadsBefore);
+
+  const localBytes = Buffer.alloc(segmentBytes, 17);
+  const localUpload = await client.uploadFile({
+    fileName: "recording-local.bin",
+    mimeType: "application/octet-stream",
+    bytes: localBytes,
+    chunkSize: 128 * 1024,
+  });
+  expect(localUpload.error).toBeNull();
+  expect(localUpload.file?.path).toContain(source.paseoHome);
+  expect((await readFile(localUpload.file!.path)).equals(localBytes)).toBe(true);
+}, 60_000);
+
+test("dedicated recording share reaches only the selected remote agent host", async () => {
+  const destination = await daemon();
+  const source = await daemon();
+  const recipient = await destination.daemon.agentManager.createAgent(
+    { provider: "codex", cwd: destination.staticDir },
+    undefined,
+    { initialTitle: "Remote recording recipient" },
+  );
+  const { paseo, client } = await api(source);
+  await paseo.hosts.add({ connection: `127.0.0.1:${destination.port}` });
+  const serverId = (await online(paseo)).hosts[0]!.serverId!;
+  const peer = await RoutePeer.open(client, serverId);
+  const outsiderOrigin = await api(source);
+  const outsider = await RoutePeer.open(outsiderOrigin.client, serverId);
+  try {
+    const parts = [Buffer.alloc(700_000, 7), Buffer.alloc(300_000, 8)];
+    peer.send({
+      type: "recording.share.begin.request",
+      recipientAgentId: recipient.id,
+      recordingId: "remote_recording",
+      manifest: {
+        version: 1,
+        segments: parts.map((bytes, index) => ({
+          id: `part_${index}`,
+          size: bytes.length,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+        })),
+      },
+      requestId: "remote-begin",
+    });
+    await expect
+      .poll(() =>
+        peer.messages.some((message) => message.type === "recording.share.begin.response"),
+      )
+      .toBe(true);
+    const begun = peer.messages.find(
+      (message) => message.type === "recording.share.begin.response",
+    );
+    if (begun?.type !== "recording.share.begin.response" || !begun.payload.shareId)
+      throw new Error("Remote recording begin failed");
+    const shareId = begun.payload.shareId;
+    outsider.send({
+      type: "recording.share.upload.request",
+      shareId,
+      segmentId: "part_0",
+      requestId: "remote-forged",
+    });
+    await expect
+      .poll(() =>
+        outsider.messages.some((message) => message.type === "recording.share.upload.response"),
+      )
+      .toBe(true);
+    const forbidden = outsider.messages.find(
+      (message) => message.type === "recording.share.upload.response",
+    );
+    expect(forbidden?.type === "recording.share.upload.response" && forbidden.payload.success).toBe(
+      false,
+    );
+    for (const [index, bytes] of parts.entries()) {
+      const requestId = `remote-segment-${index}`;
+      peer.send({
+        type: "recording.share.upload.request",
+        shareId,
+        segmentId: `part_${index}`,
+        requestId,
+      });
+      peer.sendFileFrame(
+        encodeFileTransferFrame({
+          opcode: FileTransferOpcode.FileBegin,
+          requestId,
+          metadata: {
+            mime: "application/octet-stream",
+            size: bytes.length,
+            encoding: "binary",
+            modifiedAt: new Date().toISOString(),
+          },
+        }),
+      );
+      for (let offset = 0; offset < bytes.length; offset += 128 * 1024)
+        peer.sendFileFrame(
+          encodeFileTransferFrame({
+            opcode: FileTransferOpcode.FileChunk,
+            requestId,
+            payload: bytes.subarray(offset, offset + 128 * 1024),
+          }),
+        );
+      peer.sendFileFrame(
+        encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId }),
+      );
+      await expect
+        .poll(() =>
+          peer.messages.some(
+            (message) =>
+              message.type === "recording.share.upload.response" &&
+              message.payload.requestId === requestId,
+          ),
+        )
+        .toBe(true);
+      const upload = peer.messages.find(
+        (message) =>
+          message.type === "recording.share.upload.response" &&
+          message.payload.requestId === requestId,
+      );
+      expect(upload?.type === "recording.share.upload.response" && upload.payload.success).toBe(
+        true,
+      );
+    }
+    peer.send({ type: "recording.share.complete.request", shareId, requestId: "remote-complete" });
+    await expect
+      .poll(() =>
+        peer.messages.some(
+          (message) =>
+            message.type === "recording.share.complete.response" &&
+            message.payload.requestId === "remote-complete",
+        ),
+      )
+      .toBe(true);
+    const completed = peer.messages.find(
+      (message) =>
+        message.type === "recording.share.complete.response" &&
+        message.payload.requestId === "remote-complete",
+    );
+    if (completed?.type !== "recording.share.complete.response" || !completed.payload.manifestPath)
+      throw new Error(`Remote recording complete failed: ${JSON.stringify(completed)}`);
+    expect(completed.payload.manifestPath).toContain(destination.paseoHome);
+    expect(completed.payload.manifestPath).not.toContain(source.paseoHome);
+    for (const [index, bytes] of parts.entries())
+      expect(
+        await readFile(
+          path.join(path.dirname(completed.payload.manifestPath), `part_${index}.bin`),
+        ),
+      ).toEqual(bytes);
+    peer.send({
+      type: "recording.share.delete.request",
+      shareId,
+      recipientAgentId: recipient.id,
+      requestId: "remote-delete",
+    });
+    await expect
+      .poll(() =>
+        peer.messages.some((message) => message.type === "recording.share.delete.response"),
+      )
+      .toBe(true);
+    const deleted = peer.messages.find(
+      (message) => message.type === "recording.share.delete.response",
+    );
+    expect(deleted?.type === "recording.share.delete.response" && deleted.payload.success).toBe(
+      true,
+    );
+    peer.send({
+      type: "recording.share.begin.request",
+      recipientAgentId: recipient.id,
+      recordingId: "interrupted",
+      manifest: { version: 1, segments: [] },
+      requestId: "remote-interrupted",
+    });
+    await expect
+      .poll(() =>
+        peer.messages.some(
+          (message) =>
+            message.type === "recording.share.begin.response" &&
+            message.payload.requestId === "remote-interrupted",
+        ),
+      )
+      .toBe(true);
+    const pending = peer.messages.find(
+      (message) =>
+        message.type === "recording.share.begin.response" &&
+        message.payload.requestId === "remote-interrupted",
+    );
+    if (pending?.type !== "recording.share.begin.response" || !pending.payload.shareId)
+      throw new Error("Remote interrupted share did not start");
+    const pendingDir = path.join(
+      destination.paseoHome,
+      "recording-shares",
+      pending.payload.shareId,
+    );
+    expect(await stat(pendingDir)).toBeTruthy();
+    await peer.close();
+    await expect
+      .poll(async () =>
+        stat(pendingDir).then(
+          () => true,
+          () => false,
+        ),
+      )
+      .toBe(false);
+  } finally {
+    await peer.close();
+    await outsider.close();
+  }
+}, 60_000);
+
 import {
   encodeFileTransferFrame,
   FileTransferOpcode,
@@ -414,6 +660,9 @@ class RoutePeer {
   }
   send(message: SessionInboundMessage) {
     this.origin.sendHostFrame(this.routeId, JSON.stringify({ type: "session", message }));
+  }
+  sendFileFrame(frame: Uint8Array) {
+    this.origin.sendHostFrame(this.routeId, frame);
   }
   async subscribeTerminal(terminalId: string) {
     this.send({ type: "subscribe_terminal_request", terminalId, requestId: "same-request" });

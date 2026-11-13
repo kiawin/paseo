@@ -1,4 +1,7 @@
-import { BROWSER_AUTOMATION_COMMAND_NAMES } from "@getpaseo/protocol/browser-automation/rpc-schemas";
+import {
+  BROWSER_AUTOMATION_COMMAND_NAMES,
+  BROWSER_AUTOMATION_RECORDING_COMMAND_NAMES,
+} from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { SessionInboundMessage, SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import { getDesktopHost, type DesktopHostBridge } from "@/desktop/host";
@@ -15,6 +18,10 @@ import {
 } from "@/desktop/browser/store";
 import { collectAllTabs, useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
+import {
+  agentRecordingCommands,
+  type AgentRecordingCommands,
+} from "@/desktop/browser/automation/recording-commands";
 
 type BrowserAutomationExecuteRequest = Extract<
   SessionOutboundMessage,
@@ -42,9 +49,12 @@ export interface BrowserAutomationHandlerOptions {
   serverId?: string;
   getHost?: () => DesktopHostBridge | null;
   ensureResidentBrowserWebview?: typeof ensureResidentBrowserWebviewDefault;
+  recordingCommands?: AgentRecordingCommands;
   registrationWaitTimeoutMs?: number;
   registrationPollIntervalMs?: number;
 }
+
+const RECORDING_COMMAND_NAMES = new Set<string>(BROWSER_AUTOMATION_RECORDING_COMMAND_NAMES);
 
 export function mountBrowserAutomationHandler(
   options: BrowserAutomationHandlerOptions,
@@ -58,6 +68,7 @@ export function mountBrowserAutomationHandler(
       serverId: options.serverId,
       ensureResidentBrowserWebview:
         options.ensureResidentBrowserWebview ?? ensureResidentBrowserWebviewDefault,
+      recordingCommands: options.recordingCommands ?? agentRecordingCommands,
       ...(options.registrationWaitTimeoutMs !== undefined
         ? { registrationWaitTimeoutMs: options.registrationWaitTimeoutMs }
         : {}),
@@ -79,7 +90,9 @@ export function getDesktopBrowserHostRegistration(): BrowserHostRegistration | n
     hostKind: "desktop app",
     label: desktop.browserHostLabel,
     instanceId: desktop.browserHostInstanceId,
-    supportedCommands: [...BROWSER_AUTOMATION_COMMAND_NAMES],
+    supportedCommands: BROWSER_AUTOMATION_COMMAND_NAMES.filter(
+      (command) => desktop.recording || !RECORDING_COMMAND_NAMES.has(command),
+    ),
   };
 }
 
@@ -88,7 +101,14 @@ export function mountBrowserAutomationDaemonClientHandler(
   registration: BrowserHostRegistration,
   options?: { serverId?: string },
 ): () => void {
-  const observation = client.registerBrowserHost(registration);
+  // Older daemons reject a registration that lists a command they do not know.
+  const recordingSupported = client.getLastServerInfoMessage()?.features?.browserRecording === true;
+  const observation = client.registerBrowserHost({
+    ...registration,
+    supportedCommands: registration.supportedCommands.filter(
+      (command) => recordingSupported || !RECORDING_COMMAND_NAMES.has(command),
+    ),
+  });
   const unmount = mountBrowserAutomationHandler({
     client: {
       on: (_type, handler) =>
@@ -117,6 +137,7 @@ async function handleBrowserAutomationRequest(params: {
   request: BrowserAutomationExecuteRequest;
   serverId?: string;
   ensureResidentBrowserWebview: typeof ensureResidentBrowserWebviewDefault;
+  recordingCommands: AgentRecordingCommands;
   registrationWaitTimeoutMs?: number;
   registrationPollIntervalMs?: number;
 }): Promise<void> {
@@ -126,6 +147,7 @@ async function handleBrowserAutomationRequest(params: {
     request,
     serverId,
     ensureResidentBrowserWebview,
+    recordingCommands,
     registrationWaitTimeoutMs,
     registrationPollIntervalMs,
   } = params;
@@ -170,6 +192,26 @@ async function handleBrowserAutomationRequest(params: {
           request,
           serverId,
           browserHost,
+        }),
+      });
+    } catch (error) {
+      client.sendBrowserAutomationExecuteResponse({
+        type: "browser.automation.execute.response",
+        payload: normalizeThrownBridgeError(request.requestId, error),
+      });
+    }
+    return;
+  }
+
+  if (request.command.command === "record_start" || request.command.command === "record_stop") {
+    try {
+      client.sendBrowserAutomationExecuteResponse({
+        type: "browser.automation.execute.response",
+        payload: await recordBrowserTabForRequest({
+          request,
+          serverId,
+          recording: getHost()?.recording,
+          recordingCommands,
         }),
       });
     } catch (error) {
@@ -301,6 +343,63 @@ async function closeBrowserTabForRequest(params: {
     requestId: request.requestId,
     ok: true,
     result: { command: "close_tab", browserId },
+  };
+}
+
+async function recordBrowserTabForRequest(params: {
+  request: BrowserAutomationExecuteRequest;
+  serverId?: string;
+  recording: DesktopHostBridge["recording"];
+  recordingCommands: AgentRecordingCommands;
+}): Promise<BrowserAutomationResponsePayload> {
+  const { request, serverId, recording, recordingCommands } = params;
+  const command = request.command as Extract<
+    BrowserAutomationExecuteRequest["command"],
+    { command: "record_start" | "record_stop" }
+  >;
+  const browserId = command.args.browserId;
+  if (!recording) {
+    return browserAutomationFailure({
+      requestId: request.requestId,
+      code: "browser_unsupported",
+      message: "Browser recording is not available in this app runtime.",
+    });
+  }
+  const { agentId, workspaceId } = request;
+  if (!serverId || !workspaceId || !agentId) {
+    return browserAutomationFailure({
+      requestId: request.requestId,
+      code: "browser_denied",
+      message: "Browser recording needs a caller agent in a Paseo workspace.",
+    });
+  }
+  if (!findWorkspaceBrowserTab({ serverId, workspaceId, browserId })) {
+    return browserAutomationFailure({
+      requestId: request.requestId,
+      code: "browser_tab_not_found",
+      message: `No browser tab found for ID: ${browserId}`,
+    });
+  }
+  const caller = { serverId, agentId, workspaceId };
+  if (command.command === "record_start") {
+    const audio = command.args.audio === true;
+    const { recordingId } = await recordingCommands.start({
+      bridge: recording,
+      caller,
+      browserId,
+      audio,
+    });
+    return {
+      requestId: request.requestId,
+      ok: true,
+      result: { command: "record_start", browserId, recordingId, audio },
+    };
+  }
+  const stopped = await recordingCommands.stop({ bridge: recording, caller, browserId });
+  return {
+    requestId: request.requestId,
+    ok: true,
+    result: { command: "record_stop", browserId, ...stopped },
   };
 }
 
