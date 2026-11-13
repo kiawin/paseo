@@ -141,6 +141,7 @@ export type DesktopBrowserShortcutEvent =
   | { browserId: string; action: "new-tab" };
 
 export interface DesktopBrowserNewTabRequestEvent {
+  browserId?: string;
   sourceBrowserId: string;
   url: string;
 }
@@ -179,6 +180,87 @@ export interface DesktopInvokeBridge {
   invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 }
 
+export interface DesktopRecordingMetadata {
+  recordingId: string;
+  workspaceId: string;
+  startedAt: number;
+  endedAt?: number;
+  status: "recording" | "complete" | "interrupted";
+  title?: string;
+  captureErrors?: string[];
+  recoveryWarnings?: string[];
+  audioRequested?: boolean;
+  audioStatus?: "starting" | "captured" | "unavailable" | "disabled";
+  audioReason?: string;
+}
+export interface DesktopRecordingState {
+  recordingId: string;
+  browserId: string;
+  status: "starting" | "recording" | "stopping" | "complete" | "interrupted";
+  reason?: "quota" | "disk-full";
+  audioRequested?: boolean;
+  audioStatus?: "starting" | "captured" | "unavailable" | "disabled";
+  audioReason?: string;
+}
+export interface DesktopRecordingMediaSegment {
+  streamId: string;
+  segmentId: string;
+  startMs: number;
+  durationMs: number;
+  mimeType: string;
+  track?: "video" | "audio" | "combined";
+  codec?: string;
+  generationId?: string;
+  sequence?: number;
+}
+export interface DesktopRecordingBridge {
+  active(input: { browserId: string }): Promise<DesktopRecordingState | null>;
+  start(input: {
+    browserId: string;
+    audio?: boolean;
+  }): Promise<{ recordingId: string; status: string }>;
+  stop(input: { recordingId: string }): Promise<void>;
+  list(input: { workspaceId: string }): Promise<{
+    recordings: DesktopRecordingMetadata[];
+    incomplete: string[];
+    recoveryError?: string | null;
+  }>;
+  listMedia(input: { recordingId: string; cursor: string | null; limit: number }): Promise<{
+    segments: DesktopRecordingMediaSegment[];
+    incomplete: Array<{ streamId: string | null; segmentId: string | null; reason: string }>;
+    nextCursor: string | null;
+    pending: boolean;
+  }>;
+  readEvents(input: {
+    recordingId: string;
+    cursor: number;
+    maxBytes: number;
+  }): Promise<{ events: unknown[]; nextCursor: number | null; incompleteTail: boolean }>;
+  readMedia(input: {
+    recordingId: string;
+    streamId: string;
+    segmentId: string;
+    offset: number;
+    length: number;
+  }): Promise<{ bytes: Uint8Array; totalBytes: number; sha256: string }>;
+  readExportEvents(input: {
+    recordingId: string;
+    offset: number;
+    length: number;
+  }): Promise<{ bytes: Uint8Array; totalBytes: number }>;
+  listShareAudit(input: {
+    recordingId: string;
+  }): Promise<import("@/attachments/recording-share").RecordingShareAudit[]>;
+  forgetCorruptShareAudit(input: { recordingId: string }): Promise<void>;
+  changeShareAudit(input: {
+    recordingId: string;
+    entry?: import("@/attachments/recording-share").RecordingShareAudit;
+    removeShareId?: string;
+  }): Promise<void>;
+  delete(input: { recordingId: string }): Promise<void>;
+  onState(handler: (state: DesktopRecordingState) => void): () => void;
+}
+
 export interface DesktopHostBridge {
   platform?: string;
   windowChromeMode?: string;
@@ -195,6 +277,7 @@ export interface DesktopHostBridge {
   fileDrag?: DesktopFileDragBridge;
   menu?: DesktopMenuBridge;
   browser?: DesktopBrowserBridge;
+  recording?: DesktopRecordingBridge;
 }
 
 declare global {

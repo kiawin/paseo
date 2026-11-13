@@ -45,6 +45,7 @@ export type WorkspaceTabTarget =
   | { kind: "artifacts" }
   | { kind: "artifact"; artifactId: string }
   | { kind: "notes" }
+  | { kind: "recordings" }
   | { kind: "note_draft"; serverId: string; draftId: string }
   | { kind: "note"; serverId: string; noteId: string }
   | WorkspaceFileTabTarget

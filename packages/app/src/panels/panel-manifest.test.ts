@@ -7,6 +7,11 @@ import {
 } from "@/panels/panel-manifest";
 
 describe("panel manifest", () => {
+  it("offers a singleton Recordings view in the Explorer host", () => {
+    expect(panelSupportsHost("recordings" as never, "explorer")).toBe(true);
+    expect(getPanelManifest("recordings" as never).singleton).toBe(true);
+    expect(panelCanLaunchInPane("recordings" as never, ["recordings" as never])).toBe(false);
+  });
   it("answers host support without React panel registration", () => {
     expect(panelSupportsHost("agent", "main")).toBe(true);
     expect(panelSupportsHost("agent", "explorer")).toBe(true);
