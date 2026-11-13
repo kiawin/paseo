@@ -1,8 +1,14 @@
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { SessionInboundMessage, SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import { createJSONStorage, type StateStorage } from "zustand/middleware";
-import { mountBrowserAutomationHandler, type BrowserAutomationHandlerOptions } from "./handler";
-import type { DesktopHostBridge } from "@/desktop/host";
+import {
+  mountBrowserAutomationDaemonClientHandler,
+  mountBrowserAutomationHandler,
+  type BrowserAutomationHandlerOptions,
+} from "./handler";
+import type { AgentRecordingCommands } from "./recording-commands";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import type { DesktopHostBridge, DesktopRecordingBridge } from "@/desktop/host";
 import { useBrowserStore } from "@/desktop/browser/store";
 import { findPaneById } from "@/stores/workspace-layout-actions";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
@@ -133,6 +139,7 @@ class BrowserAutomationHandlerHarness {
       host?: DesktopHostBridge | null;
       readHostBrowserRouting?: BrowserAutomationHandlerOptions["readHostBrowserRouting"];
       prepareHostBrowserPartition?: BrowserAutomationHandlerOptions["prepareHostBrowserPartition"];
+      recordingCommands?: AgentRecordingCommands;
       registrationWaitTimeoutMs?: number;
       registrationPollIntervalMs?: number;
     } = {},
@@ -148,6 +155,7 @@ class BrowserAutomationHandlerHarness {
       ...(input.prepareHostBrowserPartition
         ? { prepareHostBrowserPartition: input.prepareHostBrowserPartition }
         : {}),
+      ...(input.recordingCommands ? { recordingCommands: input.recordingCommands } : {}),
       ...(input.registrationWaitTimeoutMs !== undefined
         ? { registrationWaitTimeoutMs: input.registrationWaitTimeoutMs }
         : {}),
@@ -214,6 +222,36 @@ function browserCloseTabRequest(browserId: string): BrowserAutomationExecuteRequ
       command: "close_tab",
       args: { browserId },
     },
+  };
+}
+
+function browserRecordRequest(
+  command: "record_start" | "record_stop",
+  browserId: string,
+  input: { agentId?: string | null; workspaceId?: string } = {},
+): BrowserAutomationExecuteRequest {
+  const agentId = input.agentId === undefined ? "agent-1" : input.agentId;
+  return {
+    type: "browser.automation.execute.request",
+    requestId: `req-${command}`,
+    ...(agentId ? { agentId } : {}),
+    workspaceId: input.workspaceId ?? "wks_workspace_a",
+    command:
+      command === "record_start"
+        ? { command, args: { browserId, audio: true } }
+        : { command, args: { browserId } },
+  };
+}
+
+function fakeRecordingCommands() {
+  return {
+    start: vi.fn(async () => ({ recordingId: "rec-1" })),
+    stop: vi.fn(async () => ({
+      recordingId: "rec-1",
+      status: "complete" as const,
+      complete: true,
+      gaps: [],
+    })),
   };
 }
 
@@ -615,6 +653,109 @@ describe("mountBrowserAutomationHandler", () => {
         },
       },
     ]);
+  });
+
+  test("browser recording runs for the caller agent in its workspace", async () => {
+    const browser = new BrowserAutomationHandlerHarness();
+    const recording = {} as DesktopRecordingBridge;
+    const recordingCommands = fakeRecordingCommands();
+    browser.mount({
+      serverId: "server-1",
+      host: { browser: browser.browser, recording },
+      recordingCommands,
+    });
+    browser.receive(browserNewTabRequest());
+    await flushAsyncWork();
+    const { browserId } = newTabResultFrom(browser.client.payloadAt(0));
+
+    browser.receive(browserRecordRequest("record_start", browserId));
+    await flushAsyncWork();
+    browser.receive(browserRecordRequest("record_stop", browserId));
+    await flushAsyncWork();
+
+    const caller = { serverId: "server-1", agentId: "agent-1", workspaceId: "wks_workspace_a" };
+    expect(recordingCommands.start).toHaveBeenCalledWith({
+      bridge: recording,
+      caller,
+      browserId,
+      audio: true,
+    });
+    expect(recordingCommands.stop).toHaveBeenCalledWith({ bridge: recording, caller, browserId });
+    expect(browser.client.payloadAt(1)).toEqual({
+      requestId: "req-record_start",
+      ok: true,
+      result: { command: "record_start", browserId, recordingId: "rec-1", audio: true },
+    });
+    expect(browser.client.payloadAt(2)).toEqual({
+      requestId: "req-record_stop",
+      ok: true,
+      result: {
+        command: "record_stop",
+        browserId,
+        recordingId: "rec-1",
+        status: "complete",
+        complete: true,
+        gaps: [],
+      },
+    });
+  });
+
+  test("browser recording refuses callers without an agent or outside the tab's workspace", async () => {
+    const browser = new BrowserAutomationHandlerHarness();
+    const recordingCommands = fakeRecordingCommands();
+    browser.mount({
+      serverId: "server-1",
+      host: { browser: browser.browser, recording: {} as DesktopRecordingBridge },
+      recordingCommands,
+    });
+    browser.receive(browserNewTabRequest());
+    await flushAsyncWork();
+    const { browserId } = newTabResultFrom(browser.client.payloadAt(0));
+
+    browser.receive(browserRecordRequest("record_start", browserId, { agentId: null }));
+    await flushAsyncWork();
+    browser.receive(
+      browserRecordRequest("record_start", browserId, { workspaceId: "wks_workspace_b" }),
+    );
+    await flushAsyncWork();
+
+    expect(browser.client.payloadAt(1)).toMatchObject({
+      ok: false,
+      error: { code: "browser_denied" },
+    });
+    expect(browser.client.payloadAt(2)).toMatchObject({
+      ok: false,
+      error: { code: "browser_tab_not_found" },
+    });
+    expect(recordingCommands.start).not.toHaveBeenCalled();
+  });
+
+  test("advertises recording commands only to daemons that support them", () => {
+    const registered: string[][] = [];
+    const clientFor = (browserRecording: boolean) =>
+      ({
+        getLastServerInfoMessage: () => ({ features: { browserRecording } }),
+        registerBrowserHost: (registration: { supportedCommands: string[] }) => {
+          registered.push(registration.supportedCommands);
+          return { subscribe: () => () => {}, release: async () => {} };
+        },
+        sendBrowserAutomationExecuteResponse: () => {},
+      }) as unknown as DaemonClient;
+    const registration = {
+      hostKind: "desktop app",
+      supportedCommands: ["list_tabs", "record_start", "record_stop"] as const,
+    };
+
+    mountBrowserAutomationDaemonClientHandler(clientFor(false), {
+      ...registration,
+      supportedCommands: [...registration.supportedCommands],
+    })();
+    mountBrowserAutomationDaemonClientHandler(clientFor(true), {
+      ...registration,
+      supportedCommands: [...registration.supportedCommands],
+    })();
+
+    expect(registered).toEqual([["list_tabs"], ["list_tabs", "record_start", "record_stop"]]);
   });
 
   test("unsubscribe stops handling browser automation requests", async () => {

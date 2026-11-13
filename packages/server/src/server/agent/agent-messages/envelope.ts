@@ -34,6 +34,13 @@ const sourceSchema = z.discriminatedUnion("kind", [
     serverId: z.string().min(1).optional(),
     title: z.string().min(1).optional(),
   }),
+  z.object({
+    // Sent when an agent's browser recording copy settles: agentId names the recording.
+    kind: z.literal("browser-recording"),
+    agentId: agentIdSchema,
+    serverId: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+  }),
 ]);
 export type AgentPromptSource = z.infer<typeof sourceSchema>;
 

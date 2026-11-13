@@ -85,6 +85,7 @@ const BUILT_IN_SELECTIONS = {
   files: { kind: "target", target: { kind: "files" } },
   artifacts: { kind: "target", target: { kind: "artifacts" } },
   notes: { kind: "target", target: { kind: "notes" } },
+  recordings: { kind: "target", target: { kind: "recordings" } },
   browser: { kind: "browser" },
   pullRequest: { kind: "target", target: { kind: "pull_request" } },
 } satisfies Record<BuiltInLaunchItemId, NewTabSelection>;
@@ -128,6 +129,7 @@ export function useWorkspaceTabLaunchCatalog(input: {
     const pullRequestPresentation = getLaunchPresentation("pull_request");
     const artifactsPresentation = getLaunchPresentation("artifacts");
     const notesPresentation = getLaunchPresentation("notes");
+    const recordingsPresentation = getLaunchPresentation("recordings");
     const builtIns: Record<BuiltInLaunchItemId, WorkspaceTabLaunchItem & { hidden?: boolean }> = {
       agent: {
         id: "agent",
@@ -191,6 +193,15 @@ export function useWorkspaceTabLaunchCatalog(input: {
         disabled: false,
         panelKind: "notes",
         launch: launchSelection(BUILT_IN_SELECTIONS.notes),
+      },
+      recordings: {
+        id: "recordings",
+        label: recordingsPresentation.label(t),
+        Icon: recordingsPresentation.icon,
+        disabled: false,
+        panelKind: "recordings",
+        hidden: !launcher.showBrowser,
+        launch: launchSelection(BUILT_IN_SELECTIONS.recordings),
       },
       browser: {
         id: "browser",

@@ -140,6 +140,14 @@ const manifests = {
     compactSheet: null,
     resourceKey: () => "notes",
   },
+  recordings: {
+    kind: "recordings",
+    supportedHosts: ["explorer"],
+    showCloseButton: true,
+    singleton: true,
+    compactSheet: null,
+    resourceKey: () => "recordings",
+  },
   note_draft: {
     kind: "note_draft",
     supportedHosts: ["main", "explorer"],

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const BrowserAutomationErrorCodeSchema = z.enum([
+const BROWSER_AUTOMATION_ERROR_CODES = [
   "browser_disabled",
   "browser_no_host",
   "browser_tab_not_found",
@@ -11,7 +11,9 @@ export const BrowserAutomationErrorCodeSchema = z.enum([
   "browser_unsupported",
   "browser_stale_ref",
   "browser_unknown_error",
-]);
+] as const;
+
+export const BrowserAutomationErrorCodeSchema = z.enum(BROWSER_AUTOMATION_ERROR_CODES);
 
 const BROWSER_AUTOMATION_BROWSER_ID_PATTERN =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|\d{13,}-[0-9a-f]+)$/i;
@@ -43,7 +45,13 @@ export const BROWSER_AUTOMATION_COMMAND_NAMES = [
   "scroll",
   "resize",
   "close_tab",
+  "record_start",
+  "record_stop",
 ] as const;
+
+// Hosts advertise these only to daemons that report features.browserRecording:
+// older daemons reject a host registration that lists an unknown command.
+export const BROWSER_AUTOMATION_RECORDING_COMMAND_NAMES = ["record_start", "record_stop"] as const;
 
 export const BrowserAutomationCommandNameSchema = z.enum(BROWSER_AUTOMATION_COMMAND_NAMES);
 
@@ -231,6 +239,21 @@ export const BrowserAutomationCloseTabCommandSchema = z.object({
   args: BrowserAutomationTabTargetSchema,
 });
 
+export const BrowserAutomationRecordStartCommandSchema = z.object({
+  command: z.literal("record_start"),
+  args: z
+    .object({
+      browserId: BrowserAutomationBrowserIdSchema,
+      audio: z.boolean().optional(),
+    })
+    .strict(),
+});
+
+export const BrowserAutomationRecordStopCommandSchema = z.object({
+  command: z.literal("record_stop"),
+  args: BrowserAutomationTabTargetSchema,
+});
+
 export const BrowserAutomationCommandSchema = z.discriminatedUnion("command", [
   BrowserAutomationListTabsCommandSchema,
   BrowserAutomationNewTabCommandSchema,
@@ -254,6 +277,8 @@ export const BrowserAutomationCommandSchema = z.discriminatedUnion("command", [
   BrowserAutomationScrollCommandSchema,
   BrowserAutomationResizeCommandSchema,
   BrowserAutomationCloseTabCommandSchema,
+  BrowserAutomationRecordStartCommandSchema,
+  BrowserAutomationRecordStopCommandSchema,
 ]);
 
 export const BrowserAutomationTabInfoSchema = z.object({
@@ -455,9 +480,25 @@ export const BrowserAutomationCloseTabResultSchema = z.object({
   browserId: BrowserAutomationBrowserIdSchema,
 });
 
-export const BrowserAutomationResultSchema = z.discriminatedUnion("command", [
-  BrowserAutomationListTabsResultSchema,
-  BrowserAutomationNewTabResultSchema,
+export const BrowserAutomationRecordStartResultSchema = z.object({
+  command: z.literal("record_start"),
+  browserId: BrowserAutomationBrowserIdSchema,
+  recordingId: z.string().min(1),
+  audio: z.boolean(),
+});
+
+export const BrowserAutomationRecordStopResultSchema = z.object({
+  command: z.literal("record_stop"),
+  browserId: BrowserAutomationBrowserIdSchema,
+  recordingId: z.string().min(1),
+  status: z.enum(["complete", "interrupted"]),
+  // The copy to the caller's daemon has started; the daemon prompts the agent
+  // with the manifest path when it finishes, or with the failure.
+  complete: z.boolean(),
+  gaps: z.array(z.string()),
+});
+
+const BROWSER_AUTOMATION_TAB_RESULT_SCHEMAS = [
   BrowserAutomationSnapshotResultSchema,
   BrowserAutomationClickResultSchema,
   BrowserAutomationFillResultSchema,
@@ -478,6 +519,14 @@ export const BrowserAutomationResultSchema = z.discriminatedUnion("command", [
   BrowserAutomationScrollResultSchema,
   BrowserAutomationResizeResultSchema,
   BrowserAutomationCloseTabResultSchema,
+  BrowserAutomationRecordStartResultSchema,
+  BrowserAutomationRecordStopResultSchema,
+] as const;
+
+export const BrowserAutomationResultSchema = z.discriminatedUnion("command", [
+  BrowserAutomationListTabsResultSchema,
+  BrowserAutomationNewTabResultSchema,
+  ...BROWSER_AUTOMATION_TAB_RESULT_SCHEMAS,
 ]);
 
 export const BrowserAutomationErrorSchema = z.object({
@@ -525,6 +574,44 @@ export const BrowserAutomationExecuteResponseSchema = z.object({
   ]),
 });
 
+export const BrowserHostTargetSchema = z.object({
+  browserHostId: z.string().min(1),
+  label: z.string().min(1),
+  canOpenTabs: z.boolean(),
+});
+
+// The daemon's browser tools answer: the host answer plus which browser host
+// served it, and a host choice when several could.
+export const BrowserToolsResultSchema = z.discriminatedUnion("command", [
+  BrowserAutomationListTabsResultSchema.extend({
+    tabs: z.array(BrowserAutomationTabInfoSchema.extend({ browserHost: BrowserHostTargetSchema })),
+  }),
+  BrowserAutomationNewTabResultSchema.extend({ browserHost: BrowserHostTargetSchema }),
+  ...BROWSER_AUTOMATION_TAB_RESULT_SCHEMAS,
+]);
+
+export const BrowserToolsErrorSchema = BrowserAutomationErrorSchema.extend({
+  code: z.enum([...BROWSER_AUTOMATION_ERROR_CODES, "browser_host_ambiguous"]),
+  browserHosts: z.array(BrowserHostTargetSchema).optional(),
+});
+
+// A plain union: zod-aot compiles a boolean discriminator as string literals and
+// rejects every value. tests/validation/ws-outbound.test.ts holds the regression.
+export const BrowserToolsResponsePayloadSchema = z.union([
+  z.object({
+    requestId: z.string().min(1),
+    ok: z.literal(true),
+    result: BrowserToolsResultSchema,
+    dialogs: z.array(BrowserAutomationDialogEventSchema).optional(),
+  }),
+  z.object({
+    requestId: z.string().min(1),
+    ok: z.literal(false),
+    error: BrowserToolsErrorSchema,
+    dialogs: z.array(BrowserAutomationDialogEventSchema).optional(),
+  }),
+]);
+
 export type BrowserAutomationErrorCode = z.infer<typeof BrowserAutomationErrorCodeSchema>;
 export type BrowserAutomationCommandName = z.infer<typeof BrowserAutomationCommandNameSchema>;
 export type BrowserAutomationCommand = z.infer<typeof BrowserAutomationCommandSchema>;
@@ -540,3 +627,6 @@ export type BrowserAutomationExecuteRequest = z.infer<typeof BrowserAutomationEx
 export type BrowserAutomationExecuteResponse = z.infer<
   typeof BrowserAutomationExecuteResponseSchema
 >;
+export type BrowserHostTarget = z.infer<typeof BrowserHostTargetSchema>;
+export type BrowserToolsErrorPayload = z.infer<typeof BrowserToolsErrorSchema>;
+export type BrowserToolsResponsePayload = z.infer<typeof BrowserToolsResponsePayloadSchema>;
