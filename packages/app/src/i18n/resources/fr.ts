@@ -632,6 +632,16 @@ export const fr: TranslationResources = {
         forward: "Suivant",
         stopLoading: "Arrêter le chargement",
         refresh: "Actualiser",
+        recordingInterrupted: "Enregistrement interrompu",
+        startRecording: "Enregistrer le navigateur",
+        audioOn: "Inclure le son de l’onglet",
+        audioOff: "Ne pas inclure le son",
+        audioStarting: "Démarrage de la capture audio",
+        audioRecording: "Capture audio activée",
+        audioUnavailable: "Son indisponible pour une ou plusieurs vues ; la vidéo continue.",
+        startingRecording: "Démarrage de l’enregistrement",
+        stopRecording: "Arrêter l’enregistrement",
+        stoppingRecording: "Arrêt de l’enregistrement",
         browserUrl: "URL du navigateur",
         enterUrl: "Saisir une URL",
         openDevTools: "Ouvrir les outils de développement du navigateur",
@@ -2266,6 +2276,87 @@ export const fr: TranslationResources = {
       deleteMessage: "Supprimer « {{title}} » ? Cette action est irréversible.",
       deleteConfirm: "Supprimer",
       deleteFailed: "Échec de la suppression de l’artefact",
+    },
+    recordings: {
+      viewGap: "Vue {{n}} : {{reason}}",
+      unknownViewGap: "Vue inconnue : {{reason}}",
+      moreCaptureProblems:
+        "Et {{extra}} autres problèmes de capture ; consultez l’enregistrement pour les détails.",
+      forgetCorruptAudit: "Oublier l’historique de partage endommagé",
+      forgetCorruptAuditMessage:
+        "Oublier cet historique endommagé ? Les copies distantes peuvent rester accessibles et ne seront plus affichées ici.",
+      shareHostUnavailable:
+        "L’hôte sélectionné est hors ligne ou ne prend pas en charge le partage d’enregistrements.",
+      shareAgentUnavailable:
+        "L’agent sélectionné est indisponible. Vous pouvez supprimer la copie partagée ci-dessous.",
+      forgetCopy: "Oublier la copie partagée",
+      forgetCopyMessage:
+        "Oublier la copie partagée de {{agent}} sur {{host}} ? La copie distante peut rester accessible.",
+      sharePending: "Transfert incomplet ou état inconnu · {{agent}} · {{host}} · {{time}}",
+      share: "Partager avec un agent",
+      shareTitle: "Partager l’enregistrement",
+      shareConfirm: "Partager",
+      shareWarning:
+        "Partager l’enregistrement complet avec {{agent}} sur {{host}} ? Il peut contenir des cookies, des jetons d’accès et des données privées. {{completeness}}",
+      shareComplete: "Aucune interruption de capture signalée.",
+      shareIncomplete: "La capture est incomplète : {{reasons}}",
+      shareDone: "Enregistrement partagé. Vérifiez le brouillon de l’agent avant l’envoi.",
+      removeCopy: "Supprimer la copie partagée",
+      removeCopyMessage: "Supprimer la copie de {{agent}} sur {{host}} ?",
+      remove: "Supprimer",
+      sharedWith: "Partagé avec {{agent}} · {{host}} · {{time}}",
+      audioUnknown: "Le son a été demandé, mais son état de capture est inconnu.",
+      muteAudio: "Couper le son",
+      unmuteAudio: "Activer le son",
+      recoveryDisabled:
+        "La récupération est désactivée lorsque le verrouillage d’instance unique est désactivé.",
+      recoveryProblem:
+        "Certains enregistrements n’ont pas pu être récupérés. Résolvez le problème de stockage et redémarrez Paseo.",
+      unpublishedMetadata: "Un fichier de métadonnées inachevé a été conservé.",
+      eventLogUnreadable: "Le journal des événements est illisible.",
+      recoveryWriteFailed:
+        "La récupération n’a pas pu être enregistrée ; libérez de l’espace et redémarrez Paseo.",
+
+      storageQuota:
+        "Quota d’enregistrement atteint. Supprimez un enregistrement pour libérer de l’espace.",
+      diskFull: "Le disque est plein. Libérez de l’espace pour continuer.",
+
+      eventUntimed: "Cet événement n’a pas de temps d’enregistrement.",
+      missingView: "Aucune vidéo capturée pour cette vue.",
+
+      timeline: "Chronologie",
+      play: "Lire",
+      pause: "Pause",
+      videoAvailable: "Vidéo disponible",
+      videoGapLabel: "Vidéo manquante",
+
+      videoUnsupported: "Format vidéo non pris en charge",
+      noVideo: "Aucune vidéo disponible",
+      view: "Vue",
+      loadMediaFirst: "Chargez toutes les pages média pour lire",
+      videoGap: "Vidéo indisponible à cet instant",
+
+      status: {
+        recording: "En cours",
+        complete: "Terminé",
+        interrupted: "Interrompu",
+      },
+      refresh: "Actualiser",
+      mediaPending: "Les médias sont disponibles après l’arrêt de l’enregistrement.",
+      showFull: "Afficher tous les détails",
+
+      label: "Enregistrements",
+      subtitle: "Enregistrements du navigateur",
+      unavailable: "Les enregistrements sont disponibles dans l’application de bureau",
+      deleteTitle: "Supprimer l’enregistrement ?",
+      deleteMessage: "Cette action supprime définitivement l’enregistrement.",
+      delete: "Supprimer",
+      back: "Retour",
+      incompleteTail: "Le journal se termine par un événement incomplet.",
+      moreEvents: "Plus d’événements",
+      moreMedia: "Plus de médias",
+      empty: "Aucun enregistrement",
+      incomplete: "Enregistrement incomplet",
     },
     notes: {
       label: "Notes",

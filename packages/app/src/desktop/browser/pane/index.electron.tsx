@@ -20,12 +20,16 @@ import {
   ArrowRight,
   Camera,
   ChevronDown,
+  Circle,
   Maximize,
   Monitor,
   MousePointer2,
   RotateCw,
   Smartphone,
+  Square,
   Tablet,
+  Volume2,
+  VolumeX,
   Wrench,
   X,
   type LucideIcon,
@@ -78,6 +82,12 @@ import {
   type BrowserElementSelection,
   type ElementSelectorOutcome,
 } from "./element-selector.electron";
+import {
+  createRecordingControl,
+  RECORDING_INTERRUPTED,
+  type RecordingControlState,
+} from "../recording-control";
+import { classifyStorageError } from "../recordings/storage-errors";
 
 type ElectronWebview = HTMLElement & {
   canGoBack?: () => boolean;
@@ -436,6 +446,7 @@ function ToolbarButton({
   disabled,
   onPress,
   style,
+  tooltipWhenDisabled,
 }: {
   label: string;
   children: ReactNode;
@@ -443,6 +454,7 @@ function ToolbarButton({
   disabled?: boolean;
   onPress: () => void;
   style: (state: { hovered?: boolean; pressed?: boolean }) => StyleProp<ViewStyle>;
+  tooltipWhenDisabled?: boolean;
 }) {
   const accessibilityState = useMemo(
     () => ({ disabled: Boolean(disabled), selected: Boolean(active) }),
@@ -450,7 +462,7 @@ function ToolbarButton({
   );
   return (
     <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
-      <TooltipTrigger asChild disabled={disabled}>
+      <TooltipTrigger asChild disabled={disabled && !tooltipWhenDisabled}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={label}
@@ -466,6 +478,112 @@ function ToolbarButton({
         <Text style={styles.toolbarTooltipText}>{label}</Text>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function getAudioPresentation(
+  state: RecordingControlState,
+  active: boolean,
+  includeAudio: boolean,
+) {
+  const enabled = active ? state.audioRequested === true : includeAudio;
+  const unavailable =
+    active && state.audioRequested === true && state.audioStatus === "unavailable";
+  let label: "audioOn" | "audioOff" | "audioStarting" | "audioRecording" | "audioUnavailable" =
+    enabled ? "audioOn" : "audioOff";
+  if (active && state.audioRequested && state.audioStatus === "starting") label = "audioStarting";
+  if (active && state.audioRequested && state.audioStatus === "captured") label = "audioRecording";
+  if (unavailable) label = "audioUnavailable";
+  return { enabled, unavailable, label };
+}
+function RecordingButton({ browserId }: { browserId: string }) {
+  const { theme } = useUnistyles();
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [includeAudio, setIncludeAudio] = useState(false);
+  const [state, setState] = useState<RecordingControlState>({
+    status: "loading",
+    recordingId: null,
+    error: null,
+  });
+  const control = useRef<ReturnType<typeof createRecordingControl> | null>(null);
+  useEffect(() => {
+    const bridge = getDesktopHost()?.recording;
+    if (!bridge) return;
+    const instance = createRecordingControl(bridge, browserId, setState);
+    control.current = instance;
+    setState(instance.getState());
+    void instance.connect();
+    return () => {
+      instance.dispose();
+      if (control.current === instance) control.current = null;
+    };
+  }, [browserId]);
+  useEffect(() => {
+    if (!state.error) return;
+    const kind = state.reason ?? classifyStorageError(state.error);
+    let message = state.error;
+    if (kind === "quota") message = t("panels.recordings.storageQuota");
+    else if (kind === "disk-full") message = t("panels.recordings.diskFull");
+    else if (state.error === RECORDING_INTERRUPTED)
+      message = t("workspace.browser.controls.recordingInterrupted");
+    toast?.error(message);
+  }, [state.error, state.reason, t, toast]);
+  useEffect(() => {
+    if (state.audioRequested && state.audioStatus === "unavailable")
+      toast?.error(t("workspace.browser.controls.audioUnavailable"));
+  }, [state.audioRequested, state.audioStatus, t, toast]);
+  const buttonStyle = useCallback(
+    ({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => [
+      styles.iconButton,
+      (hovered || pressed) && styles.iconButtonHovered,
+    ],
+    [],
+  );
+  const active =
+    state.status === "starting" || state.status === "recording" || state.status === "stopping";
+  let label = t("workspace.browser.controls.startRecording");
+  if (active) label = t("workspace.browser.controls.stopRecording");
+  if (state.status === "starting") label = t("workspace.browser.controls.startingRecording");
+  if (state.status === "stopping") label = t("workspace.browser.controls.stoppingRecording");
+  const handleToggle = useCallback(() => {
+    void control.current?.toggle(includeAudio);
+  }, [includeAudio]);
+  const handleAudio = useCallback(() => setIncludeAudio((value) => !value), []);
+  const audio = getAudioPresentation(state, active, includeAudio);
+  return (
+    <>
+      <ToolbarButton
+        label={t(`workspace.browser.controls.${audio.label}`)}
+        active={audio.enabled}
+        disabled={state.status !== "idle"}
+        tooltipWhenDisabled
+        onPress={handleAudio}
+        style={buttonStyle}
+      >
+        {audio.enabled ? (
+          <Volume2
+            size={14}
+            color={audio.unavailable ? theme.colors.destructive : theme.colors.accent}
+          />
+        ) : (
+          <VolumeX size={14} color={theme.colors.foregroundMuted} />
+        )}
+      </ToolbarButton>
+      <ToolbarButton
+        label={label}
+        active={active}
+        disabled={state.status !== "idle" && state.status !== "recording"}
+        onPress={handleToggle}
+        style={buttonStyle}
+      >
+        {active ? (
+          <Square size={14} color={theme.colors.destructive} fill={theme.colors.destructive} />
+        ) : (
+          <Circle size={14} color={theme.colors.destructive} />
+        )}
+      </ToolbarButton>
+    </>
   );
 }
 
@@ -1480,6 +1598,7 @@ export function BrowserPane({
           />
         </View>
         <View style={styles.chromeRight}>
+          {getDesktopHost()?.recording ? <RecordingButton browserId={browserId} /> : null}
           <DeviceSizeMenu
             selectedId={selectedDeviceSizeId}
             onSelect={handleSelectDeviceSize}

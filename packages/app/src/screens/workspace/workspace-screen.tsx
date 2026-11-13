@@ -1920,8 +1920,8 @@ function WorkspaceScreenContent({
 
   const openUrlInBrowserTab = useOpenUrlInWorkspaceBrowserTab(persistenceKey);
   const handleOpenUrlInBrowserTab = useCallback(
-    (url: string) => {
-      openUrlInBrowserTab?.(url);
+    (url: string, browserId?: string) => {
+      openUrlInBrowserTab?.(url, browserId);
     },
     [openUrlInBrowserTab],
   );

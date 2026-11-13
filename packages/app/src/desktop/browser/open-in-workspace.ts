@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { getIsElectron } from "@/constants/platform";
-import { createWorkspaceBrowser } from "@/desktop/browser/store";
+import { BrowserIdAlreadyExistsError, createWorkspaceBrowser } from "@/desktop/browser/store";
 import { FOCUSED_PANE_PLACEMENT, useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 
 /**
@@ -10,14 +10,23 @@ import { FOCUSED_PANE_PLACEMENT, useWorkspaceLayoutStore } from "@/stores/worksp
  */
 export function useOpenUrlInWorkspaceBrowserTab(
   workspaceKey: string | null,
-): ((url: string) => void) | null {
+): ((url: string, browserId?: string) => void) | null {
   const openTab = useWorkspaceLayoutStore((state) => state.openTab);
   const openUrl = useCallback(
-    (url: string) => {
+    (url: string, reservedBrowserId?: string) => {
       if (!workspaceKey) {
         return;
       }
-      const { browserId } = createWorkspaceBrowser({ initialUrl: url });
+      let browserId: string;
+      try {
+        ({ browserId } = createWorkspaceBrowser({ initialUrl: url, browserId: reservedBrowserId }));
+      } catch (error) {
+        if (!reservedBrowserId || !(error instanceof BrowserIdAlreadyExistsError)) {
+          throw error;
+        }
+        // The recording reservation expires as a visible capture gap.
+        ({ browserId } = createWorkspaceBrowser({ initialUrl: url }));
+      }
       openTab({
         workspaceKey,
         target: { kind: "browser", browserId },

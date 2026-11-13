@@ -1,0 +1,1 @@
+export const AUTOMATIC_MEDIA_PAGE_LIMIT = 1000;

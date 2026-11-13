@@ -16,6 +16,9 @@ import type { PushNotificationSender } from "../push/index.js";
 import type { AgentProfile } from "@getpaseo/protocol/messages";
 
 interface TestPaseoDaemonOptions {
+  onWebSocketServerReady?: NonNullable<
+    import("../bootstrap.js").PaseoDaemonDependencies["onWebSocketServerReady"]
+  >;
   daemonVersion?: string;
   desktopManaged?: boolean;
   downloadTokenTtlMs?: number;
@@ -113,6 +116,7 @@ export async function createTestPaseoDaemon(
         daemonStatusRpc: options.daemonStatusRpcCapability,
         relayConfig: options.relayConfigCapability,
       },
+      onWebSocketServerReady: options.onWebSocketServerReady,
     });
     try {
       await startDaemonWithTimeout(daemon, TEST_DAEMON_START_TIMEOUT_MS);

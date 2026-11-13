@@ -11,6 +11,7 @@ describe("getBuiltInLaunchOrder", () => {
       "files",
       "artifacts",
       "notes",
+      "recordings",
       "browser",
       "pullRequest",
     ]);
@@ -24,6 +25,7 @@ describe("getBuiltInLaunchOrder", () => {
       "files",
       "artifacts",
       "notes",
+      "recordings",
       "agent",
       "browser",
       "pullRequest",

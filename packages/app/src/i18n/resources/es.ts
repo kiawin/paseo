@@ -632,6 +632,16 @@ export const es: TranslationResources = {
         forward: "Adelante",
         stopLoading: "dejar de cargar",
         refresh: "Refrescar",
+        recordingInterrupted: "Grabación interrumpida",
+        startRecording: "Grabar navegador",
+        audioOn: "Incluir audio de la pestaña",
+        audioOff: "No incluir audio",
+        audioStarting: "Iniciando captura de audio",
+        audioRecording: "Captura de audio activada",
+        audioUnavailable: "Audio no disponible en una o más vistas; el vídeo continúa.",
+        startingRecording: "Iniciando grabación",
+        stopRecording: "Detener grabación",
+        stoppingRecording: "Deteniendo grabación",
         browserUrl: "Navegador URL",
         enterUrl: "Ingrese URL",
         openDevTools: "Abrir herramientas de desarrollo del navegador",
@@ -2267,6 +2277,86 @@ export const es: TranslationResources = {
       deleteMessage: '¿Eliminar "{{title}}"? Esta acción no se puede deshacer.',
       deleteConfirm: "Eliminar",
       deleteFailed: "No se pudo eliminar el artefacto",
+    },
+    recordings: {
+      viewGap: "Vista {{n}}: {{reason}}",
+      unknownViewGap: "Vista desconocida: {{reason}}",
+      moreCaptureProblems:
+        "Y {{extra}} problemas de captura más; consulta la grabación para más detalles.",
+      forgetCorruptAudit: "Olvidar historial de copias dañado",
+      forgetCorruptAuditMessage:
+        "¿Olvidar el historial dañado? Las copias remotas pueden seguir disponibles y dejarán de aparecer aquí.",
+      shareHostUnavailable:
+        "El host seleccionado está desconectado o no admite compartir grabaciones.",
+      shareAgentUnavailable:
+        "El agente seleccionado no está disponible. Puedes eliminar la copia compartida a continuación.",
+      forgetCopy: "Olvidar copia compartida",
+      forgetCopyMessage:
+        "¿Olvidar la copia compartida de {{agent}} en {{host}}? La copia remota puede seguir disponible.",
+      sharePending:
+        "Transferencia incompleta o estado desconocido · {{agent}} · {{host}} · {{time}}",
+      share: "Compartir con agente",
+      shareTitle: "Compartir grabación",
+      shareConfirm: "Compartir",
+      shareWarning:
+        "¿Compartir la grabación completa con {{agent}} en {{host}}? Puede contener cookies, tokens de acceso y datos privados. {{completeness}}",
+      shareComplete: "No se notificaron interrupciones en la captura.",
+      shareIncomplete: "La captura está incompleta: {{reasons}}",
+      shareDone: "Grabación compartida. Revisa el borrador del agente antes de enviarlo.",
+      removeCopy: "Eliminar copia compartida",
+      removeCopyMessage: "¿Eliminar la copia de {{agent}} en {{host}}?",
+      remove: "Eliminar",
+      sharedWith: "Compartido con {{agent}} · {{host}} · {{time}}",
+      audioUnknown: "Se solicitó audio, pero se desconoce su estado de captura.",
+      muteAudio: "Silenciar audio",
+      unmuteAudio: "Activar audio",
+      recoveryDisabled:
+        "La recuperación de grabaciones está desactivada mientras el bloqueo de instancia única esté desactivado.",
+      recoveryProblem:
+        "No se pudieron recuperar algunas grabaciones. Resuelve el problema de almacenamiento y reinicia Paseo.",
+      unpublishedMetadata: "Se conservó un archivo de metadatos incompleto.",
+      eventLogUnreadable: "No se pudo leer el registro de eventos.",
+      recoveryWriteFailed: "No se pudo guardar la recuperación; libera espacio y reinicia Paseo.",
+
+      storageQuota: "Se alcanzó la cuota de grabaciones. Elimina una para liberar espacio.",
+      diskFull: "El disco está lleno. Libera espacio para continuar grabando.",
+
+      eventUntimed: "Este evento no tiene hora de grabación.",
+      missingView: "No se capturó vídeo para esta vista.",
+
+      timeline: "Cronología",
+      play: "Reproducir",
+      pause: "Pausar",
+      videoAvailable: "Vídeo disponible",
+      videoGapLabel: "Intervalo sin vídeo",
+
+      videoUnsupported: "Formato de vídeo no compatible",
+      noVideo: "No hay vídeo disponible",
+      view: "Vista",
+      loadMediaFirst: "Carga todas las páginas multimedia para reproducir",
+      videoGap: "Vídeo no disponible en este momento",
+
+      status: {
+        recording: "Grabando",
+        complete: "Completa",
+        interrupted: "Interrumpida",
+      },
+      refresh: "Actualizar",
+      mediaPending: "El contenido multimedia estará disponible al detener la grabación.",
+      showFull: "Mostrar todos los detalles",
+
+      label: "Grabaciones",
+      subtitle: "Grabaciones del navegador",
+      unavailable: "Las grabaciones están disponibles en la aplicación de escritorio",
+      deleteTitle: "¿Eliminar grabación?",
+      deleteMessage: "Esto elimina la grabación permanentemente.",
+      delete: "Eliminar",
+      back: "Atrás",
+      incompleteTail: "El registro termina con un evento incompleto.",
+      moreEvents: "Más eventos",
+      moreMedia: "Más contenido multimedia",
+      empty: "Aún no hay grabaciones",
+      incomplete: "Grabación incompleta",
     },
     notes: {
       label: "Notas",

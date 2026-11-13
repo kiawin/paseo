@@ -1,0 +1,199 @@
+{
+  "events": [
+    {
+      "method": "Network.requestWillBeSent",
+      "params": {
+        "documentURL": "http://127.0.0.1:34777/root",
+        "frameId": "060485F93FB63949229CD642A923499E",
+        "hasUserGesture": false,
+        "initiator": {
+          "stack": {
+            "callFrames": [
+              {
+                "columnNumber": 0,
+                "functionName": "",
+                "lineNumber": 0,
+                "scriptId": "8",
+                "url": ""
+              }
+            ]
+          },
+          "type": "script"
+        },
+        "loaderId": "595ABE2C0C3AE8D053627A13176384FE",
+        "redirectHasExtraInfo": false,
+        "request": {
+          "hasPostData": true,
+          "headers": {
+            "Referer": "http://127.0.0.1:34777/root",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.76 Electron/44.2.0 Safari/537.36",
+            "content-type": "text/plain",
+            "sec-ch-ua": "\"Not?A_Brand\";v=\"24\", \"Chromium\";v=\"152\"",
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": "\"Linux\""
+          },
+          "initialPriority": "High",
+          "isSameSite": true,
+          "method": "POST",
+          "mixedContentType": "none",
+          "postData": "probe-body",
+          "postDataEntries": [
+            {
+              "bytes": "cHJvYmUtYm9keQ=="
+            }
+          ],
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "url": "http://127.0.0.1:34777/api?source=main"
+        },
+        "requestId": "3125124.2",
+        "timestamp": 335465.206225,
+        "type": "Fetch",
+        "wallTime": 1794309077.358885
+      },
+      "sessionId": null
+    },
+    {
+      "method": "Network.requestWillBeSentExtraInfo",
+      "params": {
+        "associatedCookies": [],
+        "clientSecurityState": {
+          "initiatorIPAddressSpace": "Loopback",
+          "initiatorIsSecureContext": true,
+          "localNetworkAccessRequestPolicy": "Allow"
+        },
+        "connectTiming": {
+          "requestTime": 335465.206874
+        },
+        "headers": {
+          "Accept": "*/*",
+          "Accept-Encoding": "gzip, deflate, br, zstd",
+          "Accept-Language": "en-US",
+          "Connection": "keep-alive",
+          "Content-Length": "10",
+          "Host": "127.0.0.1:34777",
+          "Origin": "http://127.0.0.1:34777",
+          "Referer": "http://127.0.0.1:34777/root",
+          "Sec-Fetch-Dest": "empty",
+          "Sec-Fetch-Mode": "cors",
+          "Sec-Fetch-Site": "same-origin",
+          "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.76 Electron/44.2.0 Safari/537.36",
+          "content-type": "text/plain",
+          "sec-ch-ua": "\"Not?A_Brand\";v=\"24\", \"Chromium\";v=\"152\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Linux\""
+        },
+        "requestId": "3125124.2",
+        "siteHasCookieInOtherPartition": false
+      },
+      "sessionId": null
+    },
+    {
+      "method": "Network.responseReceivedExtraInfo",
+      "params": {
+        "blockedCookies": [],
+        "cookiePartitionKey": {
+          "hasCrossSiteAncestor": false,
+          "topLevelSite": "http://127.0.0.1"
+        },
+        "cookiePartitionKeyOpaque": false,
+        "exemptedCookies": [],
+        "headers": {
+          "Connection": "keep-alive",
+          "Content-Length": "40",
+          "Date": "Tue, 10 Nov 2026 11:11:17 GMT",
+          "Keep-Alive": "timeout=5",
+          "access-control-allow-origin": "*",
+          "content-type": "application/json"
+        },
+        "headersText": "HTTP/1.1 200 OK\r\naccess-control-allow-origin: *\r\ncontent-type: application/json\r\nDate: Tue, 10 Nov 2026 11:11:17 GMT\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\nContent-Length: 40\r\n\r\n",
+        "requestId": "3125124.2",
+        "resourceIPAddressSpace": "Loopback",
+        "statusCode": 200
+      },
+      "sessionId": null
+    },
+    {
+      "method": "Network.responseReceived",
+      "params": {
+        "frameId": "060485F93FB63949229CD642A923499E",
+        "hasExtraInfo": true,
+        "loaderId": "595ABE2C0C3AE8D053627A13176384FE",
+        "requestId": "3125124.2",
+        "response": {
+          "alternateProtocolUsage": "unspecifiedReason",
+          "charset": "",
+          "connectionId": 22,
+          "connectionReused": true,
+          "encodedDataLength": 187,
+          "fromDiskCache": false,
+          "fromPrefetchCache": false,
+          "fromServiceWorker": false,
+          "headers": {
+            "Connection": "keep-alive",
+            "Content-Length": "40",
+            "Date": "Tue, 10 Nov 2026 11:11:17 GMT",
+            "Keep-Alive": "timeout=5",
+            "access-control-allow-origin": "*",
+            "content-type": "application/json"
+          },
+          "mimeType": "application/json",
+          "protocol": "http/1.1",
+          "remoteIPAddress": "127.0.0.1",
+          "remotePort": 34777,
+          "responseTime": 1794309077361.497,
+          "securityState": "secure",
+          "status": 200,
+          "statusText": "OK",
+          "timing": {
+            "connectEnd": -1,
+            "connectStart": -1,
+            "dnsEnd": -1,
+            "dnsStart": -1,
+            "proxyEnd": -1,
+            "proxyStart": -1,
+            "pushEnd": 0,
+            "pushStart": 0,
+            "receiveHeadersEnd": 2.072,
+            "receiveHeadersStart": 2.016,
+            "requestTime": 335465.206874,
+            "sendEnd": 0.34,
+            "sendStart": 0.264,
+            "sslEnd": -1,
+            "sslStart": -1,
+            "workerFetchStart": -1,
+            "workerReady": -1,
+            "workerRespondWithSettled": -1,
+            "workerStart": -1
+          },
+          "url": "http://127.0.0.1:34777/api?source=main"
+        },
+        "timestamp": 335465.209979,
+        "type": "Fetch"
+      },
+      "sessionId": null
+    },
+    {
+      "method": "Network.dataReceived",
+      "params": {
+        "dataLength": 40,
+        "encodedDataLength": 40,
+        "requestId": "3125124.2",
+        "timestamp": 335465.210324
+      },
+      "sessionId": null
+    },
+    {
+      "method": "Network.loadingFinished",
+      "params": {
+        "encodedDataLength": 227,
+        "requestId": "3125124.2",
+        "timestamp": 335465.209816
+      },
+      "sessionId": null
+    }
+  ],
+  "body": {
+    "base64Encoded": false,
+    "body": "{\"received\":\"probe-body\",\"fixture\":true}"
+  }
+}
