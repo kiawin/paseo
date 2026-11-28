@@ -2535,6 +2535,50 @@ test("revokes the MCP token when registration fails after insertion", async () =
   }
 });
 
+test("reload launches the new session with an MCP token that still resolves to the agent", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-mcp-reload-test-"));
+
+  class CaptureClient extends TestAgentClient {
+    launchConfigs: AgentSessionConfig[] = [];
+
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      this.launchConfigs.push(config);
+      return new McpCapableTestAgentSession(config);
+    }
+
+    override async resumeSession(
+      handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ): Promise<AgentSession> {
+      this.launchConfigs.push({ ...config, provider: handle.provider } as AgentSessionConfig);
+      return new McpCapableTestAgentSession({ ...config, provider: handle.provider } as never);
+    }
+  }
+
+  try {
+    const client = new CaptureClient();
+    const manager = new AgentManager({
+      clients: { codex: client },
+      logger,
+      mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
+      idFactory: () => "00000000-0000-4000-8000-000000000102",
+    });
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+
+    await manager.reloadAgentSession(agent.id);
+
+    const reloadConfig = client.launchConfigs.at(-1);
+    const token = reloadConfig?.mcpServers?.paseo?.headers?.Authorization?.replace("Bearer ", "");
+    expect(client.launchConfigs).toHaveLength(2);
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(manager.getMcpAgentId(token!)).toBe(agent.id);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("revokes injected MCP tokens when create, resume, and import fail", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-mcp-failure-test-"));
   const handle: AgentPersistenceHandle = {

@@ -2235,7 +2235,10 @@ export class AgentManager {
       await this.drainSessionEvents(agentId);
       this.cancelRunningProviderSubagents(agentId);
       this.clearProviderBackgroundWork(agentId);
-      closedExisting = this.prepareAgentForClosure(existing, "agent reloaded");
+      // The new launch config already carries this agent's token; revoking it here would 401 the new process.
+      closedExisting = this.prepareAgentForClosure(existing, "agent reloaded", {
+        keepMcpToken: true,
+      });
       await this.persistSnapshot(closedExisting);
       this.assertAcceptingAgentRegistrations();
 
@@ -2278,6 +2281,7 @@ export class AgentManager {
       });
     } catch (error) {
       if (closedExisting) {
+        this.revokeMcpTokenIfUnregistered(agentId);
         this.emitClosedAgent(closedExisting, { persist: false });
       } else if (this.agents.get(agentId) === existing) {
         existing.lifecycle = "error";
@@ -5128,10 +5132,11 @@ export class AgentManager {
   private prepareAgentForClosure(
     agent: LiveManagedAgent,
     cancelReason: string,
+    options?: { keepMcpToken?: boolean },
   ): ManagedAgentClosed {
     this.agentStreamCoalescer.flushAndDiscard(agent.id);
     this.agents.delete(agent.id);
-    this.revokeMcpToken(agent.id);
+    if (!options?.keepMcpToken) this.revokeMcpToken(agent.id);
     this.previousStatuses.delete(agent.id);
     if (agent.unsubscribeSession) {
       agent.unsubscribeSession();
